@@ -82,6 +82,23 @@ Useful scripts:
 
 PWA install and service workers require HTTPS in production (`localhost` is exempt).
 
+## Deploy to Render
+
+`render.yaml` is a ready-made blueprint (Node runtime, `npm ci --omit=dev` build, `npm start`,
+`/health` health check). Either:
+
+- **Blueprint:** Render dashboard → *New* → *Blueprint* → select this repo, then set `MONGODB_URI`
+  (`sync: false` means Render prompts for it). `SESSION_SECRET` is generated automatically.
+- **Manual:** create a *Web Service* for this repo and set **Build Method = Node**, Build Command
+  `npm ci --omit=dev`, Start Command `npm start`, then add `MONGODB_URI` and `SESSION_SECRET` under
+  *Environment*. Delete any Elixir build command (`mix phx.digest`) left over from a template.
+
+`NODE_ENV=production` is set by the blueprint; the app then trusts the proxy (so the `secure`
+session cookie is issued over Render's HTTPS), and refuses to boot without `SESSION_SECRET`.
+
+The database is Atlas, so the admin user and demo data must already exist — run `npm run seed`
+locally (or `npm run seed -- --demo`) against the same `MONGODB_URI` once.
+
 ## Structure
 
 ```

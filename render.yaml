@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: rentmanage
+    runtime: node
+    plan: free
+    region: singapore
+    branch: main
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: MONGODB_DNS_SERVERS
+        value: 8.8.8.8,1.1.1.1

@@ -28,9 +28,18 @@ const { maskAadhaar } = require('./src/utils/mask');
 const app = express();
 const viewsDir = path.join(__dirname, 'src', 'views');
 
+if (process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
+  throw new Error('SESSION_SECRET must be set in production.');
+}
+
 app.set('view engine', 'ejs');
 app.set('views', viewsDir);
 app.set('layout', 'layouts/main');
+// Render (and most hosts) terminate TLS in front of the app; trust the proxy so
+// secure cookies and req.secure see the real https request.
+if (process.env.NODE_ENV === 'production' || process.env.TRUST_PROXY === '1') {
+  app.set('trust proxy', 1);
+}
 app.use(expressLayouts);
 
 app.use(express.urlencoded({ extended: false, limit: '1mb' }));
