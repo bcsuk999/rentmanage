@@ -9,7 +9,7 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "seed": "node scripts/seed.js",
-    "test": "node tests/smoke.test.js",
+    "icons": "node scripts/generate-icons.js",
     "lint": "eslint ."
   },
   "engines": {
@@ -27,8 +27,6 @@
     "mongoose": "^8.6.0"
   },
   "devDependencies": {
-    "eslint": "^9.10.0",
-    "mongodb-memory-server": "^11.3.0",
-    "supertest": "^7.3.0"
+    "eslint": "^9.10.0"
   }
 }

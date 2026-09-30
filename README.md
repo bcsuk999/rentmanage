@@ -26,9 +26,8 @@ Useful scripts:
 | `npm run dev` | Runs with `node --watch` |
 | `npm run seed` | Creates/updates nothing but the admin account |
 | `npm run seed -- --demo` | Also creates sample rooms, members and payments |
-| `npm test` | End-to-end smoke test on an in-memory MongoDB |
+| `npm run icons` | Regenerates the PWA icon set |
 | `npm run lint` | ESLint |
-| `node scripts/generate-icons.js` | Regenerates the PWA icon set |
 
 ### Environment
 
@@ -93,7 +92,6 @@ src/middleware/auth.js     session guards, password rules
 src/utils/                 dates, money formatting, validation, Aadhaar masking
 src/views/                 EJS views (layout, partials, one folder per module)
 src/public/                CSS, JS, PWA manifest, service worker, icons
-tests/smoke.test.js        End-to-end smoke test
 ```
 
 ## Security notes
