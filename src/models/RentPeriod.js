@@ -10,13 +10,11 @@ const rentPeriodSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Member',
       required: true,
-      index: true,
     },
     roomId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Room',
       required: true,
-      index: true,
     },
     startDate: { type: Date, required: true },
     endDate: { type: Date, required: true },
