@@ -6,8 +6,10 @@ Single Node.js application (Express + Mongoose + server-rendered EJS). No separa
 
 ## Requirements
 
-- Node.js 18+
+- Node.js 20+ (developed and verified on Node 25)
 - A MongoDB database (MongoDB Atlas or local `mongod`)
+
+Stack: Express 5, Mongoose 9, EJS 6, express-session + connect-mongo 6, bcryptjs 3.
 
 ## Setup
 
