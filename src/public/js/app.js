@@ -61,12 +61,41 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function setupMobileNav() {
-  const toggle = document.querySelector('[data-nav-toggle]');
-  const nav = document.getElementById('main-nav');
-  if (!toggle || !nav) return;
-  toggle.addEventListener('click', () => {
-    const open = nav.classList.toggle('open');
-    toggle.setAttribute('aria-expanded', String(open));
+  const openBtn = document.querySelector('[data-sidebar-open]');
+  const sidebar = document.getElementById('app-sidebar');
+  const backdrop = document.querySelector('.sidebar-backdrop');
+  if (!openBtn || !sidebar || !backdrop) return;
+
+  function open() {
+    sidebar.classList.add('open');
+    sidebar.setAttribute('aria-hidden', 'false');
+    backdrop.hidden = false;
+    openBtn.setAttribute('aria-expanded', 'true');
+    document.body.classList.add('sidebar-open');
+    sidebar.querySelector('.sidebar-close')?.focus();
+  }
+
+  function close(returnFocus = true) {
+    if (!sidebar.classList.contains('open')) return;
+    sidebar.classList.remove('open');
+    sidebar.setAttribute('aria-hidden', 'true');
+    backdrop.hidden = true;
+    openBtn.setAttribute('aria-expanded', 'false');
+    document.body.classList.remove('sidebar-open');
+    if (returnFocus) openBtn.focus();
+  }
+
+  openBtn.addEventListener('click', open);
+  sidebar.querySelectorAll('[data-sidebar-close]').forEach((el) => {
+    el.addEventListener('click', () => close());
+  });
+  backdrop.addEventListener('click', () => close());
+  // Choosing a destination navigates away; close without stealing focus.
+  sidebar.querySelectorAll('.sidebar-nav a').forEach((link) => {
+    link.addEventListener('click', () => close(false));
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') close();
   });
 }
 
