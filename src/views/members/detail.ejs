@@ -9,9 +9,10 @@
   </div>
   <div class="actions">
     <% if (member.status === 'active') { %>
-      <a class="btn btn-primary" href="/members/<%= member._id %>/edit">Edit</a>
-      <a class="btn btn-warn" href="/members/<%= member._id %>/vacate">Vacate</a>
-    <% } %>
+  <% if (isAdmin && member.status === 'active') { %>
+    <a class="btn btn-primary" href="/members/<%= member._id %>/edit">Edit</a>
+    <a class="btn btn-warn" href="/members/<%= member._id %>/vacate">Vacate</a>
+  <% } %>
   </div>
 </div>
 

@@ -9,7 +9,7 @@ const expressLayouts = require('express-ejs-layouts');
 require('dotenv').config();
 
 const connectDb = require('./src/config/db');
-const { attachUser, requireAuth } = require('./src/middleware/auth');
+const { attachUser, hasRole, requireAuth, requireRole } = require('./src/middleware/auth');
 const { flash, flashFor } = require('./src/utils/flash');
 
 const authRoutes = require('./src/routes/auth');
@@ -79,6 +79,7 @@ app.use((req, res, next) => {
   req.flash = flash.bind(null, req);
   res.locals.currentPath = req.path;
   res.locals.currentUser = req.session.admin || null;
+  res.locals.isAdmin = hasRole(req.session.admin, 'admin');
   res.locals.flash = req.session.flash || null;
   res.locals.currency = currency;
   res.locals.formatDate = dates.formatDate;
@@ -100,7 +101,7 @@ app.use('/members', requireAuth, memberRoutes);
 app.use('/rent-periods', requireAuth, rentRoutes);
 app.use('/payments', requireAuth, paymentRoutes);
 app.use('/reports', requireAuth, reportRoutes);
-app.use('/settings', requireAuth, settingsRoutes);
+app.use('/settings', requireAuth, requireRole('admin'), settingsRoutes);
 
 app.use((req, res) => {
   res.status(404).render('error', {

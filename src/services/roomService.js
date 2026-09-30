@@ -7,14 +7,20 @@ const RentPeriod = require('../models/RentPeriod');
 const { ROOM_STATUSES } = require('../models/Room');
 const { ensurePeriodsForActiveMembers, summarise } = require('./rentService');
 const { startOfDay, today } = require('../utils/dates');
-const { ValidationError, collect, oneOf, optionalText, requireText } = require('../utils/validate');
+const {
+  ValidationError,
+  collect,
+  oneOf,
+  optionalText,
+  requireCapacity,
+  requireText,
+} = require('../utils/validate');
 
 const PAYMENT_FILTERS = ['Fully Paid', 'Partial', 'Pending', 'Overdue'];
 
-/** Room numbers are matched case-insensitively (101 vs 101A stay distinct). */
+/** Room numbers are matched case-insensitively via the indexed roomNumberKey. */
 function findRoomByNumber(roomNumber) {
-  const escaped = String(roomNumber).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return Room.findOne({ roomNumber: { $regex: `^${escaped}$`, $options: 'i' } });
+  return Room.findOne({ roomNumberKey: String(roomNumber).trim().toLowerCase() });
 }
 
 function toObjectId(value, field = 'id') {
@@ -27,6 +33,7 @@ function toObjectId(value, field = 'id') {
 async function createRoom(body) {
   const data = collect((ok) => ({
     roomNumber: requireText(body.roomNumber, 'Room number', { max: 40 }),
+    capacity: requireCapacity(body.capacity),
     status: body.status ? oneOf(body.status, ROOM_STATUSES, 'Status') : 'Empty',
     notes: ok(() => optionalText(body.notes, 'Notes', { max: 1000 })),
   }));
@@ -53,10 +60,23 @@ async function updateRoom(id, body) {
     roomNumber: body.roomNumber === undefined
       ? room.roomNumber
       : requireText(body.roomNumber, 'Room number', { max: 40 }),
+    capacity: body.capacity === undefined ? room.capacity : requireCapacity(body.capacity),
     status: body.status === undefined ? room.status : oneOf(body.status, ROOM_STATUSES, 'Status'),
     notes: body.notes === undefined ? room.notes : ok(() => optionalText(body.notes, 'Notes', { max: 1000 })),
   }));
+  if (data.capacity < room.capacity) {
+    const activeMembers = await Member.countDocuments({ roomId: room._id, status: 'active' });
+    if (data.capacity < activeMembers) {
+      throw new ValidationError([
+        {
+          field: 'capacity',
+          message: `Capacity cannot be lower than the ${activeMembers} active member(s) already in this room`,
+        },
+      ]);
+    }
+  }
   room.roomNumber = data.roomNumber;
+  room.capacity = data.capacity;
   room.status = data.status;
   room.notes = data.notes;
   try {
@@ -120,8 +140,9 @@ async function listRoomsWithSummary({ search = '', status = 'All', paymentState 
   const roomFilter = {};
   if (status !== 'All' && ROOM_STATUSES.includes(status)) roomFilter.status = status;
   if (search) {
-    const rx = { $regex: search.trim(), $options: 'i' };
-    const ors = [{ roomNumber: rx }];
+    // Prefix match on the indexed key so the unique index can be used.
+    const term = search.trim().toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const ors = [{ roomNumberKey: { $regex: `^${term}` } }];
     if (matchingRoomIds && matchingRoomIds.length) ors.push({ _id: { $in: matchingRoomIds.map((r) => new mongoose.Types.ObjectId(r)) } });
     roomFilter.$or = ors;
   }
@@ -175,6 +196,8 @@ async function listRoomsWithSummary({ search = '', status = 'All', paymentState 
     return {
       ...room,
       memberCount: roomMembers.length,
+      capacity: room.capacity || roomMembers.length,
+      isFull: roomMembers.length >= (room.capacity || roomMembers.length),
       totalRent: summary.totalRent,
       totalPaid: summary.totalPaid,
       totalPending: summary.totalPending,
@@ -255,6 +278,8 @@ async function roomDetail(id, selectedRange) {
     room,
     members: rows,
     summary: { ...summary, memberCount: members.length },
+    capacity: room.capacity || members.length,
+    isFull: members.length >= (room.capacity || members.length),
     ranges,
     range,
     historical,

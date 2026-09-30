@@ -10,7 +10,6 @@ const memberSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Room',
       required: true,
-      index: true,
     },
     name: { type: String, required: [true, 'Name is required'], trim: true, maxlength: 120 },
     mobile: {
@@ -33,7 +32,7 @@ const memberSchema = new mongoose.Schema(
     },
     joiningDate: { type: Date, required: true, default: Date.now },
     vacatingDate: { type: Date },
-    status: { type: String, enum: MEMBER_STATUSES, default: 'active', index: true },
+    status: { type: String, enum: MEMBER_STATUSES, default: 'active' },
     notes: { type: String, trim: true, maxlength: 1000 },
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now },
@@ -41,10 +40,14 @@ const memberSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-memberSchema.index({ roomId: 1, status: 1 });
-memberSchema.index({ mobile: 1 });
+// Compound indexes only: every single-field lookup below is a prefix of one of
+// these, so keeping both would just add write cost. No text index: search runs
+// on regex, and a text index would be write overhead for nothing.
+memberSchema.index({ roomId: 1, status: 1, rentStartDate: 1 }); // room rollup + capacity count
+memberSchema.index({ status: 1, rentStartDate: 1 }); // period generation for active members
+memberSchema.index({ name: 1 }); // name-sorted lists
+memberSchema.index({ mobile: 1 }); // exact/dup checks and search
 memberSchema.index({ aadhaarNumber: 1 });
-memberSchema.index({ name: 'text' });
 
 module.exports = mongoose.model('Member', memberSchema);
 module.exports.MEMBER_STATUSES = MEMBER_STATUSES;

@@ -6,6 +6,7 @@ const Member = require('../models/Member');
 const Room = require('../models/Room');
 const Payment = require('../models/Payment');
 const { recalcPeriod } = require('../services/rentService');
+const { requireRole } = require('../middleware/auth');
 const { firstErrorMessage, wrap } = require('../utils/http');
 const { formatDateRange, toDateInput, today } = require('../utils/dates');
 const { PAYMENT_METHODS } = require('../models/Payment');
@@ -42,6 +43,7 @@ router.get(
 /** Close a cycle so no further payments can be attached to it. */
 router.post(
   '/:id/close',
+  requireRole('admin'),
   wrap(async (req, res) => {
     try {
       const period = await RentPeriod.findById(req.params.id);
@@ -61,6 +63,7 @@ router.post(
 /** Reopen a closed cycle. */
 router.post(
   '/:id/reopen',
+  requireRole('admin'),
   wrap(async (req, res) => {
     try {
       const period = await RentPeriod.findById(req.params.id);

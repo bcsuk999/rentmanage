@@ -1,0 +1,25 @@
+<section class="card login-card">
+  <h1>Create account</h1>
+  <p class="muted">New accounts start with read-only access. An admin can grant edit rights.</p>
+  <%- include('../partials/errors') %>
+  <form method="post" action="/register" class="form">
+    <label for="name">Your name</label>
+    <input id="name" name="name" value="<%= form.name || '' %>" autocomplete="name" maxlength="80">
+
+    <label for="username">Username</label>
+    <input id="username" name="username" value="<%= form.username || '' %>" autocomplete="username" required minlength="3" maxlength="40" pattern="[A-Za-z0-9._-]+" autofocus>
+    <small class="muted">Letters, numbers, dot, dash and underscore.</small>
+
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" autocomplete="new-password" required>
+    <small class="muted">At least 8 characters with upper case, lower case and a number.</small>
+
+    <label for="confirmPassword">Confirm password</label>
+    <input id="confirmPassword" name="confirmPassword" type="password" autocomplete="new-password" required>
+
+    <div class="actions">
+      <button class="btn btn-primary" type="submit">Create account</button>
+      <a class="btn btn-ghost" href="/login">Back to sign in</a>
+    </div>
+  </form>
+</section>

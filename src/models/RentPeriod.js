@@ -23,7 +23,7 @@ const rentPeriodSchema = new mongoose.Schema(
     rentAmount: { type: Number, required: true, min: 0 },
     paidAmount: { type: Number, default: 0, min: 0 },
     pendingAmount: { type: Number, default: 0, min: 0 },
-    status: { type: String, enum: RENT_STATUSES, default: 'Pending', index: true },
+    status: { type: String, enum: RENT_STATUSES, default: 'Pending' },
     isClosed: { type: Boolean, default: false },
     closedAt: { type: Date },
     createdAt: { type: Date, default: Date.now },
@@ -34,8 +34,10 @@ const rentPeriodSchema = new mongoose.Schema(
 
 // One rent period per member per cycle start; periods for a member must not overlap.
 rentPeriodSchema.index({ memberId: 1, startDate: 1 }, { unique: true });
-rentPeriodSchema.index({ roomId: 1, startDate: 1, endDate: 1 });
-rentPeriodSchema.index({ endDate: 1 });
+// Room rollup for the current cycle, plus the room period list (sorted by startDate).
+rentPeriodSchema.index({ roomId: 1, startDate: -1, endDate: 1, status: 1 });
+// Range-overlap queries (reports) and the current-cycle lookup.
+rentPeriodSchema.index({ startDate: 1, endDate: 1, status: 1 });
 
 module.exports = mongoose.model('RentPeriod', rentPeriodSchema);
 module.exports.RENT_STATUSES = RENT_STATUSES;

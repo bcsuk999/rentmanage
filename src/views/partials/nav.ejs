@@ -12,7 +12,9 @@
       <a href="/members" class="<%= currentPath.startsWith('/members') ? 'active' : '' %>">Members</a>
       <a href="/payments" class="<%= currentPath.startsWith('/payments') ? 'active' : '' %>">Payments</a>
       <a href="/reports" class="<%= currentPath.startsWith('/reports') ? 'active' : '' %>">Reports</a>
-      <a href="/settings" class="<%= currentPath.startsWith('/settings') ? 'active' : '' %>">Settings</a>
+      <% if (isAdmin) { %>
+        <a href="/settings" class="<%= currentPath.startsWith('/settings') ? 'active' : '' %>">Settings</a>
+      <% } %>
       <div class="nav-mobile-only">
         <span class="muted"><%= currentUser.name %></span>
         <form method="post" action="/logout" class="inline">
@@ -23,6 +25,7 @@
     <div class="user">
       <button class="btn btn-ghost install-btn" type="button" data-install hidden>Install app</button>
       <span class="muted user-name"><%= currentUser.name %></span>
+      <span class="pill pill-role"><%= isAdmin ? 'Admin' : 'Viewer' %></span>
       <form method="post" action="/logout" class="inline">
         <button class="btn btn-ghost" type="submit">Logout</button>
       </form>

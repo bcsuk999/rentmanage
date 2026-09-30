@@ -4,6 +4,7 @@ const express = require('express');
 const roomService = require('../services/roomService');
 const memberService = require('../services/memberService');
 const { ROOM_STATUSES } = require('../models/Room');
+const { requireRole } = require('../middleware/auth');
 const { fieldErrors, firstErrorMessage, wrap } = require('../utils/http');
 const {
   cycleEnd,
@@ -49,7 +50,7 @@ router.get(
   })
 );
 
-router.get('/new', (req, res) => {
+router.get('/new', requireRole('admin'), (req, res) => {
   res.render('rooms/form', {
     title: 'Add room',
     mode: 'create',
@@ -61,6 +62,7 @@ router.get('/new', (req, res) => {
 
 router.post(
   '/',
+  requireRole('admin'),
   wrap(async (req, res) => {
     try {
       const room = await roomService.createRoom(req.body);
@@ -92,6 +94,8 @@ router.get(
       room: detail.room,
       members: detail.members,
       summary: detail.summary,
+      capacity: detail.capacity,
+      isFull: detail.isFull,
       ranges: detail.ranges,
       range: detail.range,
       historical: detail.historical,
@@ -104,6 +108,7 @@ router.get(
 
 router.get(
   '/:id/edit',
+  requireRole('admin'),
   wrap(async (req, res) => {
     const { room } = await roomService.roomDetail(req.params.id, null);
     res.render('rooms/form', {
@@ -118,6 +123,7 @@ router.get(
 
 router.post(
   '/:id',
+  requireRole('admin'),
   wrap(async (req, res) => {
     try {
       const room = await roomService.updateRoom(req.params.id, req.body);
@@ -139,6 +145,7 @@ router.post(
 
 router.post(
   '/:id/delete',
+  requireRole('admin'),
   wrap(async (req, res) => {
     try {
       const room = await roomService.deleteRoom(req.params.id);
@@ -153,6 +160,7 @@ router.post(
 /** Add a member from inside a room. */
 router.get(
   '/:id/members/new',
+  requireRole('admin'),
   wrap(async (req, res) => {
     const { room } = await roomService.roomDetail(req.params.id, null);
     res.render('members/form', {
@@ -178,6 +186,7 @@ router.get(
 
 router.post(
   '/:id/members',
+  requireRole('admin'),
   wrap(async (req, res) => {
     try {
       const member = await memberService.createMember({ ...req.body, roomId: req.params.id });

@@ -7,17 +7,19 @@
       · <%= rangeLabel %>
     </p>
   </div>
-  <div class="actions">
-    <% if (period.isClosed) { %>
-      <form method="post" action="/rent-periods/<%= period._id %>/reopen" class="inline">
-        <button class="btn btn-ghost" type="submit">Reopen period</button>
-      </form>
-    <% } else { %>
-      <form method="post" action="/rent-periods/<%= period._id %>/close" class="inline" data-confirm="Close this rent period? No further payments can be recorded.">
-        <button class="btn btn-warn" type="submit">Close period</button>
-      </form>
-    <% } %>
-  </div>
+  <% if (isAdmin) { %>
+    <div class="actions">
+      <% if (period.isClosed) { %>
+        <form method="post" action="/rent-periods/<%= period._id %>/reopen" class="inline">
+          <button class="btn btn-ghost" type="submit">Reopen period</button>
+        </form>
+      <% } else { %>
+        <form method="post" action="/rent-periods/<%= period._id %>/close" class="inline" data-confirm="Close this rent period? No further payments can be recorded.">
+          <button class="btn btn-warn" type="submit">Close period</button>
+        </form>
+      <% } %>
+    </div>
+  <% } %>
 </div>
 
 <section class="card">
@@ -35,7 +37,9 @@
 
 <section class="card">
   <h2>Add payment</h2>
-  <% if (period.isClosed || !member || member.status !== 'active') { %>
+  <% if (!isAdmin) { %>
+    <p class="flash flash-info">Your account is read-only. An admin records payments.</p>
+  <% } else if (period.isClosed || !member || member.status !== 'active') { %>
     <p class="flash flash-info">
       <%= period.isClosed ? 'This rent period is closed.' : 'This member is vacated.' %>
       Payments cannot be recorded here.

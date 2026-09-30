@@ -5,6 +5,7 @@ const paymentService = require('../services/paymentService');
 const Room = require('../models/Room');
 const Member = require('../models/Member');
 const { PAYMENT_METHODS } = require('../models/Payment');
+const { requireRole } = require('../middleware/auth');
 const { firstErrorMessage, wrap } = require('../utils/http');
 const { formatDateRange } = require('../utils/dates');
 
@@ -43,6 +44,7 @@ router.get(
 /** Record a payment against a rent period. */
 router.post(
   '/',
+  requireRole('admin'),
   wrap(async (req, res) => {
     const back = req.body.returnTo || (req.body.rentPeriodId ? `/rent-periods/${req.body.rentPeriodId}` : '/payments');
     try {

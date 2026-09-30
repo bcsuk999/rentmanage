@@ -158,6 +158,74 @@ tbody tr:hover { background: #f9fbff; }
 .pill-paid, .pill-fully-paid, .pill-occupied { background: #e2f6e9; color: var(--green); }
 .pill-partial, .pill-maintenance, .pill-no-period { background: #fdf1dc; color: var(--amber); }
 .pill-pending, .pill-overdue, .pill-empty { background: #fde8e8; color: var(--red); }
+.pill-full { background: #fde8e8; color: var(--red); margin-left: 4px; }
+.pill-role { background: #e6ecff; color: var(--primary-dark); }
+.pill-role:empty { display: none; }
+.btn[aria-disabled="true"] { opacity: 0.55; cursor: not-allowed; }
+
+.room-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+.room-card { display: flex; flex-direction: column; gap: 6px; margin-bottom: 0; }
+.room-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.room-label { margin: 0; }
+.room-number { font-size: 26px; margin: 0; }
+.occupancy { font-size: 17px; margin: 0; }
+.room-card-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 6px; }
+.empty-state { text-align: center; padding: 28px 16px; }
+
+/* Popup toast cards for success / error operation feedback */
+.toast-wrap {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(360px, calc(100vw - 32px));
+}
+.toast-wrap.toast-inline { position: static; max-width: none; margin-bottom: 14px; }
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-left: 5px solid var(--primary);
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(16, 24, 40, 0.16);
+  padding: 12px 12px;
+  animation: toast-in 0.25s ease-out;
+}
+.toast.flash { margin-bottom: 0; }
+.toast.flash-success { border-left-color: var(--green); }
+.toast.flash-error { border-left-color: var(--red); }
+.toast.flash-info { border-left-color: var(--primary); }
+.toast.flash-warning { border-left-color: var(--amber); }
+.toast-dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; background: var(--primary); flex: 0 0 auto; }
+.toast.flash-success .toast-dot { background: var(--green); }
+.toast.flash-error .toast-dot { background: var(--red); }
+.toast.flash-warning .toast-dot { background: var(--amber); }
+.toast-msg { flex: 1; }
+.toast-close {
+  border: 0;
+  background: transparent;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--muted);
+  padding: 0 2px;
+}
+.toast-close:hover { color: var(--ink); }
+.toast.hide { opacity: 0; transform: translateY(-6px); transition: opacity 0.3s, transform 0.3s; }
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 
 .flash { padding: 10px 12px; border-radius: 8px; margin-bottom: 14px; border: 1px solid transparent; }
 .flash-success { background: #e7f7ee; border-color: #b7e5c9; color: #0b6b3b; }

@@ -10,22 +10,19 @@ const paymentSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'RentPeriod',
       required: true,
-      index: true,
     },
     memberId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Member',
       required: true,
-      index: true,
     },
     roomId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Room',
       required: true,
-      index: true,
     },
     amount: { type: Number, required: [true, 'Amount is required'], min: [1, 'Amount must be greater than 0'] },
-    paymentDate: { type: Date, required: true, default: Date.now, index: true },
+    paymentDate: { type: Date, required: true, default: Date.now },
     paymentMethod: { type: String, enum: PAYMENT_METHODS, required: true },
     reference: { type: String, trim: true, maxlength: 120 },
     notes: { type: String, trim: true, maxlength: 500 },
@@ -35,8 +32,12 @@ const paymentSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-paymentSchema.index({ paymentDate: -1 });
+// Per-period totals (recalcPeriod), member history, room/date filtered lists and
+// cash-in-range reports.
+paymentSchema.index({ rentPeriodId: 1, paymentDate: 1 });
 paymentSchema.index({ memberId: 1, paymentDate: -1 });
+paymentSchema.index({ roomId: 1, paymentDate: -1 });
+paymentSchema.index({ paymentMethod: 1, paymentDate: -1 });
 
 module.exports = mongoose.model('Payment', paymentSchema);
 module.exports.PAYMENT_METHODS = PAYMENT_METHODS;

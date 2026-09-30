@@ -26,8 +26,9 @@ Useful scripts:
 | --- | --- |
 | `npm start` | Runs the server |
 | `npm run dev` | Runs with `node --watch` |
-| `npm run seed` | Creates/updates nothing but the admin account |
+| `npm run seed` | Creates the admin account from `.env` (skips an existing one) |
 | `npm run seed -- --demo` | Also creates sample rooms, members and payments |
+| `npm run seed -- --reset-password` | Sets the existing admin's password to `ADMIN_PASSWORD` |
 | `npm run icons` | Regenerates the PWA icon set |
 | `npm run lint` | ESLint |
 
@@ -38,10 +39,38 @@ Useful scripts:
 | `MONGODB_URI` | MongoDB connection string, e.g. `mongodb+srv://user:pass@cluster.mongodb.net/?appName=rentmanage` |
 | `SESSION_SECRET` | Long random string used to sign session cookies |
 | `PORT` | HTTP port (default `3000`) |
-| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Seeded admin credentials |
-| `ADMIN_NAME` / `ADMIN_CONTACT` | Seeded admin display name and contact |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Admin credentials. Used by `npm run seed`, and on server start to create the admin if it is missing |
+| `ADMIN_NAME` / `ADMIN_CONTACT` | Admin display name and contact |
+| `ALLOW_REGISTRATION` | `false` hides `/register` and disables self-service sign-up |
 
 `.env` is gitignored. Never commit credentials.
+
+## Accounts and roles
+
+Two roles live in the same accounts collection:
+
+| Role | Access |
+| --- | --- |
+| `admin` | Everything: rooms, members, rent periods, payments, close/reopen cycles, settings, accounts |
+| `user` | Read-only: rooms, members, payments, reports, own account. No create/edit/delete, no settings |
+
+- Sign in at `/login`; self-service sign-up at `/register` always creates a **viewer** account
+  (`ALLOW_REGISTRATION=false` turns it off).
+- An admin promotes or demotes accounts under *Settings → Accounts*. The last admin cannot be
+  demoted, and you cannot remove your own admin access.
+- Every write route is guarded server-side by `requireRole('admin')`, so a viewer posting directly
+  gets a `403` — the hidden buttons are only cosmetic.
+- The seeded/env admin is never overwritten at startup; change its password from *My account*.
+
+## Room capacity
+
+- Every room stores `capacity`, the maximum number of **active** members, and it is required when
+  creating a room.
+- Adding a member to a full room is rejected server-side; the room list shows `4 / 4` plus a **Full**
+  pill, and the room page hides *Add member*.
+- Capacity cannot be lowered below the number of members already in the room.
+- Rooms created before this feature existed get a capacity backfilled to their current occupancy by
+  `npm run seed`.
 
 ## How rent works
 
@@ -99,15 +128,33 @@ session cookie is issued over Render's HTTPS), and refuses to boot without `SESS
 The database is Atlas, so the admin user and demo data must already exist — run `npm run seed`
 locally (or `npm run seed -- --demo`) against the same `MONGODB_URI` once.
 
+## Database indexes
+
+Indexes live in the schemas and are reconciled with MongoDB on every boot
+(`Model.syncIndexes()` in `src/config/db.js`), which builds anything new and drops anything the
+schemas no longer declare. Current set:
+
+| Collection | Indexes |
+| --- | --- |
+| `rooms` | `roomNumberKey` unique (lower-cased room number, so lookups and prefix search are index-backed instead of case-insensitive regex), `status + roomNumberKey` (filtered list, sorted by room number) |
+| `members` | `roomId + status + rentStartDate` (room rollup, capacity count), `status + rentStartDate` (period generation), `name`, `mobile`, `aadhaarNumber` |
+| `rentperiods` | `memberId + startDate` unique (one cycle per member), `roomId + startDate + endDate + status` (room rollup and period list), `startDate + endDate + status` (range reports, current cycle) |
+| `payments` | `rentPeriodId + paymentDate` (per-period totals), `memberId + paymentDate`, `roomId + paymentDate`, `paymentMethod + paymentDate` |
+| `admins` | `username` unique, `role`, `role + createdAt` (accounts list) |
+
+Redundant single-field indexes that were prefixes of a compound index were dropped, and the unused
+`members.name_text` text index was removed (search runs on regex; one text index per collection also
+blocks compound text indexes). No `name: 'text'` remains.
+
 ## Structure
 
 ```
-server.js                  Express app, session, routes, error handling
-src/config/db.js           Mongoose connection
+server.js                  Express app, session, routes, role guards, error handling
+src/config/db.js           Mongoose connection + index sync
 src/models/                Room, Member, RentPeriod, Payment, Admin (+ indexes)
-src/services/              rentService, roomService, memberService, paymentService, reportService
+src/services/              rentService, roomService, memberService, paymentService, reportService, adminService
 src/routes/                auth, public, rooms, members, rentPeriods, payments, reports, settings
-src/middleware/auth.js     session guards, password rules
+src/middleware/auth.js     session guards, role guards, password rules
 src/utils/                 dates, money formatting, validation, Aadhaar masking
 src/views/                 EJS views (layout, partials, one folder per module)
 src/public/                CSS, JS, PWA manifest, service worker, icons
@@ -117,6 +164,7 @@ src/public/                CSS, JS, PWA manifest, service worker, icons
 
 - Passwords are bcrypt hashed (cost 12) and never logged or displayed.
 - Sessions are stored in MongoDB (`connect-mongo`), cookies are `httpOnly`, `sameSite=lax`, and
-  `secure` in production. Set a strong `SESSION_SECRET` and always run behind HTTPS in production.
+  `Secure` only when the request is really HTTPS (`secure: 'auto'` + `trust proxy`).
 - The session is regenerated on login and destroyed on logout.
+- Privileged routes are guarded by role server-side, not just hidden in the UI.
 - All input is validated server-side; all money and status maths is server-side.

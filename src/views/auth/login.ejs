@@ -9,6 +9,11 @@
     <label for="password">Password</label>
     <input id="password" name="password" type="password" autocomplete="current-password" required>
 
-    <button class="btn btn-primary" type="submit">Sign in</button>
+    <div class="actions">
+      <button class="btn btn-primary" type="submit">Sign in</button>
+      <% if (registrationOpen) { %>
+        <a class="btn btn-ghost" href="/register">Create account</a>
+      <% } %>
+    </div>
   </form>
 </section>

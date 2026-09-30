@@ -3,7 +3,9 @@
     <h1>Rooms</h1>
     <p class="muted">Current rental period totals for every room.</p>
   </div>
-  <a class="btn btn-primary" href="/rooms/new">+ Add room</a>
+  <% if (isAdmin) { %>
+    <a class="btn btn-primary" href="/rooms/new">+ Add room</a>
+  <% } %>
 </div>
 
 <form class="filters card" method="get" action="/rooms">
@@ -33,6 +35,43 @@
   </div>
 </form>
 
+<section class="room-grid">
+  <% if (!rooms.length) { %>
+    <div class="card empty-state">
+      <h3>No rooms found</h3>
+      <% if (isAdmin) { %>
+        <p class="muted">Add your first room <a href="/rooms/new">here</a>.</p>
+      <% } %>
+    </div>
+  <% } %>
+  <% rooms.forEach((room) => { %>
+    <article class="card room-card">
+      <div class="room-card-top">
+        <div>
+          <p class="muted small room-label">Room</p>
+          <h2 class="room-number"><%= room.roomNumber %></h2>
+        </div>
+        <span class="pill pill-<%= room.status.toLowerCase() %>"><%= room.status %></span>
+      </div>
+      <p class="occupancy"><strong><%= room.memberCount %>/<%= room.capacity %></strong> <span class="muted">occupied</span>
+        <% if (room.isFull) { %><span class="pill pill-full">Full</span><% } %>
+      </p>
+      <p class="muted small">
+        <% if (room.periodStart) { %>
+          <%= formatDateRange(room.periodStart, room.periodEnd) %>
+        <% } else { %>
+          No active cycle
+        <% } %>
+        · <span class="pill pill-<%= room.paymentState.toLowerCase().replace(/\s+/g, '-') %>"><%= room.paymentState %></span>
+      </p>
+      <div class="room-card-foot">
+        <span class="muted small"><%= currency(room.totalPending) %> pending</span>
+        <a class="btn btn-primary" href="/rooms/<%= room._id %>">Details</a>
+      </div>
+    </article>
+  <% }) %>
+</section>
+
 <section class="card">
   <div class="stat-row">
     <div class="stat"><span class="label">Rooms</span><span class="value"><%= grand.roomCount %></span></div>
@@ -41,46 +80,4 @@
     <div class="stat"><span class="label">Paid</span><span class="value paid"><%= currency(grand.totalPaid) %></span></div>
     <div class="stat"><span class="label">Pending</span><span class="value pending"><%= currency(grand.totalPending) %></span></div>
   </div>
-</section>
-
-<section class="card table-wrap">
-  <table class="stack">
-    <thead>
-      <tr>
-        <th>Room</th>
-        <th>Members</th>
-        <th>Current rent period</th>
-        <th class="num">Total rent</th>
-        <th class="num">Paid</th>
-        <th class="num">Pending</th>
-        <th>Room status</th>
-        <th>Payment</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      <% if (!rooms.length) { %>
-        <tr><td colspan="9" class="empty" data-label="">No rooms match this view. <a href="/rooms/new">Add the first room</a>.</td></tr>
-      <% } %>
-      <% rooms.forEach((room) => { %>
-        <tr>
-          <td data-label="Room"><a href="/rooms/<%= room._id %>"><strong><%= room.roomNumber %></strong></a></td>
-          <td data-label="Members"><%= room.memberCount %></td>
-          <td data-label="Current period">
-            <% if (room.periodStart) { %>
-              <%= formatDateRange(room.periodStart, room.periodEnd) %>
-            <% } else { %>
-              <span class="muted">No active cycle</span>
-            <% } %>
-          </td>
-          <td class="num" data-label="Total rent"><%= currency(room.totalRent) %></td>
-          <td class="num paid" data-label="Paid"><%= currency(room.totalPaid) %></td>
-          <td class="num pending" data-label="Pending"><%= currency(room.totalPending) %></td>
-          <td data-label="Room status"><span class="pill pill-<%= room.status.toLowerCase() %>"><%= room.status %></span></td>
-          <td data-label="Payment"><span class="pill pill-<%= room.paymentState.toLowerCase().replace(/\s+/g, '-') %>"><%= room.paymentState %></span></td>
-          <td class="row-actions" data-label=""><a class="btn btn-ghost" href="/rooms/<%= room._id %>">Open</a> <a class="btn btn-ghost" href="/rooms/<%= room._id %>/edit">Edit</a></td>
-        </tr>
-      <% }) %>
-    </tbody>
-  </table>
 </section>

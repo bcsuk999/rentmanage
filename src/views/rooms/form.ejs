@@ -12,6 +12,10 @@
     <label for="roomNumber">Room number / ID</label>
     <input id="roomNumber" name="roomNumber" value="<%= room.roomNumber || '' %>" required maxlength="40" placeholder="101">
 
+    <label for="capacity">Capacity (max members)</label>
+    <input id="capacity" name="capacity" type="number" value="<%= room.capacity || 1 %>" required min="1" max="100" step="1" inputmode="numeric">
+    <small class="muted">The room cannot hold more active members than this number.</small>
+
     <label for="status">Room status</label>
     <select id="status" name="status">
       <% statuses.forEach((s) => { %>

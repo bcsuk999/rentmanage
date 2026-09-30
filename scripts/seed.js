@@ -46,17 +46,31 @@ async function seedAdmin() {
   return admin;
 }
 
+/** Rooms created before capacities existed get one that fits their members. */
+async function backfillCapacity() {
+  const rooms = await Room.find({ $or: [{ capacity: { $exists: false } }, { capacity: null }] });
+  for (const room of rooms) {
+    const activeMembers = await Member.countDocuments({ roomId: room._id, status: 'active' });
+    room.capacity = Math.max(1, activeMembers);
+    await room.save();
+  }
+  if (rooms.length) {
+    console.log(`Backfilled capacity for ${rooms.length} existing room(s).`);
+  }
+}
+
 async function seedDemo() {
   const reference = today();
   const rooms = [
-    { roomNumber: '101', status: 'Occupied' },
-    { roomNumber: '102', status: 'Occupied' },
-    { roomNumber: '103', status: 'Empty' },
-    { roomNumber: '104', status: 'Maintenance', notes: 'Painting work in progress' },
+    { roomNumber: '101', status: 'Occupied', capacity: 4 },
+    { roomNumber: '102', status: 'Occupied', capacity: 3 },
+    { roomNumber: '103', status: 'Empty', capacity: 2 },
+    { roomNumber: '104', status: 'Maintenance', capacity: 1, notes: 'Painting work in progress' },
   ];
   for (const room of rooms) {
-    const exists = await Room.findOne({ roomNumber: room.roomNumber });
+    const exists = await Room.findOne({ roomNumberKey: room.roomNumber.toLowerCase() });
     if (!exists) await Room.create(room);
+    else if (!exists.capacity) await Room.updateOne({ _id: exists._id }, { $set: { capacity: room.capacity } });
   }
 
   const people = [
@@ -69,7 +83,7 @@ async function seedDemo() {
   ];
 
   for (const person of people) {
-    const room = await Room.findOne({ roomNumber: person.roomNumber });
+    const room = await Room.findOne({ roomNumberKey: person.roomNumber.toLowerCase() });
     const exists = await Member.findOne({ roomId: room._id, name: person.name });
     if (exists) continue;
     const start = addDays(cycleAt(reference, -person.monthsAgo).start, 0);
@@ -110,6 +124,7 @@ async function seedDemo() {
   try {
     await connectDb();
     await seedAdmin();
+    await backfillCapacity();
     if (DEMO) await seedDemo();
     process.exit(0);
   } catch (err) {

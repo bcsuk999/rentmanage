@@ -7,8 +7,20 @@
   };
 %>
 <% if (typeof error !== 'undefined' && error) { %>
-  <div class="flash flash-error"><%= error %></div>
+  <div class="toast-wrap toast-inline" role="alert">
+    <div class="toast flash flash-error" data-toast>
+      <span class="toast-dot" aria-hidden="true"></span>
+      <span class="toast-msg"><%= error %></span>
+      <button class="toast-close" type="button" data-toast-close aria-label="Dismiss">×</button>
+    </div>
+  </div>
 <% } %>
 <% if (typeof errors !== 'undefined' && errors && errors.filter((e) => !e.field).length) { %>
-  <div class="flash flash-error"><%= errors.filter((e) => !e.field).map((e) => e.message).join(' ') %></div>
+  <div class="toast-wrap toast-inline" role="alert">
+    <div class="toast flash flash-error" data-toast>
+      <span class="toast-dot" aria-hidden="true"></span>
+      <span class="toast-msg"><%= errors.filter((e) => !e.field).map((e) => e.message).join(' ') %></span>
+      <button class="toast-close" type="button" data-toast-close aria-label="Dismiss">×</button>
+    </div>
+  </div>
 <% } %>

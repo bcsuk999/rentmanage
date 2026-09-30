@@ -24,6 +24,21 @@ async function assertRoom(roomId) {
   return room;
 }
 
+/** A room cannot hold more active members than its capacity. */
+async function assertRoomHasSpace(room, field = 'roomId') {
+  const capacity = Number(room.capacity);
+  if (!Number.isFinite(capacity) || capacity < 1) return;
+  const activeMembers = await Member.countDocuments({ roomId: room._id, status: 'active' });
+  if (activeMembers >= capacity) {
+    throw new ValidationError([
+      {
+        field,
+        message: `Room ${room.roomNumber} is full: capacity is ${capacity} member(s) and all are occupied`,
+      },
+    ]);
+  }
+}
+
 /** Add a member to a room and open their first rental cycle. */
 async function createMember(body) {
   const room = await assertRoom(body.roomId);
@@ -32,6 +47,7 @@ async function createMember(body) {
       { field: 'roomId', message: 'This room is under maintenance; change its status first' },
     ]);
   }
+  await assertRoomHasSpace(room);
   const rentStartDate = requireDate(body.rentStartDate, 'Rent start date');
   if (rentStartDate > today()) {
     throw new ValidationError([
@@ -227,6 +243,7 @@ async function memberDetail(id) {
 }
 
 module.exports = {
+  assertRoomHasSpace,
   createMember,
   memberDetail,
   searchMembers,

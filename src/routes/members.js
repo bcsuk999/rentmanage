@@ -3,6 +3,7 @@
 const express = require('express');
 const memberService = require('../services/memberService');
 const Room = require('../models/Room');
+const { requireRole } = require('../middleware/auth');
 const { fieldErrors, firstErrorMessage, wrap } = require('../utils/http');
 const { cycleEnd, formatDateRange, parseDateInput, toDateInput, today } = require('../utils/dates');
 const { maskAadhaar } = require('../utils/mask');
@@ -52,6 +53,7 @@ router.get(
 
 router.get(
   '/:id/edit',
+  requireRole('admin'),
   wrap(async (req, res) => {
     const detail = await memberService.memberDetail(req.params.id);
     res.render('members/form', {
@@ -75,6 +77,7 @@ router.get(
 
 router.post(
   '/:id',
+  requireRole('admin'),
   wrap(async (req, res) => {
     try {
       const member = await memberService.updateMember(req.params.id, req.body);
@@ -97,6 +100,7 @@ router.post(
 
 router.get(
   '/:id/vacate',
+  requireRole('admin'),
   wrap(async (req, res) => {
     const detail = await memberService.memberDetail(req.params.id);
     const outstanding = detail.outstanding;
@@ -120,6 +124,7 @@ router.get(
 
 router.post(
   '/:id/vacate',
+  requireRole('admin'),
   wrap(async (req, res) => {
     try {
       const result = await memberService.vacateMember(req.params.id, req.body);

@@ -92,6 +92,41 @@ function optionalAadhaar(value, field = 'Aadhaar') {
   return v;
 }
 
+/** Whole number of people a room can hold (1..100). */
+function requireCapacity(value, field = 'Capacity') {
+  const raw = str(value);
+  if (!raw) throw new ValidationError([{ field, message: `${field} is required` }]);
+  if (!/^[0-9]+$/.test(raw)) {
+    throw new ValidationError([{ field, message: `${field} must be a whole number` }]);
+  }
+  const capacity = Number(raw);
+  if (capacity < 1) {
+    throw new ValidationError([{ field, message: `${field} must be at least 1` }]);
+  }
+  if (capacity > 100) {
+    throw new ValidationError([{ field, message: `${field} cannot be more than 100` }]);
+  }
+  return capacity;
+}
+
+/** Usernames are lowercase letters, digits, dot, dash and underscore. */
+function requireUsername(value, field = 'Username') {
+  const v = str(value).toLowerCase();
+  if (!v) throw new ValidationError([{ field, message: `${field} is required` }]);
+  if (v.length < 3) {
+    throw new ValidationError([{ field, message: `${field} must be at least 3 characters` }]);
+  }
+  if (v.length > 40) {
+    throw new ValidationError([{ field, message: `${field} must be 40 characters or fewer` }]);
+  }
+  if (!/^[a-z0-9._-]+$/.test(v)) {
+    throw new ValidationError([
+      { field, message: `${field} may only use letters, numbers, dot, dash and underscore` },
+    ]);
+  }
+  return v;
+}
+
 function collect(validator) {
   const errors = [];
   const safe = (fn) => {
@@ -117,8 +152,10 @@ module.exports = {
   optionalDate,
   optionalText,
   requireAmount,
+  requireCapacity,
   requireDate,
   requireMobile,
   requireText,
+  requireUsername,
   str,
 };

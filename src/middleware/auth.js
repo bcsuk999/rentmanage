@@ -30,9 +30,39 @@ function requireAuth(req, res, next) {
   return res.redirect('/login');
 }
 
+/** True when the signed-in account holds one of the given roles. */
+function hasRole(user, ...roles) {
+  return Boolean(user && roles.includes(user.role));
+}
+
+/**
+ * Route guard for privileged actions. Signed-in accounts without the role get a
+ * 403 instead of a redirect, so the UI and the server agree on who may do what.
+ */
+function requireRole(...roles) {
+  return (req, res, next) => {
+    if (!req.session || !req.session.adminId) {
+      req.session.flash = { type: 'error', message: 'Please sign in to continue.' };
+      return res.redirect('/login');
+    }
+    if (hasRole(req.session.admin, ...roles)) return next();
+    return res.status(403).render('error', {
+      title: 'Not allowed',
+      message: 'Your account does not have permission to do that. Ask an admin for access.',
+    });
+  };
+}
+
 function redirectIfAuthed(req, res, next) {
   if (req.session && req.session.adminId) return res.redirect('/rooms');
   return next();
 }
 
-module.exports = { attachUser, redirectIfAuthed, requireAuth, validatePassword };
+module.exports = {
+  attachUser,
+  hasRole,
+  redirectIfAuthed,
+  requireAuth,
+  requireRole,
+  validatePassword,
+};

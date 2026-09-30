@@ -1,15 +1,43 @@
 <div class="page-head">
   <div>
-    <h1>Admin accounts</h1>
-    <p class="muted">Passwords are stored as bcrypt hashes and never displayed.</p>
+    <h1>Accounts</h1>
+    <p class="muted">Admins manage rooms, members, payments and settings. Viewer accounts are read-only.</p>
   </div>
   <a class="btn btn-ghost" href="/settings">Back</a>
 </div>
 
+<section class="card narrow">
+  <h2>Create account</h2>
+  <form method="post" action="/settings/admins" class="form">
+    <label for="name">Name</label>
+    <input id="name" name="name" maxlength="80">
+
+    <label for="username">Username</label>
+    <input id="username" name="username" required minlength="3" maxlength="40" pattern="[A-Za-z0-9._-]+">
+
+    <label for="contact">Contact (optional)</label>
+    <input id="contact" name="contact" maxlength="120">
+
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" required autocomplete="new-password">
+    <small class="muted">At least 8 characters with upper case, lower case and a number.</small>
+
+    <label for="role">Role</label>
+    <select id="role" name="role">
+      <option value="user">Viewer (read-only)</option>
+      <option value="admin">Admin (full access)</option>
+    </select>
+
+    <div class="actions">
+      <button class="btn btn-primary" type="submit">Create account</button>
+    </div>
+  </form>
+</section>
+
 <section class="card table-wrap">
   <table>
     <thead>
-      <tr><th>Name</th><th>Username</th><th>Contact</th><th>Role</th><th>Created</th><th>Last login</th></tr>
+      <tr><th>Name</th><th>Username</th><th>Contact</th><th>Role</th><th>Created</th><th>Last login</th><th></th></tr>
     </thead>
     <tbody>
       <% admins.forEach((a) => { %>
@@ -17,9 +45,16 @@
           <td><strong><%= a.name %></strong></td>
           <td><%= a.username %></td>
           <td class="muted"><%= a.contact || '-' %></td>
-          <td><%= a.role %></td>
+          <td><span class="pill pill-role"><%= a.role === 'admin' ? 'Admin' : 'Viewer' %></span></td>
           <td><%= a.createdAtLabel %></td>
           <td><%= a.lastLogin %></td>
+          <td class="row-actions">
+            <form method="post" action="/settings/admins/role" class="inline">
+              <input type="hidden" name="id" value="<%= a._id %>">
+              <input type="hidden" name="role" value="<%= a.role === 'admin' ? 'user' : 'admin' %>">
+              <button class="btn btn-ghost" type="submit"><%= a.role === 'admin' ? 'Make viewer' : 'Make admin' %></button>
+            </form>
+          </td>
         </tr>
       <% }) %>
     </tbody>

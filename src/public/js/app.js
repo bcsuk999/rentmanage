@@ -22,9 +22,14 @@ document.addEventListener('DOMContentLoaded', () => {
     button.addEventListener('click', () => window.location.reload());
   });
 
-  // Auto-dismiss flash messages.
-  document.querySelectorAll('.flash').forEach((el) => {
-    window.setTimeout(() => el.remove(), 8000);
+  // Popup toast cards: manual close + auto-dismiss.
+  document.querySelectorAll('[data-toast]').forEach((el) => {
+    const dismiss = () => {
+      el.classList.add('hide');
+      window.setTimeout(() => el.remove(), 350);
+    };
+    el.querySelector('[data-toast-close]')?.addEventListener('click', dismiss);
+    window.setTimeout(dismiss, 8000);
   });
 
   // Pre-select the pending amount when adding a payment.
