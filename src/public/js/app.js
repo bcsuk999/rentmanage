@@ -18,6 +18,24 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
+  // Button spinner while a request is loading: disable the submit button and
+  // show a spinner so double taps cannot fire the request twice. The next
+  // page load renders a fresh button, so no reset is needed.
+  document.querySelectorAll('form').forEach((form) => {
+    form.addEventListener('submit', (event) => {
+      // Skip when another handler cancelled the submit (e.g. confirm dialog).
+      if (event.defaultPrevented) return;
+      const button = form.querySelector('button[type="submit"]');
+      if (!button || button.disabled) return;
+      button.disabled = true;
+      button.classList.add('btn-loading');
+      const spinner = document.createElement('span');
+      spinner.className = 'btn-spinner';
+      spinner.setAttribute('aria-hidden', 'true');
+      button.prepend(spinner);
+    });
+  });
+
   document.querySelectorAll('[data-reload]').forEach((button) => {
     button.addEventListener('click', () => window.location.reload());
   });
