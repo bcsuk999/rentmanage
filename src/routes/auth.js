@@ -11,7 +11,7 @@ const { toDateInput } = require('../utils/dates');
 const router = express.Router();
 
 router.get('/login', redirectIfAuthed, (req, res) => {
-  res.render('auth/login', { title: 'Sign in', body: { username: '' }, errors: [] });
+  res.render('auth/login', { title: 'Sign in', form: { username: '' }, errors: [] });
 });
 
 router.post(
@@ -24,7 +24,7 @@ router.post(
     if (!admin || !ok) {
       return res.status(401).render('auth/login', {
         title: 'Sign in',
-        body: { username },
+        form: { username },
         errors: [{ message: 'Invalid username or password' }],
       });
     }
@@ -52,7 +52,7 @@ router.post('/logout', (req, res) => {
 });
 
 router.get('/change-password', (req, res) => {
-  res.render('auth/change-password', { title: 'Change password', body: {}, errors: [] });
+  res.render('auth/change-password', { title: 'Change password', form: {}, errors: [] });
 });
 
 router.post(
@@ -77,7 +77,7 @@ router.post(
     if (errors.length) {
       return res.status(422).render('auth/change-password', {
         title: 'Change password',
-        body: { ...req.body, newPassword: '', confirmPassword: '' },
+        form: { ...req.body, newPassword: '', confirmPassword: '' },
         errors: fieldErrors(new ValidationError(errors)),
       });
     }

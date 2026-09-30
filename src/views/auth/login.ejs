@@ -4,7 +4,7 @@
   <%- include('../partials/errors') %>
   <form method="post" action="/login" class="form">
     <label for="username">Username</label>
-    <input id="username" name="username" value="<%= body.username || '' %>" autocomplete="username" required autofocus>
+    <input id="username" name="username" value="<%= form.username || '' %>" autocomplete="username" required autofocus>
 
     <label for="password">Password</label>
     <input id="password" name="password" type="password" autocomplete="current-password" required>

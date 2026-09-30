@@ -24,6 +24,7 @@ const settingsRoutes = require('./src/routes/settings');
 const { currency } = require('./src/utils/format');
 const dates = require('./src/utils/dates');
 const { maskAadhaar } = require('./src/utils/mask');
+const { ensureAdminFromEnv } = require('./src/services/adminService');
 
 const app = express();
 const viewsDir = path.join(__dirname, 'src', 'views');
@@ -62,7 +63,11 @@ app.use(
     cookie: {
       httpOnly: true,
       sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      // 'auto' marks the cookie Secure only when the request really is HTTPS, so
+      // a plain-http visit does not silently drop the session and bounce to /login.
+      secure: 'auto',
+      // Needed so the Secure decision honours X-Forwarded-Proto behind Render.
+      proxy: true,
       maxAge: 1000 * 60 * 60 * 8,
     },
   })
@@ -117,6 +122,7 @@ const PORT = Number(process.env.PORT) || 3000;
 
 async function start() {
   await connectDb();
+  await ensureAdminFromEnv();
   return app.listen(PORT, () => {
     console.log(`Rent management app running on http://localhost:${PORT}`);
   });

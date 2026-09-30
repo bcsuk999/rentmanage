@@ -17,13 +17,22 @@ const rentService = require('../src/services/rentService');
 const { addDays, cycleAt, today } = require('../src/utils/dates');
 
 const DEMO = process.argv.includes('--demo');
+const RESET_PASSWORD = process.argv.includes('--reset-password');
 
 async function seedAdmin() {
   const username = (process.env.ADMIN_USERNAME || 'admin').toLowerCase();
   const password = process.env.ADMIN_PASSWORD || 'Admin@123';
   const existing = await Admin.findOne({ username });
   if (existing) {
-    console.log(`Admin "${username}" already exists; leaving it untouched.`);
+    if (!RESET_PASSWORD) {
+      console.log(`Admin "${username}" already exists; leaving it untouched.`);
+      console.log('Run "npm run seed -- --reset-password" to set it to ADMIN_PASSWORD.');
+      return existing;
+    }
+    existing.passwordHash = await bcrypt.hash(password, 12);
+    if (process.env.ADMIN_NAME) existing.name = process.env.ADMIN_NAME;
+    await existing.save();
+    console.log(`Reset password for admin "${username}" to the ADMIN_PASSWORD value.`);
     return existing;
   }
   const admin = await Admin.create({

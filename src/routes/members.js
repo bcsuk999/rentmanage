@@ -106,7 +106,7 @@ router.get(
       room: detail.room,
       current: detail.current,
       outstanding,
-      body: {
+      form: {
         vacatingDate: toDateInput(today()),
         finalPeriod: detail.current ? toDateInput(detail.current.endDate) : '',
         outstandingAmount: String(outstanding),
@@ -136,7 +136,7 @@ router.post(
         room: detail ? detail.room : null,
         current: detail ? detail.current : null,
         outstanding: detail ? detail.outstanding : 0,
-        body: req.body,
+        form: req.body,
         errors: fieldErrors(err),
         error: firstErrorMessage(err),
       });
