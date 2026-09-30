@@ -1,0 +1,149 @@
+<div class="page-head">
+  <div>
+    <h1><%= member.name %></h1>
+    <p class="muted">
+      Room <a href="/rooms/<%= room ? room._id : '' %>"><%= room ? room.roomNumber : '-' %></a>
+      · <span class="pill pill-<%= member.status === 'active' ? 'occupied' : 'empty' %>"><%= member.status === 'active' ? 'Active' : 'Vacated' %></span>
+      <% if (member.vacatingDate) { %> · vacated on <%= formatDate(member.vacatingDate) %><% } %>
+    </p>
+  </div>
+  <div class="actions">
+    <% if (member.status === 'active') { %>
+      <a class="btn btn-primary" href="/members/<%= member._id %>/edit">Edit</a>
+      <a class="btn btn-warn" href="/members/<%= member._id %>/vacate">Vacate</a>
+    <% } %>
+  </div>
+</div>
+
+<section class="card">
+  <h2>Personal information</h2>
+  <div class="detail-grid">
+    <div><span class="label">Name</span><span class="value"><%= member.name %></span></div>
+    <div><span class="label">Mobile</span><span class="value"><%= member.mobile %></span></div>
+    <div><span class="label">Aadhaar</span><span class="value masked"><%= maskAadhaar(member.aadhaarNumber) || 'Not provided' %></span></div>
+    <div><span class="label">Room</span><span class="value"><%= room ? room.roomNumber : '-' %></span></div>
+    <div><span class="label">Joining date</span><span class="value"><%= formatDate(member.joiningDate) %></span></div>
+    <div><span class="label">Rent cycle anchor</span><span class="value"><%= formatDate(member.rentStartDate) %></span></div>
+    <div><span class="label">Monthly rent</span><span class="value"><%= currency(member.monthlyRent) %></span></div>
+    <div><span class="label">Address</span><span class="value"><%= member.address || '-' %></span></div>
+    <div><span class="label">Emergency contact</span><span class="value"><%= member.emergencyContact || '-' %></span></div>
+    <div><span class="label">Lifetime paid</span><span class="value paid"><%= currency(paidTotal) %></span></div>
+    <div><span class="label">Lifetime outstanding</span><span class="value pending"><%= currency(outstanding) %></span></div>
+  </div>
+  <% if (member.notes) { %><p class="note"><%= member.notes %></p><% } %>
+</section>
+
+<% if (current) { %>
+  <section class="card">
+    <h2>Current rent period <span class="muted small"><%= currentRangeLabel %></span></h2>
+    <div class="stat-row">
+      <div class="stat"><span class="label">Rent</span><span class="value"><%= currency(current.rentAmount) %></span></div>
+      <div class="stat"><span class="label">Paid</span><span class="value paid"><%= currency(current.paidAmount) %></span></div>
+      <div class="stat"><span class="label">Pending</span><span class="value pending"><%= currency(current.pendingAmount) %></span></div>
+      <div class="stat"><span class="label">Status</span><span class="value"><span class="pill pill-<%= current.status.toLowerCase() %>"><%= current.status %></span></span></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Add payment</h2>
+    <% if (current.isClosed || member.status !== 'active') { %>
+      <p class="flash flash-info">
+        <%= current.isClosed ? 'This rent period is closed.' : 'This member is vacated.' %>
+        Payments can only be recorded against an open period of an active member.
+      </p>
+    <% } else { %>
+      <form method="post" action="/payments" class="form inline-form">
+        <input type="hidden" name="rentPeriodId" value="<%= current._id %>">
+        <input type="hidden" name="returnTo" value="/members/<%= member._id %>">
+        <div class="field">
+          <label for="amount">Amount (₹)</label>
+          <input id="amount" name="amount" required inputmode="decimal" value="<%= current.pendingAmount > 0 ? current.pendingAmount : '' %>">
+        </div>
+        <div class="field">
+          <label for="paymentDate">Payment date</label>
+          <input id="paymentDate" name="paymentDate" type="date" required value="<%= today %>" min="<%= toDateInput(current.startDate) %>" max="<%= toDateInput(current.endDate) %>">
+        </div>
+        <div class="field">
+          <label for="paymentMethod">Method</label>
+          <select id="paymentMethod" name="paymentMethod">
+            <% ['Cash', 'UPI', 'Bank Transfer', 'Other'].forEach((m) => { %><option value="<%= m %>"><%= m %></option><% }) %>
+          </select>
+        </div>
+        <div class="field">
+          <label for="reference">Reference (optional)</label>
+          <input id="reference" name="reference" maxlength="120">
+        </div>
+        <div class="field">
+          <label for="paymentNotes">Notes (optional)</label>
+          <input id="paymentNotes" name="notes" maxlength="500">
+        </div>
+        <div class="field actions">
+          <button class="btn btn-primary" type="submit">Record payment</button>
+        </div>
+      </form>
+      <small class="muted">Pending for this period: <%= currency(current.pendingAmount) %></small>
+    <% } %>
+  </section>
+<% } %>
+
+<section class="card table-wrap">
+  <h2>Rent period history</h2>
+  <table class="stack">
+    <thead>
+      <tr>
+        <th>Rent period</th>
+        <th class="num">Rent</th>
+        <th class="num">Paid</th>
+        <th class="num">Pending</th>
+        <th>Status</th>
+        <th>Payments</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      <% if (!periods.length) { %>
+        <tr><td colspan="7" class="empty" data-label="">No rent periods generated yet.</td></tr>
+      <% } %>
+      <% periods.forEach((period) => { %>
+        <tr>
+          <td data-label="Rent period"><%= formatDateRange(period.startDate, period.endDate) %></td>
+          <td class="num" data-label="Rent"><%= currency(period.rentAmount) %></td>
+          <td class="num paid" data-label="Paid"><%= currency(period.paidAmount) %></td>
+          <td class="num pending" data-label="Pending"><%= currency(period.pendingAmount) %></td>
+          <td data-label="Status"><span class="pill pill-<%= period.status.toLowerCase() %>"><%= period.status %></span></td>
+          <td data-label="Payments"><%= (paymentsByPeriod.get(period._id.toString()) || []).length %></td>
+          <td class="row-actions" data-label=""><a class="btn btn-ghost" href="/rent-periods/<%= period._id %>">Payments</a></td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+</section>
+
+<section class="card table-wrap">
+  <h2>Payment history</h2>
+  <table class="stack">
+    <thead>
+      <tr><th>Date</th><th>Rent period</th><th class="num">Amount</th><th>Method</th><th>Reference</th><th>Notes</th></tr>
+    </thead>
+    <tbody>
+      <% if (!payments.length) { %>
+        <tr><td colspan="6" class="empty" data-label="">No payments recorded.</td></tr>
+      <% } %>
+      <% payments.forEach((p) => { %>
+        <tr>
+          <td data-label="Date"><%= formatDate(p.paymentDate) %></td>
+          <td data-label="Rent period">
+            <a href="/rent-periods/<%= p.rentPeriodId._id || p.rentPeriodId %>">
+              <%= formatDateRange(p.rentPeriodId.startDate, p.rentPeriodId.endDate) %>
+            </a>
+          </td>
+          <td class="num paid" data-label="Amount"><%= currency(p.amount) %></td>
+          <td data-label="Method"><%= p.paymentMethod %></td>
+          <td class="muted" data-label="Reference"><%= p.reference || '-' %></td>
+          <td class="muted" data-label="Notes"><%= p.notes || '-' %></td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+  <p class="muted small">Payment records are never deleted; corrections are added as new transactions.</p>
+</section>

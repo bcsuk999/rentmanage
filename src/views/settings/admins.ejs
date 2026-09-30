@@ -1,0 +1,27 @@
+<div class="page-head">
+  <div>
+    <h1>Admin accounts</h1>
+    <p class="muted">Passwords are stored as bcrypt hashes and never displayed.</p>
+  </div>
+  <a class="btn btn-ghost" href="/settings">Back</a>
+</div>
+
+<section class="card table-wrap">
+  <table>
+    <thead>
+      <tr><th>Name</th><th>Username</th><th>Contact</th><th>Role</th><th>Created</th><th>Last login</th></tr>
+    </thead>
+    <tbody>
+      <% admins.forEach((a) => { %>
+        <tr>
+          <td><strong><%= a.name %></strong></td>
+          <td><%= a.username %></td>
+          <td class="muted"><%= a.contact || '-' %></td>
+          <td><%= a.role %></td>
+          <td><%= a.createdAtLabel %></td>
+          <td><%= a.lastLogin %></td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+</section>

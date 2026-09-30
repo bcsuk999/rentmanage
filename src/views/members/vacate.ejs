@@ -1,0 +1,32 @@
+<div class="page-head">
+  <div>
+    <h1>Vacate <%= member ? member.name : 'member' %></h1>
+    <p class="muted">The member is deactivated, never deleted. Rent and payment history stays available.</p>
+  </div>
+  <a class="btn btn-ghost" href="<%= member ? `/members/${member._id}` : '/members' %>">Cancel</a>
+</div>
+
+<section class="card narrow">
+  <%- include('../partials/errors') %>
+  <form method="post" action="/members/<%= member ? member._id : '' %>/vacate" class="form" data-confirm="Vacate this member?">
+    <label for="vacatingDate">Vacating date <span class="req">*</span></label>
+    <input id="vacatingDate" name="vacatingDate" type="date" required value="<%= body.vacatingDate || '' %>">
+
+    <label for="finalPeriod">Final rent period (end date)</label>
+    <input id="finalPeriod" name="finalPeriod" type="date" value="<%= body.finalPeriod || '' %>">
+    <small class="muted">
+      Current cycle ends <%= current ? formatDate(current.endDate) : '-' %>.
+      Cycles starting after the vacating date are removed if no money was recorded against them.
+    </small>
+
+    <label>Outstanding amount (server calculated)</label>
+    <p class="readonly-value pending"><%= currency(outstanding) %></p>
+
+    <label for="notes">Notes (optional)</label>
+    <textarea id="notes" name="notes" rows="2" maxlength="1000"><%= body.notes || '' %></textarea>
+
+    <div class="actions">
+      <button class="btn btn-warn" type="submit">Vacate member</button>
+    </div>
+  </form>
+</section>

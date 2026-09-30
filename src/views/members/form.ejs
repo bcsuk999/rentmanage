@@ -1,0 +1,48 @@
+<div class="page-head">
+  <div>
+    <h1><%= mode === 'create' ? 'Add member' : `Edit ${member.name}` %></h1>
+    <p class="muted">
+      <% if (room) { %>Room <strong><%= room.roomNumber %></strong> · <% } %>
+      The rent cycle runs from the rent start date to the day before the next cycle.
+    </p>
+  </div>
+  <a class="btn btn-ghost" href="<%= mode === 'create' && room ? `/rooms/${room._id}` : `/members/${member._id}` %>">Back</a>
+</div>
+
+<section class="card narrow">
+  <%- include('../partials/errors') %>
+  <form method="post" action="<%= mode === 'create' ? `/rooms/${room ? room._id : ''}/members` : `/members/${member._id}` %>" class="form">
+    <label for="name">Name <span class="req">*</span></label>
+    <input id="name" name="name" value="<%= member.name || '' %>" required maxlength="120">
+
+    <label for="mobile">Mobile number <span class="req">*</span></label>
+    <input id="mobile" name="mobile" value="<%= member.mobile || '' %>" required inputmode="numeric" pattern="[0-9]{10}" maxlength="10" placeholder="10 digits">
+
+    <label for="aadhaarNumber">Aadhaar number (optional)</label>
+    <input id="aadhaarNumber" name="aadhaarNumber" value="<%= member.aadhaarNumber || '' %>" inputmode="numeric" maxlength="14" placeholder="12 digits">
+    <small class="muted">Stored securely and always shown masked (XXXX XXXX 1234).</small>
+
+    <label for="monthlyRent">Monthly rent (₹) <span class="req">*</span></label>
+    <input id="monthlyRent" name="monthlyRent" value="<%= member.monthlyRent || '' %>" required inputmode="decimal" placeholder="8000">
+
+    <label for="rentStartDate">Rent start date <span class="req">*</span></label>
+    <input id="rentStartDate" name="rentStartDate" type="date" value="<%= toDateInput(member.rentStartDate) %>" required>
+    <small class="muted">
+      <% if (cycleEndPreview) { %>First cycle: <%= formatDateRange(member.rentStartDate, cycleEndPreview) %><% } else { %>Pick a rent start date to see the first cycle.<% } %>
+    </small>
+
+    <label for="address">Address (optional)</label>
+    <textarea id="address" name="address" rows="2" maxlength="500"><%= member.address || '' %></textarea>
+
+    <label for="emergencyContact">Emergency contact (optional)</label>
+    <input id="emergencyContact" name="emergencyContact" value="<%= member.emergencyContact || '' %>" maxlength="120">
+
+    <label for="notes">Notes (optional)</label>
+    <textarea id="notes" name="notes" rows="2" maxlength="1000"><%= member.notes || '' %></textarea>
+
+    <div class="actions">
+      <button class="btn btn-primary" type="submit"><%= mode === 'create' ? 'Add member' : 'Save changes' %></button>
+      <a class="btn btn-ghost" href="<%= mode === 'create' && room ? `/rooms/${room._id}` : `/members/${member._id}` %>">Cancel</a>
+    </div>
+  </form>
+</section>

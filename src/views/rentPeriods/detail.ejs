@@ -1,0 +1,99 @@
+<div class="page-head">
+  <div>
+    <h1>Rent period</h1>
+    <p class="muted">
+      <a href="/rooms/<%= room ? room._id : '' %>">Room <%= room ? room.roomNumber : '-' %></a>
+      · <a href="/members/<%= member ? member._id : '' %>"><%= member ? member.name : '-' %></a>
+      · <%= rangeLabel %>
+    </p>
+  </div>
+  <div class="actions">
+    <% if (period.isClosed) { %>
+      <form method="post" action="/rent-periods/<%= period._id %>/reopen" class="inline">
+        <button class="btn btn-ghost" type="submit">Reopen period</button>
+      </form>
+    <% } else { %>
+      <form method="post" action="/rent-periods/<%= period._id %>/close" class="inline" data-confirm="Close this rent period? No further payments can be recorded.">
+        <button class="btn btn-warn" type="submit">Close period</button>
+      </form>
+    <% } %>
+  </div>
+</div>
+
+<section class="card">
+  <div class="stat-row">
+    <div class="stat"><span class="label">Period</span><span class="value small"><%= rangeLabel %></span></div>
+    <div class="stat"><span class="label">Rent</span><span class="value"><%= currency(period.rentAmount) %></span></div>
+    <div class="stat"><span class="label">Paid</span><span class="value paid"><%= currency(period.paidAmount) %></span></div>
+    <div class="stat"><span class="label">Pending</span><span class="value pending"><%= currency(period.pendingAmount) %></span></div>
+    <div class="stat">
+      <span class="label">Status</span>
+      <span class="value"><span class="pill pill-<%= period.status.toLowerCase() %>"><%= period.status %></span></span>
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Add payment</h2>
+  <% if (period.isClosed || !member || member.status !== 'active') { %>
+    <p class="flash flash-info">
+      <%= period.isClosed ? 'This rent period is closed.' : 'This member is vacated.' %>
+      Payments cannot be recorded here.
+    </p>
+  <% } else { %>
+    <form method="post" action="/payments" class="form inline-form">
+      <input type="hidden" name="rentPeriodId" value="<%= period._id %>">
+      <input type="hidden" name="returnTo" value="/rent-periods/<%= period._id %>">
+      <div class="field">
+        <label for="amount">Amount (₹)</label>
+        <input id="amount" name="amount" required inputmode="decimal" value="<%= period.pendingAmount > 0 ? period.pendingAmount : '' %>">
+      </div>
+      <div class="field">
+        <label for="paymentDate">Payment date</label>
+        <input id="paymentDate" name="paymentDate" type="date" required value="<%= today %>" min="<%= toDateInput(period.startDate) %>" max="<%= toDateInput(period.endDate) %>">
+      </div>
+      <div class="field">
+        <label for="paymentMethod">Method</label>
+        <select id="paymentMethod" name="paymentMethod">
+          <% methods.forEach((m) => { %><option value="<%= m %>"><%= m %></option><% }) %>
+        </select>
+      </div>
+      <div class="field">
+        <label for="reference">Reference (optional)</label>
+        <input id="reference" name="reference" maxlength="120">
+      </div>
+      <div class="field">
+        <label for="notes">Notes (optional)</label>
+        <input id="notes" name="notes" maxlength="500">
+      </div>
+      <div class="field actions">
+        <button class="btn btn-primary" type="submit">Record payment</button>
+      </div>
+    </form>
+  <% } %>
+</section>
+
+<section class="card table-wrap">
+  <h2>Payment transactions</h2>
+  <table class="stack">
+    <thead>
+      <tr><th>Date</th><th class="num">Amount</th><th>Method</th><th>Reference</th><th>Notes</th><th>Recorded</th></tr>
+    </thead>
+    <tbody>
+      <% if (!payments.length) { %>
+        <tr><td colspan="6" class="empty" data-label="">No payments recorded for this period.</td></tr>
+      <% } %>
+      <% payments.forEach((p) => { %>
+        <tr>
+          <td data-label="Date"><%= formatDate(p.paymentDate) %></td>
+          <td class="num paid" data-label="Amount"><%= currency(p.amount) %></td>
+          <td data-label="Method"><%= p.paymentMethod %></td>
+          <td class="muted" data-label="Reference"><%= p.reference || '-' %></td>
+          <td class="muted" data-label="Notes"><%= p.notes || '-' %></td>
+          <td class="muted small" data-label="Recorded"><%= formatDate(p.createdAt) %></td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+  <p class="muted small">Total paid <%= currency(period.paidAmount) %> · Pending <%= currency(period.pendingAmount) %></p>
+</section>

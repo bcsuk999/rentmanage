@@ -1,0 +1,40 @@
+<div class="page-head">
+  <div>
+    <h1><%= mode === 'create' ? 'Add room' : `Edit Room ${room.roomNumber}` %></h1>
+    <p class="muted">A room holds members; each member carries their own rent and rent cycle.</p>
+  </div>
+  <a class="btn btn-ghost" href="<%= mode === 'create' ? '/rooms' : `/rooms/${room._id}` %>">Back</a>
+</div>
+
+<section class="card narrow">
+  <%- include('../partials/errors') %>
+  <form method="post" action="<%= mode === 'create' ? '/rooms' : `/rooms/${room._id}` %>" class="form">
+    <label for="roomNumber">Room number / ID</label>
+    <input id="roomNumber" name="roomNumber" value="<%= room.roomNumber || '' %>" required maxlength="40" placeholder="101">
+
+    <label for="status">Room status</label>
+    <select id="status" name="status">
+      <% statuses.forEach((s) => { %>
+        <option value="<%= s %>" <%= room.status === s ? 'selected' : '' %>><%= s %></option>
+      <% }) %>
+    </select>
+
+    <label for="notes">Notes (optional)</label>
+    <textarea id="notes" name="notes" rows="3" maxlength="1000"><%= room.notes || '' %></textarea>
+
+    <div class="actions">
+      <button class="btn btn-primary" type="submit"><%= mode === 'create' ? 'Add room' : 'Save changes' %></button>
+      <a class="btn btn-ghost" href="<%= mode === 'create' ? '/rooms' : `/rooms/${room._id}` %>">Cancel</a>
+    </div>
+  </form>
+</section>
+
+<% if (mode === 'edit' && room._id) { %>
+  <section class="card narrow danger">
+    <h2>Delete room</h2>
+    <p class="muted">Only rooms with no members and no rent history can be deleted.</p>
+    <form method="post" action="/rooms/<%= room._id %>/delete" data-confirm="Delete Room <%= room.roomNumber %>?">
+      <button class="btn btn-danger" type="submit">Delete this room</button>
+    </form>
+  </section>
+<% } %>

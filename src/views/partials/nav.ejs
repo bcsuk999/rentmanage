@@ -1,0 +1,31 @@
+<header class="topbar">
+  <a class="brand" href="/rooms">
+    <img class="brand-mark" src="/icons/icon-192.png" alt="" width="28" height="28">
+    <span>Rent Manager</span>
+  </a>
+  <% if (currentUser) { %>
+    <button class="nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-controls="main-nav" aria-label="Menu">
+      <span class="bar"></span><span class="bar"></span><span class="bar"></span>
+    </button>
+    <nav class="nav" id="main-nav">
+      <a href="/rooms" class="<%= currentPath.startsWith('/rooms') ? 'active' : '' %>">Rooms</a>
+      <a href="/members" class="<%= currentPath.startsWith('/members') ? 'active' : '' %>">Members</a>
+      <a href="/payments" class="<%= currentPath.startsWith('/payments') ? 'active' : '' %>">Payments</a>
+      <a href="/reports" class="<%= currentPath.startsWith('/reports') ? 'active' : '' %>">Reports</a>
+      <a href="/settings" class="<%= currentPath.startsWith('/settings') ? 'active' : '' %>">Settings</a>
+      <div class="nav-mobile-only">
+        <span class="muted"><%= currentUser.name %></span>
+        <form method="post" action="/logout" class="inline">
+          <button class="btn btn-ghost" type="submit">Logout</button>
+        </form>
+      </div>
+    </nav>
+    <div class="user">
+      <button class="btn btn-ghost install-btn" type="button" data-install hidden>Install app</button>
+      <span class="muted user-name"><%= currentUser.name %></span>
+      <form method="post" action="/logout" class="inline">
+        <button class="btn btn-ghost" type="submit">Logout</button>
+      </form>
+    </div>
+  <% } %>
+</header>

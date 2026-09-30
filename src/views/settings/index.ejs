@@ -1,0 +1,49 @@
+<div class="page-head">
+  <div>
+    <h1>Settings</h1>
+    <p class="muted">Account, data and rent-cycle housekeeping.</p>
+  </div>
+</div>
+
+<div class="grid-2">
+  <section class="card">
+    <h2>Admin account</h2>
+    <p class="muted">Signed in as <strong><%= currentUser.username %></strong> (<%= currentUser.name %>).</p>
+    <div class="actions">
+      <a class="btn btn-primary" href="/change-password">Change password</a>
+      <a class="btn btn-ghost" href="/account">My account</a>
+      <a class="btn btn-ghost" href="/settings/admins">Admin accounts</a>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Data snapshot</h2>
+    <div class="detail-grid">
+      <div><span class="label">Rooms</span><span class="value"><%= rooms.length %></span></div>
+      <div><span class="label">Active members</span><span class="value"><%= rooms.reduce((s, r) => s + r.memberCount, 0) %></span></div>
+      <div><span class="label">Current total rent</span><span class="value"><%= currency(rooms.reduce((s, r) => s + r.totalRent, 0)) %></span></div>
+      <div><span class="label">Reference date</span><span class="value"><%= formatDate(today) %></span></div>
+    </div>
+    <p class="muted small">Rent periods are generated automatically up to the current cycle whenever rooms, members or reports are opened.</p>
+  </section>
+
+  <section class="card">
+    <h2>Room status options</h2>
+    <ul class="plain-list">
+      <li><strong>Occupied</strong> — has active members</li>
+      <li><strong>Empty</strong> — no active members</li>
+      <li><strong>Maintenance</strong> — paused, no new members</li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2>Business rules in force</h2>
+    <ul class="plain-list small">
+      <li>Payments cannot exceed the pending amount of a rent period.</li>
+      <li>Payment dates must fall inside the rent period.</li>
+      <li>Closed rent periods reject new payments until reopened.</li>
+      <li>Payment and rent history is never deleted; members are vacated, not removed.</li>
+      <li>Aadhaar is optional and always displayed masked.</li>
+    </ul>
+  </section>
+</div>
