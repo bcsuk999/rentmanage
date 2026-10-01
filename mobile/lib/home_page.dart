@@ -78,7 +78,12 @@ class _HomePageState extends State<HomePage> {
   void _openDetails(Room room) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => RoomDetailPage(api: widget.api, roomId: room.id, roomNumber: room.roomNumber),
+        builder: (_) => RoomDetailPage(
+          api: widget.api,
+          roomId: room.id,
+          roomNumber: room.roomNumber,
+          isAdmin: _isAdmin,
+        ),
       ),
     );
   }

@@ -38,6 +38,37 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
     if (mounted) setState(() => _future = Future.value(detail));
   }
 
+  Future<void> _openAddMember(RoomDetail detail) async {
+    final created = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => MemberFormPage(
+          api: widget.api,
+          roomId: widget.roomId,
+          roomNumber: widget.roomNumber,
+        ),
+      ),
+    );
+    if (created == true && mounted) {
+      setState(() => _future = widget.api.roomDetail(widget.roomId));
+    }
+  }
+
+  Future<void> _openPayment(RoomDetailRow row) async {
+    if (row.periodId == null) return;
+    final recorded = await showPaymentSheet(
+      context,
+      api: widget.api,
+      rentPeriodId: row.periodId!,
+      memberName: row.name,
+      pending: row.pending,
+      periodStart: row.periodStart,
+      periodEnd: row.periodEnd,
+    );
+    if (recorded && mounted) {
+      setState(() => _future = widget.api.roomDetail(widget.roomId));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -76,7 +107,20 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
               children: [
                 _SummaryCard(detail: detail),
                 const SizedBox(height: 12),
-                Text('Members (${detail.rows.length})', style: Theme.of(context).textTheme.titleMedium),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text('Members (${detail.rows.length})',
+                          style: Theme.of(context).textTheme.titleMedium),
+                    ),
+                    if (widget.isAdmin)
+                      FilledButton.tonalIcon(
+                        onPressed: detail.isFull ? null : () => _openAddMember(detail),
+                        icon: const Icon(Icons.person_add_outlined, size: 18),
+                        label: Text(detail.isFull ? 'Full' : 'Add member'),
+                      ),
+                  ],
+                ),
                 const SizedBox(height: 8),
                 if (detail.rows.isEmpty)
                   const Card(child: Padding(padding: EdgeInsets.all(16), child: Text('No active members.'))),
@@ -89,6 +133,15 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
                     pending: row.pending,
                     subtitle: row.mobile,
                   ),
+                  if (widget.isAdmin && row.periodId != null && row.pending > 0)
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: () => _openPayment(row),
+                        icon: const Icon(Icons.payments_outlined, size: 18),
+                        label: const Text('Record payment'),
+                      ),
+                    ),
                   const SizedBox(height: 8),
                 ],
                 if (detail.historical.isNotEmpty) ...[
