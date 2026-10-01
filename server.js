@@ -23,7 +23,15 @@ if (process.env.NODE_ENV === 'production' || process.env.TRUST_PROXY === '1') {
   app.set('trust proxy', 1);
 }
 
-app.use(cors({ origin: (process.env.CORS_ORIGINS || '*').split(',').map((s) => s.trim()) }));
+// CORS_ORIGINS="*" (default) opens the API to every origin, e.g. a Flutter
+// web app on a random localhost port. NOTE: the `cors` package only treats
+// the plain string '*' as a wildcard — an array like ['*'] matches nothing,
+// so resolve it explicitly here.
+const allowedOrigins = (process.env.CORS_ORIGINS || '*')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+app.use(cors({ origin: allowedOrigins.includes('*') ? '*' : allowedOrigins }));
 app.use(express.urlencoded({ extended: false, limit: '1mb' }));
 app.use(express.json({ limit: '1mb' }));
 
