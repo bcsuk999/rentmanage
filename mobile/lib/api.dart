@@ -205,6 +205,9 @@ class RoomDetail {
     required this.isFull,
     required this.memberCount,
     required this.historical,
+    required this.rangeStartIso,
+    required this.rangeEndIso,
+    required this.ranges,
   });
 
   final Room room;
@@ -218,12 +221,23 @@ class RoomDetail {
   final int memberCount;
   final List<VacatedEntry> historical;
 
+  /// Active date range, ISO strings; null when the room has no periods yet.
+  final String? rangeStartIso;
+  final String? rangeEndIso;
+
+  /// All known ranges (newest first) for the month switcher.
+  final List<DateRange> ranges;
+
   factory RoomDetail.fromJson(Map<String, dynamic> json, Room room) {
     double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
     int asInt(dynamic v) => v is int ? v : int.tryParse('$v') ?? 0;
     final summary = (json['summary'] as Map? ?? {}).cast<String, dynamic>();
     final rows = ((json['members'] as List? ?? []).cast<Map>()).map((e) => RoomDetailRow.fromJson(e.cast<String, dynamic>())).toList();
     final historical = ((json['historical'] as List? ?? []).cast<Map>()).map((e) => VacatedEntry.fromJson(e.cast<String, dynamic>())).toList();
+    final range = (json['range'] as Map?)?.cast<String, dynamic>();
+    final ranges = ((json['ranges'] as List? ?? []).cast<Map>())
+        .map((e) => DateRange.fromJson(e.cast<String, dynamic>()))
+        .toList();
     return RoomDetail(
       room: room,
       rows: rows,
@@ -235,7 +249,22 @@ class RoomDetail {
       isFull: json['isFull'] == true,
       memberCount: asInt(summary['memberCount']),
       historical: historical,
+      rangeStartIso: range == null ? null : '${range['start']}',
+      rangeEndIso: range == null ? null : '${range['end']}',
+      ranges: ranges,
     );
+  }
+}
+
+/// One selectable rental month on the details screen.
+class DateRange {
+  DateRange({required this.startIso, required this.endIso});
+
+  final String startIso;
+  final String endIso;
+
+  factory DateRange.fromJson(Map<String, dynamic> json) {
+    return DateRange(startIso: '${json['start']}', endIso: '${json['end']}');
   }
 }
 
@@ -296,9 +325,12 @@ class ApiClient {
     return rooms;
   }
 
-  /// Full room details for the current rental period.
-  Future<RoomDetail> roomDetail(String id) async {
-    final detailRes = await http.get(Uri.parse('$baseUrl/api/rooms/$id'), headers: _headers);
+  /// Full room details. Pass [from]/[to] ('YYYY-MM-DD') to view another month.
+  Future<RoomDetail> roomDetail(String id, {String? from, String? to}) async {
+    final uri = Uri.parse('$baseUrl/api/rooms/$id').replace(
+      queryParameters: (from != null && to != null) ? {'from': from, 'to': to} : null,
+    );
+    final detailRes = await http.get(uri, headers: _headers);
     if (detailRes.statusCode != 200) _throw(detailRes);
     final body = jsonDecode(detailRes.body) as Map<String, dynamic>;
     final roomJson = (body['room'] as Map).cast<String, dynamic>();

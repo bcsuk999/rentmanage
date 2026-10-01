@@ -11,6 +11,8 @@ Color memberStatusColor(String status) {
       return Colors.green.shade700;
     case 'partial':
       return Colors.orange.shade800;
+    case 'no period':
+      return Colors.grey.shade600;
     case 'overdue':
     case 'pending':
     default:
@@ -47,4 +49,25 @@ String inr(double value) {
     (m) => '${m[1]},',
   );
   return '₹$text';
+}
+
+const _months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/// '2026-10-01T00:00:00.000Z' -> '01 Oct 2026'. Falls back to raw text.
+String fmtDateIso(String iso) {
+  try {
+    final d = DateTime.parse(iso).toUtc();
+    return '${d.day.toString().padLeft(2, '0')} ${_months[d.month - 1]} ${d.year}';
+  } catch (_) {
+    return iso;
+  }
+}
+
+/// ISO datetime -> 'YYYY-MM-DD' for API query params.
+String toDateOnlyIso(String iso) {
+  try {
+    return DateTime.parse(iso).toUtc().toIso8601String().substring(0, 10);
+  } catch (_) {
+    return iso.length >= 10 ? iso.substring(0, 10) : iso;
+  }
 }

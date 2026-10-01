@@ -26,6 +26,8 @@ class RoomDetailPage extends StatefulWidget {
 
 class _RoomDetailPageState extends State<RoomDetailPage> {
   late Future<RoomDetail> _future;
+  String? _from;
+  String? _to;
 
   @override
   void initState() {
@@ -34,8 +36,16 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
   }
 
   Future<void> _refresh() async {
-    final detail = await widget.api.roomDetail(widget.roomId);
+    final detail = await widget.api.roomDetail(widget.roomId, from: _from, to: _to);
     if (mounted) setState(() => _future = Future.value(detail));
+  }
+
+  void _selectRange(DateRange range) {
+    setState(() {
+      _from = toDateOnlyIso(range.startIso);
+      _to = toDateOnlyIso(range.endIso);
+      _future = widget.api.roomDetail(widget.roomId, from: _from, to: _to);
+    });
   }
 
   Future<void> _openAddMember(RoomDetail detail) async {
@@ -107,6 +117,8 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
               children: [
                 _SummaryCard(detail: detail),
                 const SizedBox(height: 12),
+                _RangeSwitcher(detail: detail, onSelect: _selectRange),
+                const SizedBox(height: 12),
                 Row(
                   children: [
                     Expanded(
@@ -157,7 +169,8 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
                             leading: const Icon(Icons.history_outlined),
                             title: Text(h.name),
                             subtitle: Text(h.mobile),
-                            trailing: Text(h.vacatedOn, style: Theme.of(context).textTheme.bodySmall),
+                            trailing: Text(fmtDateIso(h.vacatedOn),
+                                style: Theme.of(context).textTheme.bodySmall),
                           ),
                       ],
                     ),
@@ -165,6 +178,48 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
                 ],
               ],
             );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _RangeSwitcher extends StatelessWidget {
+  const _RangeSwitcher({required this.detail, required this.onSelect});
+
+  final RoomDetail detail;
+  final void Function(DateRange range) onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    if (detail.ranges.isEmpty) return const SizedBox.shrink();
+    DateRange current = detail.ranges.first;
+    for (final r in detail.ranges) {
+      if (r.startIso == detail.rangeStartIso) {
+        current = r;
+        break;
+      }
+    }
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        child: DropdownButtonFormField<DateRange>(
+          initialValue: current,
+          decoration: const InputDecoration(
+            labelText: 'Rental month',
+            border: InputBorder.none,
+            prefixIcon: Icon(Icons.calendar_month_outlined),
+          ),
+          items: [
+            for (final r in detail.ranges)
+              DropdownMenuItem(
+                value: r,
+                child: Text('${fmtDateIso(r.startIso)} – ${fmtDateIso(r.endIso)}'),
+              ),
+          ],
+          onChanged: (r) {
+            if (r != null) onSelect(r);
           },
         ),
       ),
@@ -209,6 +264,21 @@ class _SummaryCard extends StatelessWidget {
                 style: theme.textTheme.titleMedium),
             if (detail.isFull)
               const Text('Full', style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Icon(Icons.calendar_month_outlined, size: 16),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    detail.rangeStartIso == null || detail.rangeEndIso == null
+                        ? 'No period yet'
+                        : '${fmtDateIso(detail.rangeStartIso!)} – ${fmtDateIso(detail.rangeEndIso!)}',
+                    style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 12),
             Row(
               children: [
@@ -329,8 +399,11 @@ class MemberTile extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 6),
-          Text('${inr(paid)} of ${inr(rent)} paid · ${inr(pending)} due',
-              style: theme.textTheme.bodySmall),
+          if (rent <= 0 && paid <= 0 && pending <= 0)
+            Text('No rent period for this month yet.', style: theme.textTheme.bodySmall)
+          else
+            Text('${inr(paid)} of ${inr(rent)} paid · ${inr(pending)} due',
+                style: theme.textTheme.bodySmall),
         ],
       ),
     );

@@ -392,7 +392,9 @@ class _RoomCard extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      'Due ${inr(room.totalPending)} · ${room.paymentState}',
+                      room.paymentState.isEmpty
+                          ? 'Due ${inr(room.totalPending)}'
+                          : 'Due ${inr(room.totalPending)} · ${room.paymentState}',
                       style: theme.textTheme.bodySmall,
                     ),
                   ),
