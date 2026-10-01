@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'session_cache.dart';
+
 /// Base URL of the rentmanage API.
 ///
 /// Production (Render): https://rentmanage.onrender.com
@@ -52,6 +54,15 @@ class RoomMember {
       status: '${json['status']}',
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'rent': rent,
+        'paid': paid,
+        'pending': pending,
+        'status': status,
+      };
 }
 
 class Room {
@@ -99,6 +110,20 @@ class Room {
       members: rawMembers.map((e) => RoomMember.fromJson((e as Map).cast<String, dynamic>())).toList(),
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        '_id': id,
+        'roomNumber': roomNumber,
+        'status': status,
+        'capacity': capacity,
+        'memberCount': memberCount,
+        'isFull': isFull,
+        'paymentState': paymentState,
+        'totalPending': totalPending,
+        'totalRent': totalRent,
+        'totalPaid': totalPaid,
+        'members': members.map((m) => m.toJson()).toList(),
+      };
 }
 
 /// One row of the room details screen: member + their period for the range.
@@ -112,6 +137,9 @@ class RoomDetailRow {
     required this.paid,
     required this.pending,
     required this.status,
+    this.periodId,
+    this.periodStart,
+    this.periodEnd,
   });
 
   final String memberId;
@@ -122,11 +150,15 @@ class RoomDetailRow {
   final double paid;
   final double pending;
   final String status;
+  final String? periodId;
+  final DateTime? periodStart;
+  final DateTime? periodEnd;
 
   double get progress => rent <= 0 ? 0 : (paid / rent).clamp(0.0, 1.0);
 
   factory RoomDetailRow.fromJson(Map<String, dynamic> json) {
     double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
+    DateTime? asDate(dynamic v) => v == null ? null : DateTime.tryParse('$v');
     final member = (json['member'] as Map? ?? {}).cast<String, dynamic>();
     final period = (json['period'] as Map?)?.cast<String, dynamic>();
     return RoomDetailRow(
@@ -138,6 +170,9 @@ class RoomDetailRow {
       paid: period == null ? 0 : asDouble(period['paidAmount']),
       pending: period == null ? 0 : asDouble(period['pendingAmount']),
       status: '${json['status'] ?? 'No period'}',
+      periodId: period == null ? null : '${period['_id']}',
+      periodStart: period == null ? null : asDate(period['startDate']),
+      periodEnd: period == null ? null : asDate(period['endDate']),
     );
   }
 }
@@ -240,6 +275,7 @@ class ApiClient {
   }
 
   /// Room list. [search] matches room numbers and member name/mobile.
+  /// The unfiltered list is cached on-device for offline-first startup.
   Future<List<Room>> rooms({String? search}) async {
     final q = (search ?? '').trim();
     final uri = Uri.parse('$baseUrl/api/rooms')
@@ -248,7 +284,16 @@ class ApiClient {
     if (res.statusCode != 200) _throw(res);
     final body = jsonDecode(res.body) as Map<String, dynamic>;
     final list = (body['rooms'] as List? ?? []);
-    return list.map((e) => Room.fromJson((e as Map).cast<String, dynamic>())).toList();
+    final rooms = list.map((e) => Room.fromJson((e as Map).cast<String, dynamic>())).toList();
+    if (q.isEmpty) {
+      // Best-effort cache; never fail the request because of storage.
+      try {
+        await SessionCache.saveRooms(rooms);
+      } catch (_) {
+        // ignore cache write failures
+      }
+    }
+    return rooms;
   }
 
   /// Full room details for the current rental period.
@@ -288,4 +333,39 @@ class ApiClient {
     if (res.statusCode != 201) _throw(res);
     return (jsonDecode(res.body) as Map).cast<String, dynamic>();
   }
+
+  /// Add a member to a room (admin only). Throws [ApiException] when full.
+  Future<Map<String, dynamic>> addMember(String roomId, Map<String, dynamic> data) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/rooms/$roomId/members'),
+      headers: _headers,
+      body: jsonEncode(data),
+    );
+    if (res.statusCode != 201) _throw(res);
+    return (jsonDecode(res.body) as Map).cast<String, dynamic>();
+  }
+
+  /// Record a payment against a rent period (admin only).
+  Future<Map<String, dynamic>> recordPayment({
+    required String rentPeriodId,
+    required String amount,
+    required String paymentDate,
+    required String paymentMethod,
+  }) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/payments'),
+      headers: _headers,
+      body: jsonEncode({
+        'rentPeriodId': rentPeriodId,
+        'amount': amount,
+        'paymentDate': paymentDate,
+        'paymentMethod': paymentMethod,
+      }),
+    );
+    if (res.statusCode != 201) _throw(res);
+    return (jsonDecode(res.body) as Map).cast<String, dynamic>();
+  }
 }
+
+/// Payment methods accepted by the API.
+const List<String> paymentMethods = ['Cash', 'UPI', 'Bank Transfer', 'Other'];

@@ -7,10 +7,11 @@ import 'room_detail_page.dart';
 import 'status_colors.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key, required this.api, required this.user, required this.onSignOut});
+  const HomePage({super.key, required this.api, required this.user, this.initialRooms, required this.onSignOut});
 
   final ApiClient api;
   final Map<String, dynamic> user;
+  final List<Room>? initialRooms;
   final VoidCallback onSignOut;
 
   @override
@@ -28,7 +29,13 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    _future = widget.api.rooms();
+    if (widget.initialRooms != null) {
+      // Show the cached list instantly, then refresh quietly in background.
+      _future = Future.value(widget.initialRooms!);
+      WidgetsBinding.instance.addPostFrameCallback((_) => _refresh(silent: true));
+    } else {
+      _future = widget.api.rooms();
+    }
   }
 
   @override
@@ -46,9 +53,21 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  Future<void> _refresh() async {
-    final rooms = await widget.api.rooms(search: _search.text);
-    if (mounted) setState(() => _future = Future.value(rooms));
+  Future<void> _refresh({bool silent = false}) async {
+    try {
+      final rooms = await widget.api.rooms(search: _search.text);
+      if (mounted) setState(() => _future = Future.value(rooms));
+    } catch (e) {
+      if (!mounted) return;
+      if (silent) {
+        // Cached list stays on screen; mention the stale data quietly.
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Offline — showing saved rooms.')),
+        );
+      } else {
+        setState(() => _future = Future.error(e));
+      }
+    }
   }
 
   void _signOut() {

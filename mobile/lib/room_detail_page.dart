@@ -1,15 +1,24 @@
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'member_form_page.dart';
+import 'payment_sheet.dart';
 import 'status_colors.dart';
 
 /// Full room details: header totals, per-member rent rows, vacated history.
 class RoomDetailPage extends StatefulWidget {
-  const RoomDetailPage({super.key, required this.api, required this.roomId, required this.roomNumber});
+  const RoomDetailPage({
+    super.key,
+    required this.api,
+    required this.roomId,
+    required this.roomNumber,
+    required this.isAdmin,
+  });
 
   final ApiClient api;
   final String roomId;
   final String roomNumber;
+  final bool isAdmin;
 
   @override
   State<RoomDetailPage> createState() => _RoomDetailPageState();
