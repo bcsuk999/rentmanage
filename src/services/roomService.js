@@ -245,7 +245,10 @@ async function roomDetail(id, selectedRange) {
   const currentRangeOption = ranges.find(
     (r) => startOfDay(r.start) <= reference && startOfDay(r.end) >= reference
   );
-  const range = selectedRange || currentRangeOption || ranges[0] || null;
+  // Never default to a future (not-yet-started) cycle: fall back to the most
+  // recent started range so due totals never include next month early.
+  const startedRanges = ranges.filter((r) => startOfDay(r.start) <= reference);
+  const range = selectedRange || currentRangeOption || startedRanges[0] || ranges[0] || null;
 
   const rows = members.map((member) => {
     const own = periods.filter((p) => p.memberId.toString() === member._id.toString());

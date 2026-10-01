@@ -3,34 +3,24 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const Admin = require('../models/Admin');
-const roomService = require('../services/roomService');
-const { fieldErrors, firstErrorMessage, wrap } = require('../utils/http');
+const { publicAccount, validatePassword } = require('../middleware/auth');
+const { sendApiError, wrap } = require('../utils/http');
 const { ValidationError, requireUsername } = require('../utils/validate');
-const { validatePassword } = require('../middleware/auth');
-const { formatDate, toDateInput, today } = require('../utils/dates');
 
 const router = express.Router();
 
-router.get(
-  '/',
-  wrap(async (req, res) => {
-    const rooms = await roomService.listRoomsWithSummary({});
-    res.render('settings/index', {
-      title: 'Settings',
-      rooms,
-      today: toDateInput(today()),
-    });
-  })
-);
-
+/** Account list (password hashes never leave the server). */
 router.get(
   '/admins',
   wrap(async (req, res) => {
-    const admins = await Admin.find().sort({ createdAt: 1 }).lean();
-    res.render('settings/admins', {
-      title: 'Accounts',
-      admins: admins.map((a) => ({ ...a, createdAtLabel: formatDate(a.createdAt), lastLogin: a.lastLoginAt ? formatDate(a.lastLoginAt) : 'Never' })),
-    });
+    try {
+      const admins = await Admin.find().sort({ createdAt: 1 }).lean();
+      return res.json({
+        admins: admins.map((a) => ({ ...publicAccount(a), contact: a.contact || null })),
+      });
+    } catch (err) {
+      return sendApiError(res, err);
+    }
   })
 );
 
@@ -38,15 +28,14 @@ router.get(
 router.post(
   '/admins/role',
   wrap(async (req, res) => {
-    const nextRole = req.body.role === 'admin' ? 'admin' : 'user';
-    const back = '/settings/admins';
     try {
+      const nextRole = req.body.role === 'admin' ? 'admin' : 'user';
       if (!Admin.isValidObjectId(req.body.id)) {
         throw new ValidationError([{ field: 'id', message: 'Invalid account' }]);
       }
       const account = await Admin.findById(req.body.id);
       if (!account) throw new ValidationError([{ field: 'id', message: 'Account not found' }]);
-      if (account._id.equals(req.session.adminId) && nextRole !== 'admin') {
+      if (String(account._id) === String(req.user._id) && nextRole !== 'admin') {
         throw new ValidationError([
           { field: 'id', message: 'You cannot remove your own admin access' },
         ]);
@@ -59,15 +48,17 @@ router.post(
       }
       account.role = nextRole;
       await account.save();
-      req.flash('success', `${account.username} is now ${nextRole === 'admin' ? 'an admin' : 'read-only'}.`);
+      return res.json({
+        account: publicAccount(account),
+        message: `${account.username} is now ${nextRole === 'admin' ? 'an admin' : 'read-only'}.`,
+      });
     } catch (err) {
-      req.flash('error', firstErrorMessage(err) || fieldErrors(err).message);
+      return sendApiError(res, err);
     }
-    return res.redirect(back);
   })
 );
 
-/** Create an admin account by hand (self-registration only ever makes viewers). */
+/** Create an account by hand (self-registration only ever makes viewers). */
 router.post(
   '/admins',
   wrap(async (req, res) => {
@@ -87,11 +78,10 @@ router.post(
         contact: String(req.body.contact || '').trim().toLowerCase() || undefined,
         role: req.body.role === 'admin' ? 'admin' : 'user',
       });
-      req.flash('success', `Account "${account.username}" created.`);
+      return res.status(201).json({ account: publicAccount(account), message: `Account "${account.username}" created.` });
     } catch (err) {
-      req.flash('error', firstErrorMessage(err));
+      return sendApiError(res, err);
     }
-    return res.redirect('/settings/admins');
   })
 );
 

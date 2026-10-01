@@ -156,8 +156,10 @@ function rollup(statuses) {
 async function defaultRange() {
   const reference = today();
   const first = await RentPeriod.find().sort({ startDate: 1 }).select('startDate endDate').lean();
+  const started = first.filter((p) => startOfDay(p.startDate) <= reference);
   const current =
     first.find((p) => startOfDay(p.startDate) <= reference && startOfDay(p.endDate) >= reference) ||
+    started[started.length - 1] ||
     first[first.length - 1];
   return current
     ? { from: startOfDay(current.startDate), to: startOfDay(current.endDate) }

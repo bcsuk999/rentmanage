@@ -129,7 +129,7 @@ async function periodForDate(member, date, reference = today()) {
   return RentPeriod.findOne({ memberId: member._id, startDate: start, endDate: end });
 }
 
-/** The member's current period: the cycle containing today (or their latest period). */
+/** The member's current period: the cycle containing today (or latest started period). */
 async function currentPeriodForMember(member, reference = today()) {
   await ensurePeriodsForMember(member, reference);
   const current = await RentPeriod.findOne({
@@ -140,7 +140,10 @@ async function currentPeriodForMember(member, reference = today()) {
     .sort({ startDate: -1 })
     .lean();
   if (current) return current;
-  return RentPeriod.findOne({ memberId: member._id }).sort({ startDate: -1 }).lean();
+  // Never fall back to a future (not-yet-started) advance cycle.
+  return RentPeriod.findOne({ memberId: member._id, startDate: { $lte: reference } })
+    .sort({ startDate: -1 })
+    .lean();
 }
 
 /** Distinct rental periods that exist in a room, newest first (room period selector). */

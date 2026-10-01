@@ -1,121 +1,57 @@
 'use strict';
 
-const path = require('path');
 const express = require('express');
-const session = require('express-session');
-const { MongoStore } = require('connect-mongo');
-const methodOverride = require('method-override');
-const expressLayouts = require('express-ejs-layouts');
+const cors = require('cors');
 require('dotenv').config();
 
 const connectDb = require('./src/config/db');
-const { attachUser, hasRole, requireAuth, requireRole } = require('./src/middleware/auth');
-const { flash, flashFor } = require('./src/utils/flash');
+const { requireAuth, requireRole } = require('./src/middleware/auth');
 
 const authRoutes = require('./src/routes/auth');
-const publicRoutes = require('./src/routes/public');
-const dashboardRoutes = require('./src/routes/dashboard');
 const roomRoutes = require('./src/routes/rooms');
 const memberRoutes = require('./src/routes/members');
 const rentRoutes = require('./src/routes/rentPeriods');
 const paymentRoutes = require('./src/routes/payments');
 const reportRoutes = require('./src/routes/reports');
 const settingsRoutes = require('./src/routes/settings');
-const { currency } = require('./src/utils/format');
-const dates = require('./src/utils/dates');
-const { maskAadhaar } = require('./src/utils/mask');
 const { ensureAdminFromEnv } = require('./src/services/adminService');
 
 const app = express();
-const viewsDir = path.join(__dirname, 'src', 'views');
 
-if (process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
-  throw new Error('SESSION_SECRET must be set in production.');
-}
-
-app.set('view engine', 'ejs');
-app.set('views', viewsDir);
-app.set('layout', 'layouts/main');
-// Render (and most hosts) terminate TLS in front of the app; trust the proxy so
-// secure cookies and req.secure see the real https request.
+// Render (and most hosts) terminate TLS in front of the app.
 if (process.env.NODE_ENV === 'production' || process.env.TRUST_PROXY === '1') {
   app.set('trust proxy', 1);
 }
-app.use(expressLayouts);
 
+app.use(cors({ origin: (process.env.CORS_ORIGINS || '*').split(',').map((s) => s.trim()) }));
 app.use(express.urlencoded({ extended: false, limit: '1mb' }));
 app.use(express.json({ limit: '1mb' }));
-app.use(methodOverride('_method'));
-app.use(express.static(path.join(__dirname, 'src', 'public')));
 
-app.use(
-  session({
-    name: 'rentmanage.sid',
-    secret: process.env.SESSION_SECRET || 'dev-only-insecure-secret',
-    resave: false,
-    saveUninitialized: false,
-    rolling: true,
-    store: MongoStore.create({
-      mongoUrl: process.env.MONGODB_URI,
-      collectionName: 'sessions',
-      ttl: 60 * 60 * 8,
-    }),
-    cookie: {
-      httpOnly: true,
-      sameSite: 'lax',
-      // 'auto' marks the cookie Secure only when the request really is HTTPS, so
-      // a plain-http visit does not silently drop the session and bounce to /login.
-      secure: 'auto',
-      // Needed so the Secure decision honours X-Forwarded-Proto behind Render.
-      proxy: true,
-      maxAge: 1000 * 60 * 60 * 8,
-    },
-  })
-);
-
-app.use(attachUser);
-
-app.use((req, res, next) => {
-  req.flash = flash.bind(null, req);
-  res.locals.currentPath = req.path;
-  res.locals.currentUser = req.session.admin || null;
-  res.locals.isAdmin = hasRole(req.session.admin, 'admin');
-  res.locals.flash = req.session.flash || null;
-  res.locals.currency = currency;
-  res.locals.formatDate = dates.formatDate;
-  res.locals.formatDateShort = dates.formatDateShort;
-  res.locals.formatDateRange = dates.formatDateRange;
-  res.locals.toDateInput = dates.toDateInput;
-  res.locals.maskAadhaar = maskAadhaar;
-  res.locals.query = req.query || {};
-  res.locals.statusClass = flashFor;
-  delete req.session.flash;
-  next();
+app.get('/', (req, res) => {
+  res.json({ name: 'rentmanage-api', version: '1.0.0', status: 'ok' });
 });
 
-app.use(publicRoutes);
-app.use(authRoutes);
-app.use('/', requireAuth, dashboardRoutes);
-app.use('/rooms', requireAuth, roomRoutes);
-app.use('/members', requireAuth, memberRoutes);
-app.use('/rent-periods', requireAuth, rentRoutes);
-app.use('/payments', requireAuth, paymentRoutes);
-app.use('/reports', requireAuth, reportRoutes);
-app.use('/settings', requireAuth, requireRole('admin'), settingsRoutes);
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', uptime: process.uptime() });
+});
+
+app.use('/api/auth', authRoutes);
+app.use('/api/rooms', requireAuth, roomRoutes);
+app.use('/api/members', requireAuth, memberRoutes);
+app.use('/api/rent-periods', requireAuth, rentRoutes);
+app.use('/api/payments', requireAuth, paymentRoutes);
+app.use('/api/reports', requireAuth, reportRoutes);
+app.use('/api/settings', requireAuth, requireRole('admin'), settingsRoutes);
 
 app.use((req, res) => {
-  res.status(404).render('error', {
-    title: 'Not found',
-    message: 'The page you requested does not exist.',
-  });
+  res.status(404).json({ error: 'Not found.' });
 });
 
 app.use((err, req, res, _next) => {
   console.error(err);
   if (res.headersSent) return;
-  res.status(err.status || 500).render('error', {
-    title: 'Something went wrong',
-    message: err.expose ? err.message : 'An unexpected error occurred.',
+  res.status(err.status || 500).json({
+    error: err.expose && err.message ? err.message : 'An unexpected error occurred.',
   });
 });
 
@@ -125,7 +61,7 @@ async function start() {
   await connectDb();
   await ensureAdminFromEnv();
   return app.listen(PORT, () => {
-    console.log(`Rent management app running on http://localhost:${PORT}`);
+    console.log(`Rent management API running on http://localhost:${PORT}`);
   });
 }
 

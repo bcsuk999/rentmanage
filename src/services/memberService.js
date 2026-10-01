@@ -215,6 +215,7 @@ async function memberDetail(id) {
   const reference = today();
   const current =
     periods.find((p) => startOfDay(p.startDate) <= reference && startOfDay(p.endDate) >= reference) ||
+    periods.filter((p) => startOfDay(p.startDate) <= reference)[0] ||
     periods[0] ||
     null;
   const payments = await Payment.find({ memberId: member._id })
@@ -227,8 +228,17 @@ async function memberDetail(id) {
     if (!paymentsByPeriod.has(key)) paymentsByPeriod.set(key, []);
     paymentsByPeriod.get(key).push(p);
   }
-  const outstanding = periods.reduce((sum, p) => sum + (p.pendingAmount || 0), 0);
+  // Due = only periods that have started (startDate <= today).
+  // Future advance cycles (e.g. 1 Nov created while today is 1 Oct) must not
+  // inflate the due/outstanding total.
+  const duePeriods = periods.filter((p) => startOfDay(p.startDate) <= reference);
+  const outstanding = duePeriods.reduce((sum, p) => sum + (p.pendingAmount || 0), 0);
   const paidTotal = periods.reduce((sum, p) => sum + (p.paidAmount || 0), 0);
+  const futurePending = Math.round(
+    periods
+      .filter((p) => startOfDay(p.startDate) > reference)
+      .reduce((sum, p) => sum + (p.pendingAmount || 0), 0) * 100
+  ) / 100;
 
   return {
     member,
@@ -239,6 +249,7 @@ async function memberDetail(id) {
     paymentsByPeriod,
     outstanding: Math.round(outstanding * 100) / 100,
     paidTotal: Math.round(paidTotal * 100) / 100,
+    futurePending,
   };
 }
 

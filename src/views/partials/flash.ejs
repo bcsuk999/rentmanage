@@ -1,9 +1,0 @@
-<% if (flash) { %>
-  <div class="toast-wrap" role="status" aria-live="polite">
-    <div class="toast <%= statusClass(flash.type) %>" data-toast>
-      <span class="toast-dot" aria-hidden="true"></span>
-      <span class="toast-msg"><%= flash.message %></span>
-      <button class="toast-close" type="button" data-toast-close aria-label="Dismiss">×</button>
-    </div>
-  </div>
-<% } %>
