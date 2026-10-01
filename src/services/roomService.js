@@ -152,7 +152,7 @@ async function listRoomsWithSummary({ search = '', status = 'All', paymentState 
   const roomIds = rooms.map((r) => r._id);
   const [members, periods] = await Promise.all([
     Member.find({ roomId: { $in: roomIds }, status: 'active' })
-      .select('roomId monthlyRent rentStartDate')
+      .select('roomId name monthlyRent rentStartDate')
       .lean(),
     RentPeriod.find({
       roomId: { $in: roomIds },
@@ -175,6 +175,8 @@ async function listRoomsWithSummary({ search = '', status = 'All', paymentState 
     if (!periodsByRoom.has(key)) periodsByRoom.set(key, []);
     periodsByRoom.get(key).push(p);
   }
+  const periodsByMember = new Map();
+  for (const p of periods) periodsByMember.set(p.memberId.toString(), p);
 
   let rows = rooms.map((room) => {
     const roomMembers = membersByRoom.get(room._id.toString()) || [];
@@ -204,6 +206,18 @@ async function listRoomsWithSummary({ search = '', status = 'All', paymentState 
       paymentState: summary.paymentState,
       periodStart,
       periodEnd,
+      // Per-member current-cycle snapshot for mobile room cards.
+      members: roomMembers.map((m) => {
+        const p = periodsByMember.get(m._id.toString());
+        return {
+          id: m._id,
+          name: m.name,
+          rent: p ? p.rentAmount : m.monthlyRent || 0,
+          paid: p ? p.paidAmount : 0,
+          pending: p ? p.pendingAmount : m.monthlyRent || 0,
+          status: p ? p.status : 'Pending',
+        };
+      }),
     };
   });
 
