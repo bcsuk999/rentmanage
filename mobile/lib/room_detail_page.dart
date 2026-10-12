@@ -59,7 +59,7 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
       ),
     );
     if (created == true && mounted) {
-      setState(() => _future = widget.api.roomDetail(widget.roomId));
+      setState(() => _future = widget.api.roomDetail(widget.roomId, from: _from, to: _to));
     }
   }
 
@@ -75,7 +75,7 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
       periodEnd: row.periodEnd,
     );
     if (recorded && mounted) {
-      setState(() => _future = widget.api.roomDetail(widget.roomId));
+      setState(() => _future = widget.api.roomDetail(widget.roomId, from: _from, to: _to));
     }
   }
 
@@ -104,7 +104,8 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
                   const SizedBox(height: 12),
                   Center(
                     child: FilledButton(
-                      onPressed: () => setState(() => _future = widget.api.roomDetail(widget.roomId)),
+                      onPressed: () => setState(
+                          () => _future = widget.api.roomDetail(widget.roomId, from: _from, to: _to)),
                       child: const Text('Retry'),
                     ),
                   ),

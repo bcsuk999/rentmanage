@@ -13,20 +13,26 @@ class SessionCache {
   static const _roomsKey = 'rooms_cache_json';
 
   /// Returns the saved token (null when signed out) and user map.
+  /// Never throws: on platforms where the preferences plugin is missing
+  /// (e.g. web without plugin registration) the app simply starts signed out.
   static Future<({String? token, Map<String, dynamic>? user})> loadSession() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString(_tokenKey);
-    Map<String, dynamic>? user;
-    final rawUser = prefs.getString(_userKey);
-    if (rawUser != null) {
-      try {
-        user = (jsonDecode(rawUser) as Map).cast<String, dynamic>();
-      } catch (_) {
-        user = null;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString(_tokenKey);
+      Map<String, dynamic>? user;
+      final rawUser = prefs.getString(_userKey);
+      if (rawUser != null) {
+        try {
+          user = (jsonDecode(rawUser) as Map).cast<String, dynamic>();
+        } catch (_) {
+          user = null;
+        }
       }
+      if (token == null || token.isEmpty) return (token: null, user: null);
+      return (token: token, user: user);
+    } catch (_) {
+      return (token: null, user: null);
     }
-    if (token == null || token.isEmpty) return (token: null, user: null);
-    return (token: token, user: user);
   }
 
   static Future<void> saveSession(String token, Map<String, dynamic> user) async {
@@ -43,13 +49,18 @@ class SessionCache {
   }
 
   /// Saved room list (unfiltered query only), newest last-write wins.
+  /// Returns null when nothing is cached or the cache cannot be read.
   static Future<List<Room>?> loadRooms() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_roomsKey);
-    if (raw == null) return null;
     try {
-      final list = (jsonDecode(raw) as List).cast<Map>();
-      return list.map((e) => Room.fromJson(e.cast<String, dynamic>())).toList();
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_roomsKey);
+      if (raw == null) return null;
+      try {
+        final list = (jsonDecode(raw) as List).cast<Map>();
+        return list.map((e) => Room.fromJson(e.cast<String, dynamic>())).toList();
+      } catch (_) {
+        return null;
+      }
     } catch (_) {
       return null;
     }

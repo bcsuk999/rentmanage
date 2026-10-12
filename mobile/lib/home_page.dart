@@ -34,7 +34,7 @@ class _HomePageState extends State<HomePage> {
       _future = Future.value(widget.initialRooms!);
       WidgetsBinding.instance.addPostFrameCallback((_) => _refresh(silent: true));
     } else {
-      _future = widget.api.rooms();
+      _future = _loadRooms('');
     }
   }
 
@@ -49,16 +49,27 @@ class _HomePageState extends State<HomePage> {
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 400), () {
       if (!mounted) return;
-      setState(() => _future = widget.api.rooms(search: value));
+      setState(() => _future = _loadRooms(value));
     });
+  }
+
+  /// Fetch rooms; an expired/revoked token signs out instead of error-looping.
+  Future<List<Room>> _loadRooms(String query) async {
+    try {
+      return await widget.api.rooms(search: query);
+    } on ApiException catch (e) {
+      if (e.statusCode == 401 && mounted) _signOut();
+      rethrow;
+    }
   }
 
   Future<void> _refresh({bool silent = false}) async {
     try {
-      final rooms = await widget.api.rooms(search: _search.text);
+      final rooms = await _loadRooms(_search.text);
       if (mounted) setState(() => _future = Future.value(rooms));
     } catch (e) {
       if (!mounted) return;
+      if (e is ApiException && e.statusCode == 401) return; // signed out above
       if (silent) {
         // Cached list stays on screen; mention the stale data quietly.
         ScaffoldMessenger.of(context).showSnackBar(
@@ -75,8 +86,8 @@ class _HomePageState extends State<HomePage> {
     widget.onSignOut();
   }
 
-  void _openDetails(Room room) {
-    Navigator.of(context).push(
+  void _openDetails(Room room) async {
+    await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => RoomDetailPage(
           api: widget.api,
@@ -86,6 +97,9 @@ class _HomePageState extends State<HomePage> {
         ),
       ),
     );
+    // Members/payments may have changed inside details — reload so the
+    // cards behind never show stale occupancy or totals.
+    if (mounted) _refresh();
   }
 
   Future<void> _showAddRoom() async {
@@ -253,7 +267,7 @@ class _HomePageState extends State<HomePage> {
                       icon: const Icon(Icons.clear),
                       onPressed: () {
                         _search.clear();
-                        setState(() => _future = widget.api.rooms());
+                        setState(() => _future = _loadRooms(''));
                       },
                     ),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),

@@ -13,10 +13,13 @@ import 'session_cache.dart';
 const String apiBaseUrl = 'https://rentmanage.onrender.com';
 
 class ApiException implements Exception {
-  ApiException(this.message, {this.errors = const []});
+  ApiException(this.message, {this.errors = const [], this.statusCode});
 
   final String message;
   final List<dynamic> errors;
+
+  /// HTTP status when the server answered, null on network failures.
+  final int? statusCode;
 
   @override
   String toString() => message;
@@ -287,7 +290,7 @@ class ApiClient {
     } catch (_) {
       // Keep the default message when the body is not JSON.
     }
-    throw ApiException(message);
+    throw ApiException(message, statusCode: res.statusCode);
   }
 
   /// Returns the signed-in user map and stores the token.
