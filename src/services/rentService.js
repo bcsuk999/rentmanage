@@ -43,45 +43,62 @@ function generationCeiling(member, reference = today()) {
 }
 
 /**
- * Create any missing rent periods for one member.
- * Uses the member's own rent start date as the cycle anchor, so every member
- * gets an individual rental cycle. Never creates overlapping cycles.
+ * Pure planner: which cycle docs are missing for one member, given their
+ * already-stored periods. No database access, so the bulk path can plan for
+ * every member from a single preloaded query. Overlap rules match the old
+ * per-member implementation exactly.
  */
-async function ensurePeriodsForMember(member, reference = today()) {
+function planMissingPeriods(member, existing, reference = today()) {
   const anchor = startOfDay(member.rentStartDate);
   const ceiling = generationCeiling(member, reference);
   if (ceiling < anchor) return [];
 
-  const existing = await RentPeriod.find({ memberId: member._id })
-    .sort({ startDate: 1 })
-    .select('startDate endDate')
-    .lean();
-  const knownStarts = new Set(existing.map((p) => startOfDay(p.startDate).getTime()));
+  const starts = existing.map((p) => startOfDay(p.startDate).getTime());
+  const knownStarts = new Set(starts);
+  const ranges = existing.map((p) => ({ start: startOfDay(p.startDate), end: startOfDay(p.endDate) }));
 
-  const created = [];
+  const docs = [];
   const lastIndex = cycleIndexFor(anchor, ceiling);
   for (let index = 0; index <= lastIndex; index += 1) {
     const { start, end } = cycleAt(anchor, index);
     if (start > ceiling) break;
     if (knownStarts.has(start.getTime())) continue;
     // Guard against overlaps with an already stored period.
-    const overlaps = existing.some(
-      (p) => startOfDay(p.startDate) < end && startOfDay(p.endDate) >= start
-    ) || created.some((p) => p.startDate < end && p.endDate >= start);
+    const overlaps =
+      ranges.some((r) => r.start < end && r.end >= start) ||
+      docs.some((d) => d.startDate < end && d.endDate >= start);
     if (overlaps) continue;
+    docs.push({
+      memberId: member._id,
+      roomId: member.roomId,
+      startDate: start,
+      endDate: end,
+      rentAmount: member.monthlyRent,
+      paidAmount: 0,
+      pendingAmount: member.monthlyRent,
+      status: 'Pending',
+    });
+    knownStarts.add(start.getTime());
+  }
+  return docs;
+}
+
+/**
+ * Create any missing rent periods for one member.
+ * Uses the member's own rent start date as the cycle anchor, so every member
+ * gets an individual rental cycle. Never creates overlapping cycles.
+ */
+async function ensurePeriodsForMember(member, reference = today()) {
+  const existing = await RentPeriod.find({ memberId: member._id })
+    .sort({ startDate: 1 })
+    .select('startDate endDate')
+    .lean();
+  const docs = planMissingPeriods(member, existing, reference);
+
+  const created = [];
+  for (const doc of docs) {
     try {
-      const doc = await RentPeriod.create({
-        memberId: member._id,
-        roomId: member.roomId,
-        startDate: start,
-        endDate: end,
-        rentAmount: member.monthlyRent,
-        paidAmount: 0,
-        pendingAmount: member.monthlyRent,
-        status: 'Pending',
-      });
-      knownStarts.add(start.getTime());
-      created.push(doc);
+      created.push(await RentPeriod.create(doc));
     } catch (err) {
       if (err && err.code === 11000) continue; // created concurrently
       throw err;
@@ -90,14 +107,62 @@ async function ensurePeriodsForMember(member, reference = today()) {
   return created;
 }
 
-/** Generate periods for every active member (optionally scoped to one room). */
+/** True when a bulk-write failure is only duplicate-key conflicts (a concurrent request won the race). */
+function isDupKeyOnly(err) {
+  if (!err) return false;
+  const writeErrors = Array.isArray(err.writeErrors) ? err.writeErrors : null;
+  if (writeErrors && writeErrors.length) {
+    return writeErrors.every((e) => e && (e.code === 11000 || e.code === 11001));
+  }
+  return err.code === 11000 || err.code === 11001;
+}
+
+/** Best-effort inserted count from a bulk-write error (informational only). */
+function bulkInsertedCount(err, attempted) {
+  const result = err && err.result ? err.result : null;
+  if (result && Number.isFinite(result.insertedCount)) return result.insertedCount;
+  if (result && Number.isFinite(result.nInserted)) return result.nInserted;
+  if (err && Array.isArray(err.insertedDocs)) return err.insertedDocs.length;
+  if (attempted === 0) return 0;
+  return 0;
+}
+
+/**
+ * Generate periods for every active member (optionally scoped to one room).
+ * Batched: one member query + one period query + one bulk insert, instead of
+ * one period query and up to one insert per member on every rooms-list call.
+ */
 async function ensurePeriodsForActiveMembers({ roomId = null, reference = today() } = {}) {
   const filter = { status: 'active' };
   if (roomId) filter.roomId = roomId;
-  const members = await Member.find(filter).lean();
-  let created = 0;
+  const members = await Member.find(filter)
+    .select('rentStartDate monthlyRent roomId vacatingDate status')
+    .lean();
+  if (!members.length) return { members: 0, created: 0 };
+
+  const existing = await RentPeriod.find({ memberId: { $in: members.map((m) => m._id) } })
+    .select('memberId startDate endDate')
+    .lean();
+  const existingByMember = new Map();
+  for (const p of existing) {
+    const key = p.memberId.toString();
+    if (!existingByMember.has(key)) existingByMember.set(key, []);
+    existingByMember.get(key).push(p);
+  }
+
+  const docs = [];
   for (const member of members) {
-    created += (await ensurePeriodsForMember(member, reference)).length;
+    docs.push(...planMissingPeriods(member, existingByMember.get(member._id.toString()) || [], reference));
+  }
+  let created = 0;
+  if (docs.length) {
+    try {
+      const inserted = await RentPeriod.insertMany(docs, { ordered: false });
+      created = inserted.length;
+    } catch (err) {
+      if (!isDupKeyOnly(err)) throw err; // real validation/write failure
+      created = bulkInsertedCount(err, docs.length);
+    }
   }
   return { members: members.length, created };
 }
@@ -211,6 +276,7 @@ module.exports = {
   generationCeiling,
   periodForDate,
   periodOverlapping,
+  planMissingPeriods,
   recalcPeriod,
   roomPeriodOptions,
   summarise,

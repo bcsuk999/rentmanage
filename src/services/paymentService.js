@@ -3,10 +3,30 @@
 const Payment = require('../models/Payment');
 const RentPeriod = require('../models/RentPeriod');
 const Member = require('../models/Member');
+const mongoose = require('mongoose');
 const { recalcPeriod } = require('./rentService');
 const { contains, parseDateInput, startOfDay } = require('../utils/dates');
 const { ValidationError } = require('../utils/validate');
 const { PAYMENT_METHODS } = require('../models/Payment');
+
+/** ObjectId filter or a 422 — never let a garbage id become a 500 CastError. */
+function objectIdFilter(value, field) {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  if (!mongoose.isValidObjectId(text)) {
+    throw new ValidationError([{ field, message: `Invalid ${field} filter` }]);
+  }
+  return new mongoose.Types.ObjectId(text);
+}
+
+/** Parsed date filter or a 422 — never query on an Invalid Date. */
+function dateFilter(value, field) {
+  const parsed = parseDateInput(String(value || '').trim());
+  if (!parsed) {
+    throw new ValidationError([{ field, message: `Invalid ${field} date filter (use YYYY-MM-DD)` }]);
+  }
+  return startOfDay(parsed);
+}
 
 /**
  * Record a payment against a rent period.
@@ -99,16 +119,19 @@ async function paymentsForMember(memberId) {
 async function listPayments(filters = {}) {
   const { roomId, memberId, paymentMethod, from, to, rentPeriodId } = filters;
   const query = {};
-  if (roomId) query.roomId = roomId;
-  if (memberId) query.memberId = memberId;
-  if (rentPeriodId) query.rentPeriodId = rentPeriodId;
+  const roomObjectId = objectIdFilter(roomId, 'roomId');
+  if (roomObjectId) query.roomId = roomObjectId;
+  const memberObjectId = objectIdFilter(memberId, 'memberId');
+  if (memberObjectId) query.memberId = memberObjectId;
+  const periodObjectId = objectIdFilter(rentPeriodId, 'rentPeriodId');
+  if (periodObjectId) query.rentPeriodId = periodObjectId;
   if (paymentMethod && PAYMENT_METHODS.includes(paymentMethod)) {
     query.paymentMethod = paymentMethod;
   }
   if (from || to) {
     query.paymentDate = {};
-    if (from) query.paymentDate.$gte = startOfDay(parseDateInput(from));
-    if (to) query.paymentDate.$lte = startOfDay(parseDateInput(to));
+    if (from) query.paymentDate.$gte = dateFilter(from, 'from');
+    if (to) query.paymentDate.$lte = dateFilter(to, 'to');
   }
   const page = Math.max(1, Number(filters.page) || 1);
   const limit = Math.min(200, Math.max(10, Number(filters.limit) || 50));

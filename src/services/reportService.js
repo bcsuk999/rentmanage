@@ -7,6 +7,7 @@ const RentPeriod = require('../models/RentPeriod');
 const Payment = require('../models/Payment');
 const { ensurePeriodsForActiveMembers } = require('./rentService');
 const { startOfDay, today } = require('../utils/dates');
+const { ValidationError } = require('../utils/validate');
 
 /** Periods that overlap the requested date range. */
 function overlapFilter(from, to) {
@@ -34,8 +35,16 @@ async function buildReport({ from, to, roomId = null }) {
   const range = { from: startOfDay(from), to: startOfDay(to) };
   await ensurePeriodsForActiveMembers({ reference: range.to });
 
+  let roomObjectId = null;
+  if (roomId) {
+    if (!mongoose.isValidObjectId(String(roomId))) {
+      throw new ValidationError([{ field: 'roomId', message: 'Invalid room filter' }]);
+    }
+    roomObjectId = new mongoose.Types.ObjectId(String(roomId));
+  }
+
   const periodQuery = overlapFilter(range.from, range.to);
-  if (roomId) periodQuery.roomId = new mongoose.Types.ObjectId(roomId);
+  if (roomObjectId) periodQuery.roomId = roomObjectId;
 
   const periods = await RentPeriod.find(periodQuery)
     .sort({ startDate: 1 })
@@ -54,9 +63,9 @@ async function buildReport({ from, to, roomId = null }) {
     : [];
 
   const roomFilter = {};
-  if (roomId) roomFilter._id = new mongoose.Types.ObjectId(roomId);
+  if (roomObjectId) roomFilter._id = roomObjectId;
   const rooms = await Room.find(roomFilter).select('roomNumber status').lean();
-  const memberFilter = roomId ? { roomId: roomFilter._id } : {};
+  const memberFilter = roomObjectId ? { roomId: roomObjectId } : {};
   const memberCount = await Member.countDocuments({ ...memberFilter, status: 'active' });
   const allMemberCount = await Member.countDocuments(memberFilter);
 

@@ -4,7 +4,7 @@ const js = require('@eslint/js');
 
 module.exports = [
   {
-    ignores: ['node_modules/**', 'src/public/**'],
+    ignores: ['node_modules/**', 'src/public/**', 'mobile/build/**', 'mobile/.dart_tool/**'],
   },
   js.configs.recommended,
   {
