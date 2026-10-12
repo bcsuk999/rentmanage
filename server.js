@@ -13,6 +13,7 @@ const memberRoutes = require('./src/routes/members');
 const rentRoutes = require('./src/routes/rentPeriods');
 const paymentRoutes = require('./src/routes/payments');
 const reportRoutes = require('./src/routes/reports');
+const overdueRoutes = require('./src/routes/overdue');
 const settingsRoutes = require('./src/routes/settings');
 const { ensureAdminFromEnv } = require('./src/services/adminService');
 
@@ -49,6 +50,7 @@ app.use('/api/members', requireAuth, memberRoutes);
 app.use('/api/rent-periods', requireAuth, rentRoutes);
 app.use('/api/payments', requireAuth, paymentRoutes);
 app.use('/api/reports', requireAuth, reportRoutes);
+app.use('/api/overdue', requireAuth, overdueRoutes);
 app.use('/api/settings', requireAuth, requireRole('admin'), settingsRoutes);
 
 app.use((req, res) => {

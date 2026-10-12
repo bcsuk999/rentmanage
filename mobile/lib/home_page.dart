@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'overdue_page.dart';
 import 'room_detail_page.dart';
 import 'status_colors.dart';
 
@@ -156,12 +157,17 @@ class _HomePageState extends State<HomePage> {
           ],
         ),
       ),
-      body: _tab == 0 ? _roomsTab(context) : _accountTab(context),
+      body: _tab == 0
+          ? _roomsTab(context)
+          : _tab == 1
+              ? OverduePage(api: widget.api, onAuthExpired: _signOut)
+              : _accountTab(context),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tab,
         onDestinationSelected: (i) => setState(() => _tab = i),
         destinations: const [
           NavigationDestination(icon: Icon(Icons.meeting_room_outlined), label: 'Rooms'),
+          NavigationDestination(icon: Icon(Icons.warning_outlined), label: 'Overdue'),
           NavigationDestination(icon: Icon(Icons.person_outline), label: 'Account'),
         ],
       ),
