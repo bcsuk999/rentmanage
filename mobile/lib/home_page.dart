@@ -142,52 +142,19 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.sizeOf(context).width;
-    final narrow = width < 480;
     return Scaffold(
       appBar: AppBar(
+        // Pull-to-refresh handles reloading, so the header stays clean.
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text('Rent Manager'),
-            if (!narrow)
-              Text('${widget.user['name'] ?? widget.user['username'] ?? ''}',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.85),
-                      )),
+            Text('${widget.user['name'] ?? widget.user['username'] ?? ''}',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.85),
+                    )),
           ],
         ),
-        actions: [
-          // Narrow screens get at most two icons so the bar can never overflow.
-          if (!narrow && _isAdmin && _tab == 0)
-            IconButton(tooltip: 'Add room', icon: const Icon(Icons.add), onPressed: _showAddRoom),
-          IconButton(tooltip: 'Refresh', icon: const Icon(Icons.refresh), onPressed: () => _refresh()),
-          if (!narrow)
-            Padding(
-              padding: const EdgeInsets.only(right: 4),
-              child: Chip(label: Text(_isAdmin ? 'Admin' : 'Viewer')),
-            ),
-          if (narrow)
-            PopupMenuButton<String>(
-              tooltip: 'Menu',
-              onSelected: (v) {
-                if (v == 'logout') _signOut();
-                if (v == 'add') _showAddRoom();
-              },
-              itemBuilder: (_) => [
-                if (_isAdmin && _tab == 0)
-                  const PopupMenuItem(value: 'add', child: Text('Add room')),
-                PopupMenuItem(
-                  value: 'role',
-                  enabled: false,
-                  child: Text(_isAdmin ? 'Admin' : 'Viewer'),
-                ),
-                const PopupMenuItem(value: 'logout', child: Text('Sign out')),
-              ],
-            )
-          else
-            IconButton(tooltip: 'Sign out', icon: const Icon(Icons.logout), onPressed: _signOut),
-        ],
       ),
       body: _tab == 0 ? _roomsTab(context) : _accountTab(context),
       bottomNavigationBar: NavigationBar(
@@ -334,41 +301,64 @@ class _HomePageState extends State<HomePage> {
   Widget _accountTab(BuildContext context) {
     final theme = Theme.of(context);
     final name = '${widget.user['name'] ?? widget.user['username'] ?? 'Account'}';
-    return Center(
-      child: SingleChildScrollView(
+    final contact = '${widget.user['contact'] ?? ''}';
+    return SafeArea(
+      child: Padding(
         padding: const EdgeInsets.all(20),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: Card(
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                children: [
-                  CircleAvatar(
-                    radius: 28,
-                    child: Text(
-                      name.isEmpty ? '?' : name[0].toUpperCase(),
-                      style: theme.textTheme.headlineSmall,
+        child: Column(
+          children: [
+            Expanded(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420),
+                  child: Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircleAvatar(
+                            radius: 28,
+                            child: Text(
+                              name.isEmpty ? '?' : name[0].toUpperCase(),
+                              style: theme.textTheme.headlineSmall,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(name, style: theme.textTheme.titleLarge),
+                          Text('@${widget.user['username'] ?? ''}',
+                              style: theme.textTheme.bodyMedium),
+                          if (contact.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Text(contact, style: theme.textTheme.bodyMedium),
+                          ],
+                          const SizedBox(height: 8),
+                          Chip(label: Text(_isAdmin ? 'Admin' : 'Viewer')),
+                        ],
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  Text(name, style: theme.textTheme.titleLarge),
-                  Text('${widget.user['username'] ?? ''}', style: theme.textTheme.bodyMedium),
-                  const SizedBox(height: 8),
-                  Chip(label: Text(_isAdmin ? 'Admin' : 'Viewer')),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.tonalIcon(
-                      onPressed: _signOut,
-                      icon: const Icon(Icons.logout),
-                      label: const Text('Sign out'),
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
-          ),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _signOut,
+                  icon: const Icon(Icons.logout, color: Colors.red),
+                  label: const Text('Log out', style: TextStyle(color: Colors.red)),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Colors.red, width: 1.5),
+                    backgroundColor: Colors.transparent,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
