@@ -145,6 +145,7 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
                     paid: row.paid,
                     pending: row.pending,
                     subtitle: row.mobile,
+                    dueDate: row.periodEnd,
                   ),
                   if (widget.isAdmin && row.periodId != null && row.pending > 0)
                     Align(
@@ -335,6 +336,7 @@ class MemberTile extends StatelessWidget {
     required this.paid,
     required this.pending,
     this.subtitle,
+    this.dueDate,
   });
 
   final String name;
@@ -343,6 +345,7 @@ class MemberTile extends StatelessWidget {
   final double paid;
   final double pending;
   final String? subtitle;
+  final DateTime? dueDate;
 
   @override
   Widget build(BuildContext context) {
@@ -402,11 +405,24 @@ class MemberTile extends StatelessWidget {
           const SizedBox(height: 6),
           if (rent <= 0 && paid <= 0 && pending <= 0)
             Text('No rent period for this month yet.', style: theme.textTheme.bodySmall)
-          else
+          else ...[
             Text('${inr(paid)} of ${inr(rent)} paid · ${inr(pending)} due',
                 style: theme.textTheme.bodySmall),
+            if (dueDate != null)
+              Text('Due ${_dueLabel(dueDate!)}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: overdue ? Colors.red.shade700 : theme.textTheme.bodySmall?.color,
+                    fontWeight: FontWeight.w600,
+                  )),
+          ],
         ],
       ),
     );
   }
+}
+
+/// Short due-date label, e.g. "14 Oct". No intl dependency needed.
+String _dueLabel(DateTime d) {
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return '${d.day} ${months[d.month - 1]}';
 }

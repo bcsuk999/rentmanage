@@ -34,6 +34,7 @@ class RoomMember {
     required this.paid,
     required this.pending,
     required this.status,
+    this.dueDate,
   });
 
   final String id;
@@ -42,6 +43,9 @@ class RoomMember {
   final double paid;
   final double pending;
   final String status;
+
+  /// End of the member's current rent cycle (null when the backend predates it).
+  final DateTime? dueDate;
 
   /// 0..1 fraction of rent collected. Safe when rent is 0.
   double get progress => rent <= 0 ? 0 : (paid / rent).clamp(0.0, 1.0);
@@ -55,6 +59,7 @@ class RoomMember {
       paid: asDouble(json['paid']),
       pending: asDouble(json['pending']),
       status: '${json['status']}',
+      dueDate: json['dueDate'] == null ? null : DateTime.tryParse('${json['dueDate']}'),
     );
   }
 
@@ -65,6 +70,7 @@ class RoomMember {
         'paid': paid,
         'pending': pending,
         'status': status,
+        if (dueDate != null) 'dueDate': dueDate!.toIso8601String(),
       };
 }
 

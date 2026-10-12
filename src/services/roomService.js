@@ -216,6 +216,7 @@ async function listRoomsWithSummary({ search = '', status = 'All', paymentState 
           paid: p ? p.paidAmount : 0,
           pending: p ? p.pendingAmount : m.monthlyRent || 0,
           status: p ? p.status : 'Pending',
+          dueDate: p ? p.endDate : null,
         };
       }),
     };

@@ -23,18 +23,24 @@ class _HomePageState extends State<HomePage> {
   late Future<List<Room>> _future;
   final _search = TextEditingController();
   Timer? _debounce;
+  int _requestId = 0;
+  bool _searching = false;
 
   bool get _isAdmin => widget.user['role'] == 'admin';
 
   @override
   void initState() {
     super.initState();
+    // Rebuild so the clear (X) button tracks the typed text.
+    _search.addListener(() {
+      if (mounted) setState(() {});
+    });
     if (widget.initialRooms != null) {
       // Show the cached list instantly, then refresh quietly in background.
       _future = Future.value(widget.initialRooms!);
       WidgetsBinding.instance.addPostFrameCallback((_) => _refresh(silent: true));
     } else {
-      _future = _loadRooms('');
+      _future = widget.api.rooms();
     }
   }
 
@@ -47,10 +53,29 @@ class _HomePageState extends State<HomePage> {
 
   void _onSearchChanged(String value) {
     _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 400), () {
-      if (!mounted) return;
-      setState(() => _future = _loadRooms(value));
-    });
+    _debounce = Timer(const Duration(milliseconds: 400), () => _runSearch(value));
+  }
+
+  /// Search fetch that keeps the current list on screen with an inline loader,
+  /// and ignores responses that a newer keystroke has superseded.
+  Future<void> _runSearch(String value) async {
+    final id = ++_requestId;
+    if (mounted) setState(() => _searching = true);
+    try {
+      final rooms = await _loadRooms(value);
+      if (!mounted || id != _requestId) return;
+      setState(() {
+        _future = Future.value(rooms);
+        _searching = false;
+      });
+    } catch (e) {
+      if (!mounted || id != _requestId) return;
+      if (e is ApiException && e.statusCode == 401) return; // signed out above
+      setState(() {
+        _future = Future.error(e);
+        _searching = false;
+      });
+    }
   }
 
   /// Fetch rooms; an expired/revoked token signs out instead of error-looping.
@@ -64,11 +89,16 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _refresh({bool silent = false}) async {
+    final id = ++_requestId;
     try {
       final rooms = await _loadRooms(_search.text);
-      if (mounted) setState(() => _future = Future.value(rooms));
+      if (!mounted || id != _requestId) return;
+      setState(() {
+        _future = Future.value(rooms);
+        _searching = false;
+      });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || id != _requestId) return;
       if (e is ApiException && e.statusCode == 401) return; // signed out above
       if (silent) {
         // Cached list stays on screen; mention the stale data quietly.
@@ -128,9 +158,10 @@ class _HomePageState extends State<HomePage> {
           ],
         ),
         actions: [
-          if (_isAdmin && _tab == 0)
+          // Narrow screens get at most two icons so the bar can never overflow.
+          if (!narrow && _isAdmin && _tab == 0)
             IconButton(tooltip: 'Add room', icon: const Icon(Icons.add), onPressed: _showAddRoom),
-          IconButton(tooltip: 'Refresh', icon: const Icon(Icons.refresh), onPressed: _refresh),
+          IconButton(tooltip: 'Refresh', icon: const Icon(Icons.refresh), onPressed: () => _refresh()),
           if (!narrow)
             Padding(
               padding: const EdgeInsets.only(right: 4),
@@ -141,8 +172,11 @@ class _HomePageState extends State<HomePage> {
               tooltip: 'Menu',
               onSelected: (v) {
                 if (v == 'logout') _signOut();
+                if (v == 'add') _showAddRoom();
               },
               itemBuilder: (_) => [
+                if (_isAdmin && _tab == 0)
+                  const PopupMenuItem(value: 'add', child: Text('Add room')),
                 PopupMenuItem(
                   value: 'role',
                   enabled: false,
@@ -214,6 +248,10 @@ class _HomePageState extends State<HomePage> {
                 child: Column(
                   children: [
                     _searchRow(context),
+                    if (_searching) ...[
+                      const SizedBox(height: 8),
+                      const LinearProgressIndicator(),
+                    ],
                     const SizedBox(height: 12),
                     if (rooms.isEmpty)
                       const Padding(
@@ -267,7 +305,7 @@ class _HomePageState extends State<HomePage> {
                       icon: const Icon(Icons.clear),
                       onPressed: () {
                         _search.clear();
-                        setState(() => _future = _loadRooms(''));
+                        _runSearch('');
                       },
                     ),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
@@ -397,6 +435,7 @@ class _RoomCard extends StatelessWidget {
                     rent: m.rent,
                     paid: m.paid,
                     pending: m.pending,
+                    dueDate: m.dueDate,
                   ),
                   const SizedBox(height: 8),
                 ],
