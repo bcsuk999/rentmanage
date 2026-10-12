@@ -406,7 +406,101 @@ class ApiClient {
     if (res.statusCode != 201) _throw(res);
     return (jsonDecode(res.body) as Map).cast<String, dynamic>();
   }
+
+  /// Members holding overdue rent, with each overdue period.
+  Future<OverdueReport> overdue() async {
+    final res = await http.get(Uri.parse('$baseUrl/api/overdue'), headers: _headers);
+    if (res.statusCode != 200) _throw(res);
+    return OverdueReport.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+  }
 }
 
 /// Payment methods accepted by the API.
 const List<String> paymentMethods = ['Cash', 'UPI', 'Bank Transfer', 'Other'];
+
+/// One overdue rent period of a member.
+class OverduePeriod {
+  OverduePeriod({
+    required this.id,
+    required this.start,
+    required this.end,
+    required this.rent,
+    required this.paid,
+    required this.pending,
+  });
+
+  final String id;
+  final DateTime? start;
+  final DateTime? end;
+  final double rent;
+  final double paid;
+  final double pending;
+
+  factory OverduePeriod.fromJson(Map<String, dynamic> json) {
+    double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
+    return OverduePeriod(
+      id: '${json['id']}',
+      start: json['startDate'] == null ? null : DateTime.tryParse('${json['startDate']}'),
+      end: json['endDate'] == null ? null : DateTime.tryParse('${json['endDate']}'),
+      rent: asDouble(json['rentAmount']),
+      paid: asDouble(json['paidAmount']),
+      pending: asDouble(json['pendingAmount']),
+    );
+  }
+}
+
+/// A member holding overdue rent, with each overdue period.
+class OverdueMember {
+  OverdueMember({
+    required this.memberId,
+    required this.name,
+    required this.mobile,
+    required this.roomNumber,
+    required this.periodCount,
+    required this.totalOverdue,
+    required this.periods,
+  });
+
+  final String memberId;
+  final String name;
+  final String mobile;
+  final String roomNumber;
+  final int periodCount;
+  final double totalOverdue;
+  final List<OverduePeriod> periods;
+
+  factory OverdueMember.fromJson(Map<String, dynamic> json) {
+    int asInt(dynamic v) => v is int ? v : int.tryParse('$v') ?? 0;
+    double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
+    final rows = (json['periods'] as List? ?? []);
+    return OverdueMember(
+      memberId: '${json['memberId']}',
+      name: '${json['name']}',
+      mobile: '${json['mobile'] ?? ''}',
+      roomNumber: '${json['roomNumber'] ?? '-'}',
+      periodCount: asInt(json['periodCount']),
+      totalOverdue: asDouble(json['totalOverdue']),
+      periods: rows.map((e) => OverduePeriod.fromJson((e as Map).cast<String, dynamic>())).toList(),
+    );
+  }
+}
+
+class OverdueReport {
+  OverdueReport({required this.members, required this.memberCount, required this.totalOverdue});
+
+  final List<OverdueMember> members;
+  final int memberCount;
+  final double totalOverdue;
+
+  factory OverdueReport.fromJson(Map<String, dynamic> json) {
+    final summary = (json['summary'] as Map? ?? {}).cast<String, dynamic>();
+    final rows = (json['members'] as List? ?? []);
+    double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
+    int asInt(dynamic v) => v is int ? v : int.tryParse('$v') ?? 0;
+    return OverdueReport(
+      members: rows.map((e) => OverdueMember.fromJson((e as Map).cast<String, dynamic>())).toList(),
+      memberCount: asInt(summary['memberCount']),
+      totalOverdue: asDouble(summary['totalOverdue']),
+    );
+  }
+}

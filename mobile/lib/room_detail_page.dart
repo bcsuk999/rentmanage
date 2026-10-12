@@ -116,9 +116,9 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
             return ListView(
               padding: const EdgeInsets.all(12),
               children: [
-                _SummaryCard(detail: detail),
-                const SizedBox(height: 12),
                 _RangeSwitcher(detail: detail, onSelect: _selectRange),
+                const SizedBox(height: 12),
+                _SummaryCard(detail: detail),
                 const SizedBox(height: 12),
                 Row(
                   children: [
