@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'app_theme.dart';
 import 'member_form_page.dart';
+import 'payment_history_page.dart';
 import 'payment_sheet.dart';
+import 'record_payment_page.dart';
 import 'status_colors.dart';
+import 'widgets.dart';
 
-/// Full room details: header totals, per-member rent rows, vacated history.
+/// Room Details: month switcher, overview, financial cards, and
+/// Members / History / Info tabs with bottom record/add actions.
 class RoomDetailPage extends StatefulWidget {
   const RoomDetailPage({
     super.key,
@@ -48,7 +53,7 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
     });
   }
 
-  Future<void> _openAddMember(RoomDetail detail) async {
+  Future<void> _openAddMember() async {
     final created = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => MemberFormPage(
@@ -58,9 +63,7 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
         ),
       ),
     );
-    if (created == true && mounted) {
-      setState(() => _future = widget.api.roomDetail(widget.roomId, from: _from, to: _to));
-    }
+    if (created == true && mounted) _refresh();
   }
 
   Future<void> _openPayment(RoomDetailRow row) async {
@@ -74,113 +77,261 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
       periodStart: row.periodStart,
       periodEnd: row.periodEnd,
     );
-    if (recorded && mounted) {
-      setState(() => _future = widget.api.roomDetail(widget.roomId, from: _from, to: _to));
+    if (recorded && mounted) _refresh();
+  }
+
+  Future<void> _openRecordFlow(RoomDetail detail) async {
+    if (detail.rows.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No active members to collect from.')),
+      );
+      return;
     }
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => RecordPaymentPage(
+          api: widget.api,
+          roomId: widget.roomId,
+          roomNumber: widget.roomNumber,
+          members: [
+            for (final r in detail.rows)
+              {'memberId': r.memberId, 'name': r.name, 'pending': r.pending},
+          ],
+        ),
+      ),
+    );
+    if (mounted) _refresh();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Room ${widget.roomNumber}')),
-      body: RefreshIndicator(
-        onRefresh: _refresh,
-        child: FutureBuilder<RoomDetail>(
-          future: _future,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (snapshot.hasError) {
-              return ListView(
-                padding: const EdgeInsets.all(20),
-                children: [
-                  Text(
-                    snapshot.error is ApiException
-                        ? (snapshot.error as ApiException).message
-                        : 'Could not load room details.',
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 12),
-                  Center(
-                    child: FilledButton(
-                      onPressed: () => setState(
-                          () => _future = widget.api.roomDetail(widget.roomId, from: _from, to: _to)),
-                      child: const Text('Retry'),
-                    ),
-                  ),
-                ],
-              );
-            }
-            final detail = snapshot.data!;
+      appBar: AppBar(
+        leading: const BackButton(),
+        title: const Text('Room Details'),
+      ),
+      body: FutureBuilder<RoomDetail>(
+        future: _future,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
             return ListView(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(16),
+              children: const [
+                SkeletonBlock(height: 60),
+                SizedBox(height: 12),
+                SkeletonBlock(height: 120),
+                SizedBox(height: 12),
+                SkeletonBlock(height: 150),
+              ],
+            );
+          }
+          if (snapshot.hasError) {
+            final message = snapshot.error is ApiException
+                ? (snapshot.error as ApiException).message
+                : 'Unable to load the latest data. Check your internet connection and try again.';
+            return ListView(
               children: [
-                _RangeSwitcher(detail: detail, onSelect: _selectRange),
-                const SizedBox(height: 12),
-                _SummaryCard(detail: detail),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text('Members (${detail.rows.length})',
-                          style: Theme.of(context).textTheme.titleMedium),
-                    ),
-                    if (widget.isAdmin)
-                      FilledButton.tonalIcon(
-                        onPressed: detail.isFull ? null : () => _openAddMember(detail),
-                        icon: const Icon(Icons.person_add_outlined, size: 18),
-                        label: Text(detail.isFull ? 'Full' : 'Add member'),
-                      ),
-                  ],
+                ErrorPanel(
+                  message: message,
+                  onRetry: () => setState(() => _future = widget.api
+                      .roomDetail(widget.roomId, from: _from, to: _to)),
                 ),
-                const SizedBox(height: 8),
-                if (detail.rows.isEmpty)
-                  const Card(child: Padding(padding: EdgeInsets.all(16), child: Text('No active members.'))),
-                for (final row in detail.rows) ...[
-                  MemberTile(
-                    name: row.name,
-                    status: row.status,
-                    rent: row.rent,
-                    paid: row.paid,
-                    pending: row.pending,
-                    subtitle: row.mobile,
-                    dueDate: row.periodEnd,
-                  ),
-                  if (widget.isAdmin && row.periodId != null && row.pending > 0)
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton.icon(
-                        onPressed: () => _openPayment(row),
-                        icon: const Icon(Icons.payments_outlined, size: 18),
-                        label: const Text('Record payment'),
-                      ),
-                    ),
-                  const SizedBox(height: 8),
-                ],
-                if (detail.historical.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text('Vacated (${detail.historical.length})', style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 8),
-                  Card(
-                    child: Column(
+              ],
+            );
+          }
+          final detail = snapshot.data!;
+          return DefaultTabController(
+            length: 3,
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: _RangeSwitcher(detail: detail, onSelect: _selectRange),
+                ),
+                Expanded(
+                  child: RefreshIndicator(
+                    onRefresh: _refresh,
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                       children: [
-                        for (final h in detail.historical)
-                          ListTile(
-                            dense: true,
-                            leading: const Icon(Icons.history_outlined),
-                            title: Text(h.name),
-                            subtitle: Text(h.mobile),
-                            trailing: Text(fmtDateIso(h.vacatedOn),
-                                style: Theme.of(context).textTheme.bodySmall),
-                          ),
+                        _OverviewCard(detail: detail),
+                        const SizedBox(height: 12),
+                        _MoneyCards(detail: detail),
+                        const SizedBox(height: 12),
+                        const TabBar(
+                          tabs: [
+                            Tab(text: 'Members'),
+                            Tab(text: 'History'),
+                            Tab(text: 'Info'),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Builder(builder: (tabContext) {
+                          return AnimatedBuilder(
+                            animation: DefaultTabController.of(tabContext),
+                            builder: (_, _) {
+                              final index =
+                                  DefaultTabController.of(tabContext).index;
+                              if (index == 1) {
+                                return PaymentHistoryList(
+                                  api: widget.api,
+                                  isAdmin: widget.isAdmin,
+                                  roomId: widget.roomId,
+                                  roomNumber: widget.roomNumber,
+                                  embedded: true,
+                                );
+                              }
+                              if (index == 2) return _infoTab(tabContext, detail);
+                              return _membersTab(tabContext, detail);
+                            },
+                          );
+                        }),
                       ],
                     ),
                   ),
-                ],
+                ),
+                _bottomActions(context, detail),
               ],
-            );
-          },
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _membersTab(BuildContext context, RoomDetail detail) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (detail.rows.isEmpty)
+          const Card(
+              child: Padding(
+                  padding: EdgeInsets.all(16), child: Text('No active members.')))
+        else
+          for (final row in detail.rows) ...[
+            MemberRow(
+              name: row.name,
+              status: row.status,
+              rent: row.rent,
+              paid: row.paid,
+              pending: row.pending,
+              subtitle: row.mobile,
+            ),
+            if (widget.isAdmin && row.periodId != null && row.pending > 0)
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: () => _openPayment(row),
+                  icon: const Icon(Icons.payments_outlined, size: 18),
+                  label: const Text('Record payment'),
+                ),
+              ),
+            const SizedBox(height: 8),
+          ],
+      ],
+    );
+  }
+
+  Widget _infoTab(BuildContext context, RoomDetail detail) {
+    final theme = Theme.of(context);
+    Widget fact(String label, String value) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                  width: 130,
+                  child: Text(label,
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: AppColors.secondaryText))),
+              Expanded(
+                  child: Text(value,
+                      style: theme.textTheme.bodyMedium
+                          ?.copyWith(fontWeight: FontWeight.w600))),
+            ],
+          ),
+        );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Room facts',
+                    style: theme.textTheme.titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 6),
+                fact('Room', detail.room.roomNumber),
+                fact('Status', detail.room.status),
+                fact('Capacity', '${detail.capacity}'),
+                fact('Occupancy', '${detail.memberCount}/${detail.capacity}'),
+                fact(
+                    'Current range',
+                    detail.rangeStartIso == null || detail.rangeEndIso == null
+                        ? 'No period yet'
+                        : '${fmtDateIso(detail.rangeStartIso!)} – ${fmtDateIso(detail.rangeEndIso!)}'),
+                if (detail.paymentState.isNotEmpty)
+                  fact('Payment state', detail.paymentState),
+              ],
+            ),
+          ),
+        ),
+        if (detail.historical.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Text('Vacated (${detail.historical.length})',
+              style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 8),
+          Card(
+            child: Column(
+              children: [
+                for (final h in detail.historical)
+                  ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.history_outlined,
+                        color: AppColors.secondaryText),
+                    title: Text(h.name),
+                    subtitle: Text(h.mobile),
+                    trailing: Text(fmtDateIso(h.vacatedOn),
+                        style: theme.textTheme.bodySmall),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _bottomActions(BuildContext context, RoomDetail detail) {
+    return SafeArea(
+      top: false,
+      child: Container(
+        color: AppColors.card,
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+        child: Row(
+          children: [
+            if (widget.isAdmin) ...[
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: detail.isFull ? null : _openAddMember,
+                  icon: const Icon(Icons.person_add_outlined, size: 18),
+                  label: Text(detail.isFull ? 'Full' : 'Add Member'),
+                ),
+              ),
+              const SizedBox(width: 10),
+            ],
+            Expanded(
+              flex: 2,
+              child: FilledButton.icon(
+                onPressed: () => _openRecordFlow(detail),
+                icon: const Icon(Icons.payments_outlined, size: 18),
+                label: const Text('Record Rent Payment'),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -209,7 +360,7 @@ class _RangeSwitcher extends StatelessWidget {
         child: DropdownButtonFormField<DateRange>(
           initialValue: current,
           decoration: const InputDecoration(
-            labelText: 'Rental month',
+            labelText: 'Rental month (reporting filter)',
             border: InputBorder.none,
             prefixIcon: Icon(Icons.calendar_month_outlined),
           ),
@@ -229,70 +380,48 @@ class _RangeSwitcher extends StatelessWidget {
   }
 }
 
-class _SummaryCard extends StatelessWidget {
-  const _SummaryCard({required this.detail});
+class _OverviewCard extends StatelessWidget {
+  const _OverviewCard({required this.detail});
 
   final RoomDetail detail;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final statusColor = roomStatusColor(detail.room.status);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text('Room ${detail.room.roomNumber}',
-                      style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: statusColor.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(999),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.meeting_room_outlined,
+                  color: AppColors.primary, size: 26),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Room ${detail.room.roomNumber}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${detail.memberCount}/${detail.capacity} occupied',
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: AppColors.secondaryText),
                   ),
-                  child: Text(detail.room.status,
-                      style: TextStyle(color: statusColor, fontWeight: FontWeight.w600, fontSize: 12)),
-                ),
-              ],
+                ],
+              ),
             ),
-            const SizedBox(height: 6),
-            Text('${detail.memberCount}/${detail.capacity} occupied',
-                style: theme.textTheme.titleMedium),
-            if (detail.isFull)
-              const Text('Full', style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                const Icon(Icons.calendar_month_outlined, size: 16),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    detail.rangeStartIso == null || detail.rangeEndIso == null
-                        ? 'No period yet'
-                        : '${fmtDateIso(detail.rangeStartIso!)} – ${fmtDateIso(detail.rangeEndIso!)}',
-                    style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                _Stat(label: 'Rent', value: inr(detail.totalRent)),
-                _Stat(label: 'Paid', value: inr(detail.totalPaid), color: Colors.green.shade700),
-                _Stat(label: 'Due', value: inr(detail.totalPending), color: Colors.red.shade700),
-              ],
-            ),
-            if (detail.paymentState.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(detail.paymentState, style: theme.textTheme.bodySmall),
-            ],
+            StatusPill.room(detail.room.status),
           ],
         ),
       ),
@@ -300,129 +429,50 @@ class _SummaryCard extends StatelessWidget {
   }
 }
 
-class _Stat extends StatelessWidget {
-  const _Stat({required this.label, required this.value, this.color});
+class _MoneyCards extends StatelessWidget {
+  const _MoneyCards({required this.detail});
 
-  final String label;
-  final String value;
-  final Color? color;
+  final RoomDetail detail;
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: Theme.of(context).textTheme.bodySmall),
-          Text(value,
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium
-                  ?.copyWith(fontWeight: FontWeight.bold, color: color)),
-        ],
-      ),
-    );
-  }
-}
-
-/// Shared member row: colored name, status pill, rent progress bar, amounts.
-/// Overdue rows get a glowing red border.
-class MemberTile extends StatelessWidget {
-  const MemberTile({
-    super.key,
-    required this.name,
-    required this.status,
-    required this.rent,
-    required this.paid,
-    required this.pending,
-    this.subtitle,
-    this.dueDate,
-  });
-
-  final String name;
-  final String status;
-  final double rent;
-  final double paid;
-  final double pending;
-  final String? subtitle;
-  final DateTime? dueDate;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final color = memberStatusColor(status);
-    final overdue = isOverdueStatus(status);
-    final progress = rent <= 0 ? 0.0 : (paid / rent).clamp(0.0, 1.0);
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: theme.cardColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: overdue ? Colors.red.shade600 : theme.dividerColor,
-          width: overdue ? 1.6 : 1,
-        ),
-        boxShadow: memberGlow(status),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(name,
-                        style: theme.textTheme.titleMedium
-                            ?.copyWith(color: color, fontWeight: FontWeight.bold)),
-                    if (subtitle != null && subtitle!.isNotEmpty)
-                      Text(subtitle!, style: theme.textTheme.bodySmall),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(status,
-                    style: TextStyle(color: color, fontWeight: FontWeight.w600, fontSize: 11)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(999),
-            child: LinearProgressIndicator(
-              value: progress,
-              minHeight: 8,
-              color: color,
-              backgroundColor: theme.dividerColor.withValues(alpha: 0.5),
+    Widget card(String label, String value, Color color, IconData icon) {
+      final theme = Theme.of(context);
+      return Expanded(
+        child: Card(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(icon, size: 18, color: color),
+                const SizedBox(height: 6),
+                Text(value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w800)),
+                Text(label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: AppColors.secondaryText, fontSize: 11)),
+              ],
             ),
           ),
-          const SizedBox(height: 6),
-          if (rent <= 0 && paid <= 0 && pending <= 0)
-            Text('No rent period for this month yet.', style: theme.textTheme.bodySmall)
-          else ...[
-            Text('${inr(paid)} of ${inr(rent)} paid · ${inr(pending)} due',
-                style: theme.textTheme.bodySmall),
-            if (dueDate != null)
-              Text('Due ${_dueLabel(dueDate!)}',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: overdue ? Colors.red.shade700 : theme.textTheme.bodySmall?.color,
-                    fontWeight: FontWeight.w600,
-                  )),
-          ],
-        ],
-      ),
+        ),
+      );
+    }
+
+    return Row(
+      children: [
+        card('Expected', inr(detail.totalRent), AppColors.mainText, Icons.receipt_outlined),
+        const SizedBox(width: 10),
+        card('Collected', inr(detail.totalPaid), AppColors.success, Icons.wallet_outlined),
+        const SizedBox(width: 10),
+        card('Remaining', inr(detail.totalPending), AppColors.danger,
+            Icons.pending_actions_outlined),
+      ],
     );
   }
-}
-
-/// Short due-date label, e.g. "14 Oct". No intl dependency needed.
-String _dueLabel(DateTime d) {
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return '${d.day} ${months[d.month - 1]}';
 }

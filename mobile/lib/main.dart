@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'app_theme.dart';
 import 'home_page.dart';
 import 'login_page.dart';
 import 'session_cache.dart';
-
-/// Brand palette: black + white + deep cobalt blue.
-const Color cobaltDeep = Color(0xFF2C3480);
 
 void main() {
   runApp(const RentManageApp());
@@ -25,20 +23,6 @@ class _RentManageAppState extends State<RentManageApp> {
   List<Room>? _initialRooms;
   bool _ready = false;
 
-  static final ColorScheme _lightScheme =
-      ColorScheme.fromSeed(seedColor: cobaltDeep, brightness: Brightness.light).copyWith(
-    primary: cobaltDeep,
-    onPrimary: Colors.white,
-    secondary: Colors.black,
-  );
-
-  static final ColorScheme _darkScheme =
-      ColorScheme.fromSeed(seedColor: cobaltDeep, brightness: Brightness.dark).copyWith(
-    primary: const Color(0xFF8F96DC),
-    onPrimary: Colors.black,
-    secondary: Colors.white,
-  );
-
   @override
   void initState() {
     super.initState();
@@ -53,6 +37,8 @@ class _RentManageAppState extends State<RentManageApp> {
       _api.token = session.token;
       cachedRooms = await SessionCache.loadRooms();
     }
+    // Brief branded moment; never an indefinite splash.
+    await Future<void>.delayed(const Duration(milliseconds: 700));
     if (mounted) {
       setState(() {
         _user = session.user;
@@ -99,33 +85,11 @@ class _RentManageAppState extends State<RentManageApp> {
     return MaterialApp(
       title: 'Rent Manager',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: _lightScheme,
-        useMaterial3: true,
-        scaffoldBackgroundColor: Colors.white,
-        appBarTheme: const AppBarTheme(
-          backgroundColor: cobaltDeep,
-          foregroundColor: Colors.white,
-        ),
-        navigationBarTheme: NavigationBarThemeData(
-          backgroundColor: Colors.white,
-          indicatorColor: cobaltDeep.withValues(alpha: 0.15),
-        ),
-      ),
-      darkTheme: ThemeData(
-        colorScheme: _darkScheme,
-        useMaterial3: true,
-        scaffoldBackgroundColor: Colors.black,
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Colors.black,
-          foregroundColor: Colors.white,
-        ),
-        navigationBarTheme: const NavigationBarThemeData(
-          backgroundColor: Colors.black,
-        ),
-      ),
+      theme: buildLightTheme(),
+      // The reference design is light-only.
+      themeMode: ThemeMode.light,
       home: !_ready
-          ? const Scaffold(body: Center(child: CircularProgressIndicator()))
+          ? const SplashScreen()
           : signedIn
               ? HomePage(
                   api: _api,
@@ -137,6 +101,52 @@ class _RentManageAppState extends State<RentManageApp> {
                   api: _api,
                   onSignedIn: _handleSignedIn,
                 ),
+    );
+  }
+}
+
+/// Branded loading while startup/auth resolves. Light, brief, with retry
+/// handled by callers once real screens take over.
+class SplashScreen extends StatelessWidget {
+  const SplashScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: const BoxDecoration(
+                  color: AppColors.primary,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.home_work_outlined, size: 44, color: Colors.white),
+              ),
+              const SizedBox(height: 20),
+              Text('Rent Manager',
+                  style: theme.textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w800, color: AppColors.mainText)),
+              const SizedBox(height: 6),
+              Text('Manage your rooms, collect rent, stay organized.',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium
+                      ?.copyWith(color: AppColors.secondaryText)),
+              const SizedBox(height: 28),
+              const SizedBox(
+                width: 28,
+                height: 28,
+                child: CircularProgressIndicator(strokeWidth: 3),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

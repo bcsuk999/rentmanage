@@ -1,17 +1,17 @@
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'app_theme.dart';
+import 'payment_sheet.dart';
+import 'status_colors.dart';
+import 'widgets.dart';
 
-String _rangeLabel(DateTime? start, DateTime? end) {
-  String fmt(DateTime? d) => d == null ? '?' : '${d.day}/${d.month}/${d.year}';
-  return '${fmt(start)} – ${fmt(end)}';
-}
-
-/// Overdue tab: every member holding overdue rent with each overdue period.
+/// Overdue tab: red summary, days-overdue buckets, per-period quick payment.
 class OverduePage extends StatefulWidget {
-  const OverduePage({super.key, required this.api, required this.onAuthExpired});
+  const OverduePage({super.key, required this.api, required this.isAdmin, required this.onAuthExpired});
 
   final ApiClient api;
+  final bool isAdmin;
   final VoidCallback onAuthExpired;
 
   @override
@@ -20,6 +20,7 @@ class OverduePage extends StatefulWidget {
 
 class _OverduePageState extends State<OverduePage> {
   late Future<OverdueReport> _future;
+  String _bucket = 'All';
 
   @override
   void initState() {
@@ -47,6 +48,47 @@ class _OverduePageState extends State<OverduePage> {
     }
   }
 
+  /// Days since the member's earliest overdue period ended.
+  int _daysOverdue(OverdueMember m) {
+    DateTime? earliest;
+    for (final p in m.periods) {
+      final end = p.end;
+      if (end == null) continue;
+      if (earliest == null || end.isBefore(earliest)) earliest = end;
+    }
+    if (earliest == null) return 0;
+    final now = DateTime.now();
+    final days = now.difference(DateTime(earliest.year, earliest.month, earliest.day)).inDays;
+    return days < 0 ? 0 : days;
+  }
+
+  bool _inBucket(OverdueMember m) {
+    final d = _daysOverdue(m);
+    switch (_bucket) {
+      case '1–7 days':
+        return d >= 1 && d <= 7;
+      case '8–30 days':
+        return d >= 8 && d <= 30;
+      case '30+ days':
+        return d > 30;
+      default:
+        return true;
+    }
+  }
+
+  Future<void> _record(OverdueMember m, OverduePeriod p) async {
+    final recorded = await showPaymentSheet(
+      context,
+      api: widget.api,
+      rentPeriodId: p.id,
+      memberName: m.name,
+      pending: p.pending,
+      periodStart: p.start,
+      periodEnd: p.end,
+    );
+    if (recorded && mounted) _refresh();
+  }
+
   @override
   Widget build(BuildContext context) {
     return RefreshIndicator(
@@ -55,142 +97,207 @@ class _OverduePageState extends State<OverduePage> {
         future: _future,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return ListView(
+              padding: const EdgeInsets.all(16),
+              children: const [
+                SkeletonBlock(height: 96),
+                SizedBox(height: 12),
+                SkeletonBlock(height: 120),
+                SizedBox(height: 12),
+                SkeletonBlock(height: 120),
+              ],
+            );
           }
           if (snapshot.hasError) {
             final message = snapshot.error is ApiException
                 ? (snapshot.error as ApiException).message
-                : 'Could not load overdue dues.';
+                : 'Unable to load the latest data. Check your internet connection and try again.';
             return ListView(
-              padding: const EdgeInsets.all(20),
-              children: [
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      children: [
-                        const Icon(Icons.cloud_off_outlined, size: 40),
-                        const SizedBox(height: 8),
-                        Text(message, textAlign: TextAlign.center),
-                        const SizedBox(height: 12),
-                        FilledButton(
-                          onPressed: _refresh,
-                          child: const Text('Retry'),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
+              children: [ErrorPanel(message: message, onRetry: _refresh)],
             );
           }
           final report = snapshot.data!;
           if (report.members.isEmpty) {
             return ListView(
-              padding: const EdgeInsets.all(20),
               children: const [
-                Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(20),
-                    child: Column(
-                      children: [
-                        Icon(Icons.check_circle_outline, size: 40, color: Colors.green),
-                        SizedBox(height: 8),
-                        Text('No overdue rent. All clear!'),
-                      ],
-                    ),
-                  ),
+                EmptyPanel(
+                  icon: Icons.check_circle_outline,
+                  title: 'No overdue rent',
+                  body: 'Nothing is past its due date. All clear!',
                 ),
               ],
             );
           }
+          final members = report.members.where(_inBucket).toList();
           return ListView.builder(
-            padding: const EdgeInsets.all(12),
-            itemCount: report.members.length + 1,
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+            itemCount: members.length + 2,
             itemBuilder: (context, index) {
-              if (index == 0) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('${report.memberCount} member${report.memberCount == 1 ? '' : 's'} overdue',
-                                    style: Theme.of(context).textTheme.titleMedium),
-                                Text('Tap a member to see each overdue period',
-                                    style: Theme.of(context).textTheme.bodySmall),
-                              ],
-                            ),
-                          ),
-                          Text(
-                            '₹${report.totalOverdue.toStringAsFixed(0)}',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleLarge
-                                ?.copyWith(color: Colors.red.shade700, fontWeight: FontWeight.bold),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              }
-              return _OverdueCard(member: report.members[index - 1]);
+              if (index == 0) return _summaryCard(context, report);
+              if (index == 1) return _bucketRow(context);
+              return _OverdueCard(
+                member: members[index - 2],
+                days: _daysOverdue(members[index - 2]),
+                isAdmin: widget.isAdmin,
+                onRecord: _record,
+              );
             },
           );
         },
       ),
     );
   }
+
+  Widget _summaryCard(BuildContext context, OverdueReport report) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Card(
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppColors.dangerSoft.withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: const BoxDecoration(
+                  color: AppColors.danger,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.warning_amber_rounded,
+                    color: Colors.white, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(inr(report.totalOverdue),
+                        style: theme.textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.w800, color: AppColors.danger)),
+                    Text(
+                        '${report.memberCount} member${report.memberCount == 1 ? '' : 's'} overdue',
+                        style: theme.textTheme.bodySmall
+                            ?.copyWith(color: AppColors.secondaryText)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _bucketRow(BuildContext context) {
+    const buckets = ['All', '1–7 days', '8–30 days', '30+ days'];
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            for (final b in buckets)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: FilterChip(
+                  label: Text(b),
+                  selected: _bucket == b,
+                  onSelected: (_) => setState(() => _bucket = b),
+                  selectedColor: AppColors.danger.withValues(alpha: 0.15),
+                  checkmarkColor: AppColors.danger,
+                  labelStyle: TextStyle(
+                    color: _bucket == b ? AppColors.danger : AppColors.secondaryText,
+                    fontWeight: _bucket == b ? FontWeight.w700 : FontWeight.w500,
+                  ),
+                  side: BorderSide(
+                    color: _bucket == b ? AppColors.danger : AppColors.border,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _OverdueCard extends StatelessWidget {
-  const _OverdueCard({required this.member});
+  const _OverdueCard({
+    required this.member,
+    required this.days,
+    required this.isAdmin,
+    required this.onRecord,
+  });
 
   final OverdueMember member;
+  final int days;
+  final bool isAdmin;
+  final Future<void> Function(OverdueMember m, OverduePeriod p) onRecord;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Card(
-      elevation: 2,
-      margin: const EdgeInsets.only(bottom: 12),
       child: ExpansionTile(
+        shape: const Border(),
         leading: CircleAvatar(
+          backgroundColor: AppColors.dangerSoft,
           child: Text(
             member.name.isEmpty ? '?' : member.name[0].toUpperCase(),
-            style: theme.textTheme.titleMedium,
+            style: theme.textTheme.titleMedium
+                ?.copyWith(color: AppColors.danger, fontWeight: FontWeight.w800),
           ),
         ),
-        title: Text(member.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Text('Room ${member.roomNumber} · ${member.mobile}'),
+        title: Text(member.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontWeight: FontWeight.w700)),
+        subtitle: Text('Room ${member.roomNumber} · ${member.mobile}',
+            maxLines: 1, overflow: TextOverflow.ellipsis),
         trailing: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             Text(
-              '₹${member.totalOverdue.toStringAsFixed(0)}',
-              style: TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.bold),
+              inr(member.totalOverdue),
+              style: const TextStyle(
+                  color: AppColors.danger, fontWeight: FontWeight.w800),
             ),
-            Text('${member.periodCount} period${member.periodCount == 1 ? '' : 's'}',
-                style: theme.textTheme.bodySmall),
+            Text('$days day${days == 1 ? '' : 's'} overdue',
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: AppColors.secondaryText, fontSize: 11)),
           ],
         ),
         children: [
           for (final p in member.periods)
             ListTile(
               dense: true,
-              leading: const Icon(Icons.calendar_month_outlined),
-              title: Text(_rangeLabel(p.start, p.end)),
-              subtitle: Text('Rent ₹${p.rent.toStringAsFixed(0)} · Paid ₹${p.paid.toStringAsFixed(0)}'),
-              trailing: Text(
-                '₹${p.pending.toStringAsFixed(0)}',
-                style: TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.w600),
+              leading: const Icon(Icons.calendar_month_outlined,
+                  color: AppColors.secondaryText),
+              title: Text(
+                  '${p.start == null ? '?' : fmtDateShort(p.start!)} – ${p.end == null ? '?' : fmtDateShort(p.end!)}'),
+              subtitle: Text(
+                  'Rent ${inr(p.rent)} · Paid ${inr(p.paid)}',
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: AppColors.secondaryText)),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    inr(p.pending),
+                    style: const TextStyle(
+                        color: AppColors.danger, fontWeight: FontWeight.w700),
+                  ),
+                  if (isAdmin && p.pending > 0)
+                    TextButton(
+                      onPressed: () => onRecord(member, p),
+                      child: const Text('Record'),
+                    ),
+                ],
               ),
             ),
           const SizedBox(height: 4),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'widgets.dart';
 
 String _dateInput(DateTime d) =>
     '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
@@ -85,9 +86,7 @@ class _PaymentSheetState extends State<PaymentSheet> {
         paymentMethod: _method,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Payment of ₹${_amount.text.trim()} recorded for ${widget.memberName}.')),
-      );
+      toastOk(context, 'Payment of ₹${_amount.text.trim()} recorded for ${widget.memberName}.');
       Navigator.of(context).pop(true);
     } on ApiException catch (e) {
       setState(() => _error = e.message);

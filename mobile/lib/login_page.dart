@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'app_theme.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key, required this.api, required this.onSignedIn});
@@ -51,56 +52,79 @@ class _LoginPageState extends State<LoginPage> {
           padding: const EdgeInsets.all(20),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 420),
-            child: Card(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text('Sign in', style: Theme.of(context).textTheme.headlineSmall),
-                    const SizedBox(height: 6),
-                    const Text('Room rent management.'),
-                    const SizedBox(height: 16),
-                    if (_error != null) ...[
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.errorContainer,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(_error!),
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-                    TextField(
-                      controller: _username,
-                      decoration: const InputDecoration(labelText: 'Username'),
-                      textInputAction: TextInputAction.next,
-                      autofillHints: const [AutofillHints.username],
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _password,
-                      decoration: const InputDecoration(labelText: 'Password'),
-                      obscureText: true,
-                      textInputAction: TextInputAction.done,
-                      autofillHints: const [AutofillHints.password],
-                      onSubmitted: (_) => _submit(),
-                    ),
-                    const SizedBox(height: 20),
-                    FilledButton(
-                      onPressed: _busy ? null : _submit,
-                      child: _busy
-                          ? const SizedBox(
-                              height: 18,
-                              width: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Text('Sign in'),
-                    ),
-                  ],
+            child: Column(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: const BoxDecoration(
+                    color: AppColors.primary,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.home_work_outlined,
+                      size: 36, color: Colors.white),
                 ),
-              ),
+                const SizedBox(height: 14),
+                Text('Rent Manager',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w800, color: AppColors.mainText)),
+                const SizedBox(height: 4),
+                Text('Manage your rooms, collect rent, stay organized.',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium
+                        ?.copyWith(color: AppColors.secondaryText)),
+                const SizedBox(height: 20),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text('Sign in', style: Theme.of(context).textTheme.headlineSmall),
+                        const SizedBox(height: 6),
+                        const Text('Room rent management.'),
+                        const SizedBox(height: 16),
+                        if (_error != null) ...[
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.errorContainer,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(_error!),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                        TextField(
+                          controller: _username,
+                          decoration: const InputDecoration(labelText: 'Username'),
+                          textInputAction: TextInputAction.next,
+                          autofillHints: const [AutofillHints.username],
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: _password,
+                          decoration: const InputDecoration(labelText: 'Password'),
+                          obscureText: true,
+                          textInputAction: TextInputAction.done,
+                          autofillHints: const [AutofillHints.password],
+                          onSubmitted: (_) => _submit(),
+                        ),
+                        const SizedBox(height: 20),
+                        FilledButton(
+                          onPressed: _busy ? null : _submit,
+                          child: _busy
+                              ? const SizedBox(
+                                  height: 18,
+                                  width: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Text('Sign in'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),

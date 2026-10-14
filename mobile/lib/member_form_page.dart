@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'widgets.dart';
 
 String _dateInput(DateTime d) =>
     '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
@@ -59,9 +60,7 @@ class _MemberFormPageState extends State<MemberFormPage> {
         if (_aadhaar.text.trim().isNotEmpty) 'aadhaarNumber': _aadhaar.text.trim(),
       });
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${_name.text.trim()} added to Room ${widget.roomNumber}.')),
-      );
+      toastOk(context, '${_name.text.trim()} added to Room ${widget.roomNumber}.');
       Navigator.of(context).pop(true);
     } on ApiException catch (e) {
       setState(() => _error = e.message);

@@ -1,44 +1,71 @@
 import 'package:flutter/material.dart';
 
-/// Rent status -> member name color.
-///
-/// green  = fully paid, orange = partial, red = due (pending) / overdue.
-/// Overdue additionally gets a glowing red border (see [memberGlow]).
+import 'app_theme.dart';
+
+/// Status -> text color. Paid green, partial amber, due red, overdue red.
+/// Always paired with a readable pill label, never color alone.
 Color memberStatusColor(String status) {
   switch (status.toLowerCase()) {
     case 'paid':
     case 'fully paid':
-      return Colors.green.shade700;
+      return AppColors.success;
     case 'partial':
-      return Colors.orange.shade800;
+      return AppColors.warning;
     case 'no period':
-      return Colors.grey.shade600;
+      return AppColors.secondaryText;
     case 'overdue':
     case 'pending':
     default:
-      return Colors.red.shade700;
+      return AppColors.danger;
   }
 }
 
 bool isOverdueStatus(String status) => status.toLowerCase() == 'overdue';
 
+/// Soft pill background for a status.
+Color memberStatusSoft(String status) {
+  switch (status.toLowerCase()) {
+    case 'paid':
+    case 'fully paid':
+      return AppColors.successSoft;
+    case 'partial':
+      return AppColors.warningSoft;
+    case 'no period':
+      return AppColors.neutralChip;
+    case 'overdue':
+    case 'pending':
+    default:
+      return AppColors.dangerSoft;
+  }
+}
+
 /// Red glow used around overdue member rows.
 List<BoxShadow>? memberGlow(String status) {
   if (!isOverdueStatus(status)) return null;
-  final glow = Colors.red.shade600;
   return [
-    BoxShadow(color: glow.withValues(alpha: 0.45), blurRadius: 12, spreadRadius: 1),
+    BoxShadow(color: AppColors.danger.withValues(alpha: 0.35), blurRadius: 12, spreadRadius: 1),
   ];
 }
 
 Color roomStatusColor(String status) {
   switch (status.toLowerCase()) {
     case 'occupied':
-      return Colors.green.shade700;
+      return AppColors.success;
     case 'maintenance':
-      return Colors.orange.shade800;
+      return AppColors.warning;
     default:
-      return Colors.grey.shade700;
+      return AppColors.secondaryText;
+  }
+}
+
+Color roomStatusSoft(String status) {
+  switch (status.toLowerCase()) {
+    case 'occupied':
+      return AppColors.successSoft;
+    case 'maintenance':
+      return AppColors.warningSoft;
+    default:
+      return AppColors.neutralChip;
   }
 }
 
@@ -63,6 +90,19 @@ String fmtDateIso(String iso) {
   }
 }
 
+/// '2026-10-01T00:00:00.000Z' -> '01 Oct'. Falls back to raw text.
+String fmtDateShortIso(String iso) {
+  try {
+    final d = DateTime.parse(iso).toUtc();
+    return '${d.day.toString().padLeft(2, '0')} ${_months[d.month - 1]}';
+  } catch (_) {
+    return iso;
+  }
+}
+
+/// DateTime -> '01 Oct'.
+String fmtDateShort(DateTime d) => '${d.day.toString().padLeft(2, '0')} ${_months[d.month - 1]}';
+
 /// ISO datetime -> 'YYYY-MM-DD' for API query params.
 String toDateOnlyIso(String iso) {
   try {
@@ -71,3 +111,16 @@ String toDateOnlyIso(String iso) {
     return iso.length >= 10 ? iso.substring(0, 10) : iso;
   }
 }
+
+/// First day of the month containing [d], as 'YYYY-MM-DD'.
+String monthStart(DateTime d) =>
+    '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-01';
+
+/// Last day of the month containing [d], as 'YYYY-MM-DD'.
+String monthEnd(DateTime d) {
+  final last = DateTime(d.year, d.month + 1, 0).day;
+  return '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${last.toString().padLeft(2, '0')}';
+}
+
+/// '2026-10' style label for a month.
+String monthLabel(DateTime d) => '${_months[d.month - 1]} ${d.year}';

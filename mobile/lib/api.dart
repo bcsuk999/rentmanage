@@ -312,18 +312,24 @@ class ApiClient {
     return (body['user'] as Map).cast<String, dynamic>();
   }
 
-  /// Room list. [search] matches room numbers and member name/mobile.
+  /// Room list. [search] matches room numbers and member name/mobile;
+  /// [status] is a room status (Occupied/Empty/Maintenance), [paymentState]
+  /// is Fully Paid/Partial/Pending/Overdue. 'All'/empty means no filter.
   /// The unfiltered list is cached on-device for offline-first startup.
-  Future<List<Room>> rooms({String? search}) async {
+  Future<List<Room>> rooms({String? search, String? status, String? paymentState}) async {
     final q = (search ?? '').trim();
-    final uri = Uri.parse('$baseUrl/api/rooms')
-        .replace(queryParameters: q.isEmpty ? null : {'search': q});
+    final params = <String, String>{};
+    if (q.isNotEmpty) params['search'] = q;
+    if (status != null && status != 'All') params['status'] = status;
+    if (paymentState != null && paymentState != 'All') params['paymentState'] = paymentState;
+    final uri =
+        Uri.parse('$baseUrl/api/rooms').replace(queryParameters: params.isEmpty ? null : params);
     final res = await http.get(uri, headers: _headers);
     if (res.statusCode != 200) _throw(res);
     final body = jsonDecode(res.body) as Map<String, dynamic>;
     final list = (body['rooms'] as List? ?? []);
     final rooms = list.map((e) => Room.fromJson((e as Map).cast<String, dynamic>())).toList();
-    if (q.isEmpty) {
+    if (params.isEmpty) {
       // Best-effort cache; never fail the request because of storage.
       try {
         await SessionCache.saveRooms(rooms);
@@ -413,6 +419,67 @@ class ApiClient {
     if (res.statusCode != 200) _throw(res);
     return OverdueReport.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
   }
+
+  /// Reporting totals for a date range (rooms summary cards).
+  Future<ReportTotals> report({String? from, String? to, String? roomId}) async {
+    final params = <String, String>{};
+    if (from != null) params['from'] = from;
+    if (to != null) params['to'] = to;
+    if (roomId != null && roomId.isNotEmpty) params['roomId'] = roomId;
+    final uri =
+        Uri.parse('$baseUrl/api/reports').replace(queryParameters: params.isEmpty ? null : params);
+    final res = await http.get(uri, headers: _headers);
+    if (res.statusCode != 200) _throw(res);
+    return ReportTotals.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+  }
+
+  /// Paged payment history. Filters mirror the backend query params.
+  Future<PaymentsPage> payments({
+    String? roomId,
+    String? memberId,
+    String? paymentMethod,
+    String? from,
+    String? to,
+    int page = 1,
+  }) async {
+    final params = <String, String>{'page': '$page'};
+    if (roomId != null && roomId.isNotEmpty) params['roomId'] = roomId;
+    if (memberId != null && memberId.isNotEmpty) params['memberId'] = memberId;
+    if (paymentMethod != null && paymentMethod.isNotEmpty) params['paymentMethod'] = paymentMethod;
+    if (from != null && from.isNotEmpty) params['from'] = from;
+    if (to != null && to.isNotEmpty) params['to'] = to;
+    final uri = Uri.parse('$baseUrl/api/payments').replace(queryParameters: params);
+    final res = await http.get(uri, headers: _headers);
+    if (res.statusCode != 200) _throw(res);
+    return PaymentsPage.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+  }
+
+  /// A member's rent periods (for choosing which obligation is being paid).
+  Future<List<MemberPeriod>> memberPeriods(String memberId) async {
+    final res = await http.get(Uri.parse('$baseUrl/api/members/$memberId'), headers: _headers);
+    if (res.statusCode != 200) _throw(res);
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    final list = (body['periods'] as List? ?? []);
+    return list.map((e) => MemberPeriod.fromJson((e as Map).cast<String, dynamic>())).toList();
+  }
+
+  /// Change the signed-in account password.
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+    required String confirmPassword,
+  }) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/auth/change-password'),
+      headers: _headers,
+      body: jsonEncode({
+        'currentPassword': currentPassword,
+        'newPassword': newPassword,
+        'confirmPassword': confirmPassword,
+      }),
+    );
+    if (res.statusCode != 200) _throw(res);
+  }
 }
 
 /// Payment methods accepted by the API.
@@ -501,6 +568,158 @@ class OverdueReport {
       members: rows.map((e) => OverdueMember.fromJson((e as Map).cast<String, dynamic>())).toList(),
       memberCount: asInt(summary['memberCount']),
       totalOverdue: asDouble(summary['totalOverdue']),
+    );
+  }
+}
+
+/// Reporting totals backing the Rooms summary cards.
+class ReportTotals {
+  ReportTotals({
+    required this.totalRent,
+    required this.totalPaid,
+    required this.totalPending,
+    required this.receivedInRange,
+    required this.totalRooms,
+    required this.totalMembers,
+    required this.from,
+    required this.to,
+  });
+
+  final double totalRent;
+  final double totalPaid;
+  final double totalPending;
+  final double receivedInRange;
+  final int totalRooms;
+  final int totalMembers;
+  final String from;
+  final String to;
+
+  factory ReportTotals.fromJson(Map<String, dynamic> json) {
+    double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
+    int asInt(dynamic v) => v is int ? v : int.tryParse('$v') ?? 0;
+    final totals = (json['totals'] as Map? ?? {}).cast<String, dynamic>();
+    final filters = (json['filters'] as Map? ?? {}).cast<String, dynamic>();
+    return ReportTotals(
+      totalRent: asDouble(totals['totalRent']),
+      totalPaid: asDouble(totals['totalPaid']),
+      totalPending: asDouble(totals['totalPending']),
+      receivedInRange: asDouble(totals['receivedInRange']),
+      totalRooms: asInt(totals['totalRooms']),
+      totalMembers: asInt(totals['totalMembers']),
+      from: '${filters['from'] ?? ''}',
+      to: '${filters['to'] ?? ''}',
+    );
+  }
+}
+
+/// One saved payment transaction.
+class PaymentRecord {
+  PaymentRecord({
+    required this.id,
+    required this.amount,
+    required this.dateIso,
+    required this.method,
+    required this.reference,
+    required this.notes,
+    required this.memberName,
+    required this.memberMobile,
+    required this.roomNumber,
+    required this.periodStartIso,
+    required this.periodEndIso,
+  });
+
+  final String id;
+  final double amount;
+  final String dateIso;
+  final String method;
+  final String reference;
+  final String notes;
+  final String memberName;
+  final String memberMobile;
+  final String roomNumber;
+  final String periodStartIso;
+  final String periodEndIso;
+
+  factory PaymentRecord.fromJson(Map<String, dynamic> json) {
+    double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
+    final member = (json['memberId'] as Map?)?.cast<String, dynamic>();
+    final room = (json['roomId'] as Map?)?.cast<String, dynamic>();
+    final period = (json['rentPeriodId'] as Map?)?.cast<String, dynamic>();
+    return PaymentRecord(
+      id: '${json['_id']}',
+      amount: asDouble(json['amount']),
+      dateIso: '${json['paymentDate']}',
+      method: '${json['paymentMethod']}',
+      reference: '${json['reference'] ?? ''}',
+      notes: '${json['notes'] ?? ''}',
+      memberName: member == null ? '-' : '${member['name'] ?? '-'}',
+      memberMobile: member == null ? '' : '${member['mobile'] ?? ''}',
+      roomNumber: room == null ? '-' : '${room['roomNumber'] ?? '-'}',
+      periodStartIso: period == null ? '' : '${period['startDate'] ?? ''}',
+      periodEndIso: period == null ? '' : '${period['endDate'] ?? ''}',
+    );
+  }
+}
+
+class PaymentsPage {
+  PaymentsPage({
+    required this.rows,
+    required this.total,
+    required this.page,
+    required this.pages,
+    required this.totalAmount,
+  });
+
+  final List<PaymentRecord> rows;
+  final int total;
+  final int page;
+  final int pages;
+  final double totalAmount;
+
+  factory PaymentsPage.fromJson(Map<String, dynamic> json) {
+    double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
+    int asInt(dynamic v) => v is int ? v : int.tryParse('$v') ?? 0;
+    final rows = (json['rows'] as List? ?? []);
+    return PaymentsPage(
+      rows: rows.map((e) => PaymentRecord.fromJson((e as Map).cast<String, dynamic>())).toList(),
+      total: asInt(json['total']),
+      page: asInt(json['page']),
+      pages: asInt(json['pages']),
+      totalAmount: asDouble(json['totalAmount']),
+    );
+  }
+}
+
+/// One rent period of a member (payment target picker).
+class MemberPeriod {
+  MemberPeriod({
+    required this.id,
+    required this.startIso,
+    required this.endIso,
+    required this.rent,
+    required this.paid,
+    required this.pending,
+    required this.status,
+  });
+
+  final String id;
+  final String startIso;
+  final String endIso;
+  final double rent;
+  final double paid;
+  final double pending;
+  final String status;
+
+  factory MemberPeriod.fromJson(Map<String, dynamic> json) {
+    double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
+    return MemberPeriod(
+      id: '${json['_id']}',
+      startIso: '${json['startDate']}',
+      endIso: '${json['endDate']}',
+      rent: asDouble(json['rentAmount']),
+      paid: asDouble(json['paidAmount']),
+      pending: asDouble(json['pendingAmount']),
+      status: '${json['status']}',
     );
   }
 }
