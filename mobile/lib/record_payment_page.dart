@@ -164,6 +164,8 @@ class _RecordPaymentPageState extends State<RecordPaymentPage> {
         amount: _amount.text.trim(),
         paymentDate: _dateInput(_date),
         paymentMethod: _method,
+        reference: _reference.text,
+        notes: _notes.text,
       );
       if (!mounted) return;
       final snapshot = PaymentConfirmationData(

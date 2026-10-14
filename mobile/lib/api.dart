@@ -398,6 +398,8 @@ class ApiClient {
     required String amount,
     required String paymentDate,
     required String paymentMethod,
+    String? reference,
+    String? notes,
   }) async {
     final res = await http.post(
       Uri.parse('$baseUrl/api/payments'),
@@ -407,6 +409,8 @@ class ApiClient {
         'amount': amount,
         'paymentDate': paymentDate,
         'paymentMethod': paymentMethod,
+        if (reference != null && reference.trim().isNotEmpty) 'reference': reference.trim(),
+        if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
       }),
     );
     if (res.statusCode != 201) _throw(res);
@@ -597,7 +601,9 @@ class ReportTotals {
   factory ReportTotals.fromJson(Map<String, dynamic> json) {
     double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
     int asInt(dynamic v) => v is int ? v : int.tryParse('$v') ?? 0;
-    final totals = (json['totals'] as Map? ?? {}).cast<String, dynamic>();
+    // Route wraps buildReport() as { report: { totals, ... }, filters }.
+    final report = (json['report'] as Map? ?? json).cast<String, dynamic>();
+    final totals = (report['totals'] as Map? ?? {}).cast<String, dynamic>();
     final filters = (json['filters'] as Map? ?? {}).cast<String, dynamic>();
     return ReportTotals(
       totalRent: asDouble(totals['totalRent']),
@@ -642,9 +648,11 @@ class PaymentRecord {
 
   factory PaymentRecord.fromJson(Map<String, dynamic> json) {
     double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
-    final member = (json['memberId'] as Map?)?.cast<String, dynamic>();
-    final room = (json['roomId'] as Map?)?.cast<String, dynamic>();
-    final period = (json['rentPeriodId'] as Map?)?.cast<String, dynamic>();
+    // Populated docs are Maps; dangling refs arrive as id strings.
+    Map<String, dynamic>? asMap(dynamic v) => v is Map ? v.cast<String, dynamic>() : null;
+    final member = asMap(json['memberId']);
+    final room = asMap(json['roomId']);
+    final period = asMap(json['rentPeriodId']);
     return PaymentRecord(
       id: '${json['_id']}',
       amount: asDouble(json['amount']),
