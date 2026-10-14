@@ -1,6 +1,6 @@
 {
-    "name": "rentmanage",
-    "short_name": "rentmanage",
+    "name": "Rent Manager",
+    "short_name": "Rent Manager",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

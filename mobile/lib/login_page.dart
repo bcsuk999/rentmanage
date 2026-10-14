@@ -54,20 +54,25 @@ class _LoginPageState extends State<LoginPage> {
             constraints: const BoxConstraints(maxWidth: 420),
             child: Column(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: const BoxDecoration(
-                    color: AppColors.primary,
-                    shape: BoxShape.circle,
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(24),
+                  child: Image.asset(
+                    'logo.png',
+                    width: 120,
+                    height: 120,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) => Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: const BoxDecoration(
+                        color: AppColors.primary,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.home_work_outlined,
+                          size: 36, color: Colors.white),
+                    ),
                   ),
-                  child: const Icon(Icons.home_work_outlined,
-                      size: 36, color: Colors.white),
                 ),
-                const SizedBox(height: 14),
-                Text('Rent Manager',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w800, color: AppColors.mainText)),
-                const SizedBox(height: 4),
+                const SizedBox(height: 12),
                 Text('Manage your rooms, collect rent, stay organized.',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodyMedium

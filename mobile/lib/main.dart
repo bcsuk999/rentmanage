@@ -122,19 +122,25 @@ class SplashScreen extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: const BoxDecoration(
-                  color: AppColors.primary,
-                  shape: BoxShape.circle,
+              ClipRRect(
+                borderRadius: BorderRadius.circular(28),
+                child: Image.asset(
+                  'logo.png',
+                  width: 160,
+                  height: 160,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: const BoxDecoration(
+                      color: AppColors.primary,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.home_work_outlined,
+                        size: 44, color: Colors.white),
+                  ),
                 ),
-                child: const Icon(Icons.home_work_outlined, size: 44, color: Colors.white),
               ),
-              const SizedBox(height: 20),
-              Text('Rent Manager',
-                  style: theme.textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w800, color: AppColors.mainText)),
-              const SizedBox(height: 6),
+              const SizedBox(height: 16),
               Text('Manage your rooms, collect rent, stay organized.',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyMedium

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'app_theme.dart';
+import 'app_update_page.dart';
 import 'change_password_page.dart';
 import 'overdue_page.dart';
 import 'payment_history_page.dart';
@@ -660,6 +661,18 @@ class _HomePageState extends State<HomePage> {
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => ChangePasswordPage(api: widget.api),
+              ),
+            ),
+          ),
+          _menuTile(
+            context,
+            icon: Icons.system_update_outlined,
+            color: AppColors.primary,
+            title: 'App Updates',
+            subtitle: 'Check for and install new versions',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const AppUpdatePage(),
               ),
             ),
           ),

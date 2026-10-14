@@ -36,6 +36,8 @@ rentPeriodSchema.index({ memberId: 1, startDate: 1 }, { unique: true });
 rentPeriodSchema.index({ roomId: 1, startDate: -1, endDate: 1, status: 1 });
 // Range-overlap queries (reports) and the current-cycle lookup.
 rentPeriodSchema.index({ startDate: 1, endDate: 1, status: 1 });
+// Lapsed-cycle sweep: ended + still owed + awaiting overdue flag.
+rentPeriodSchema.index({ status: 1, endDate: 1 });
 
 module.exports = mongoose.model('RentPeriod', rentPeriodSchema);
 module.exports.RENT_STATUSES = RENT_STATUSES;

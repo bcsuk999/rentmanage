@@ -104,6 +104,7 @@ async function ensurePeriodsForMember(member, reference = today()) {
       throw err;
     }
   }
+  await refreshOverdueStatuses({ memberId: member._id, reference });
   return created;
 }
 
@@ -164,7 +165,29 @@ async function ensurePeriodsForActiveMembers({ roomId = null, reference = today(
       created = bulkInsertedCount(err, docs.length);
     }
   }
-  return { members: members.length, created };
+  const overdueRefreshed = await refreshOverdueStatuses({ reference });
+  return { members: members.length, created, overdueRefreshed };
+}
+
+/**
+ * Flip lapsed cycles to Overdue. recalcPeriod() is the only other writer of
+ * this transition and it runs solely on payment/vacate/close flows, so read
+ * paths (rooms list, details, reports, overdue screen) would otherwise keep
+ * showing stale Pending/Partial — and /api/overdue would miss members whose
+ * cycles lapsed without any payment activity. Same rule as deriveTotals():
+ * ended + still owed. Reference is clamped to today so a historical lookup
+ * can never mark future cycles overdue early.
+ */
+async function refreshOverdueStatuses({ memberId = null, reference = today() } = {}) {
+  const effective = startOfDay(reference) > today() ? today() : startOfDay(reference);
+  const filter = {
+    endDate: { $lt: effective },
+    pendingAmount: { $gt: 0 },
+    status: { $in: ['Pending', 'Partial'] },
+  };
+  if (memberId) filter.memberId = memberId;
+  const result = await RentPeriod.updateMany(filter, { $set: { status: 'Overdue' } });
+  return result.modifiedCount || 0;
 }
 
 /** Recompute one period from its payment records. */
@@ -277,6 +300,7 @@ module.exports = {
   periodForDate,
   periodOverlapping,
   planMissingPeriods,
+  refreshOverdueStatuses,
   recalcPeriod,
   roomPeriodOptions,
   summarise,
