@@ -26,6 +26,8 @@ class _RentManageAppState extends State<RentManageApp> {
   @override
   void initState() {
     super.initState();
+    // Any 401 from any screen signs out centrally (expired/revoked token).
+    _api.onAuthExpired = _handleSignOut;
     _restore();
   }
 

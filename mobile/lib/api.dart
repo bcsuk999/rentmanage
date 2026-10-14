@@ -283,6 +283,11 @@ class ApiClient {
   final String baseUrl;
   String? token;
 
+  /// Fired once per 401 answer (expired/revoked token) so every screen
+  /// returns to sign-in instead of error-looping. Set by the app shell.
+  /// Never throws: _throw still raises the ApiException for local handling.
+  void Function()? onAuthExpired;
+
   Map<String, String> get _headers => {
         'Content-Type': 'application/json',
         if (token != null) 'Authorization': 'Bearer $token',
@@ -295,6 +300,13 @@ class ApiClient {
       if (body is Map && body['error'] is String) message = body['error'] as String;
     } catch (_) {
       // Keep the default message when the body is not JSON.
+    }
+    if (res.statusCode == 401) {
+      try {
+        onAuthExpired?.call();
+      } catch (_) {
+        // Sign-out routing must never break error reporting.
+      }
     }
     throw ApiException(message, statusCode: res.statusCode);
   }
