@@ -405,15 +405,9 @@ class _HomePageState extends State<HomePage> {
               onPressed: () => _movePeriod(-1),
             ),
             Expanded(
-              child: Column(
-                children: [
-                  Text(monthLabel(_period),
-                      style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
-                  Text('Reporting period',
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: AppColors.secondaryText, fontSize: 11)),
-                ],
-              ),
+              child: Text(monthLabel(_period),
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
             ),
             if (!isCurrent)
               TextButton(onPressed: _goThisMonth, child: const Text('This month'))
@@ -836,12 +830,6 @@ class _FilterSheetState extends State<_FilterSheet> {
                   ),
               ],
             ),
-            const SizedBox(height: 8),
-            Text('Reporting month (above) already scopes the summary cards.',
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: AppColors.secondaryText)),
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
