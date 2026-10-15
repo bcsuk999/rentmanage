@@ -594,38 +594,45 @@ class _HomePageState extends State<HomePage> {
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
-              child: Row(
+              child: Stack(
                 children: [
-                  CircleAvatar(
-                    radius: 26,
-                    backgroundColor: AppColors.primary.withValues(alpha: 0.12),
-                    child: Text(
-                      name.isEmpty ? '?' : name[0].toUpperCase(),
-                      style: theme.textTheme.headlineSmall
-                          ?.copyWith(color: AppColors.primary, fontWeight: FontWeight.w800),
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.titleMedium
-                                ?.copyWith(fontWeight: FontWeight.w700)),
-                        if (mobile.isNotEmpty)
-                          Text('+91 $mobile',
-                              style: theme.textTheme.bodySmall
-                                  ?.copyWith(color: AppColors.secondaryText)),
-                        const SizedBox(height: 6),
-                        StatusPill(
-                          text: 'Landlord · Active',
-                          color: AppColors.primary,
-                          soft: AppColors.primary.withValues(alpha: 0.12),
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 26,
+                        backgroundColor: AppColors.primary.withValues(alpha: 0.12),
+                        child: Text(
+                          name.isEmpty ? '?' : name[0].toUpperCase(),
+                          style: theme.textTheme.headlineSmall
+                              ?.copyWith(color: AppColors.primary, fontWeight: FontWeight.w800),
                         ),
-                      ],
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.titleMedium
+                                    ?.copyWith(fontWeight: FontWeight.w700)),
+                            if (mobile.isNotEmpty)
+                              Text('+91 $mobile',
+                                  style: theme.textTheme.bodySmall
+                                      ?.copyWith(color: AppColors.secondaryText)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  Positioned(
+                    top: 0,
+                    right: 0,
+                    child: StatusPill(
+                      text: 'Landlord · Active',
+                      color: AppColors.primary,
+                      soft: AppColors.primary.withValues(alpha: 0.12),
                     ),
                   ),
                 ],
@@ -645,6 +652,7 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
           ),
+          const SizedBox(height: 8),
           _menuTile(
             context,
             icon: Icons.lock_outline,
@@ -657,6 +665,7 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
           ),
+          const SizedBox(height: 8),
           _menuTile(
             context,
             icon: Icons.system_update_outlined,
@@ -669,32 +678,19 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
           ),
-          _menuTile(
-            context,
-            icon: Icons.info_outline,
-            color: AppColors.secondaryText,
-            title: 'About Rent Manager',
-            subtitle: 'Rooms, rent cycles and collections',
-            onTap: () => showAboutDialog(
-              context: context,
-              applicationName: 'Rent Manager',
-              applicationVersion: '1.0.0',
-              children: const [
-                Text('Room-based rent collection with member cycles, payments and overdue tracking. Data syncs with the Rent Manager API.'),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _signOut,
-              icon: const Icon(Icons.logout, color: AppColors.danger),
-              label: const Text('Log out', style: TextStyle(color: AppColors.danger)),
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: AppColors.danger, width: 1.5),
-                backgroundColor: Colors.transparent,
-                padding: const EdgeInsets.symmetric(vertical: 14),
+          const SizedBox(height: 24),
+          Center(
+            child: SizedBox(
+              width: 200,
+              child: OutlinedButton.icon(
+                onPressed: _signOut,
+                icon: const Icon(Icons.logout, color: AppColors.danger, size: 18),
+                label: const Text('Log out', style: TextStyle(color: AppColors.danger)),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: AppColors.danger, width: 1.5),
+                  backgroundColor: Colors.transparent,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
               ),
             ),
           ),
@@ -711,6 +707,7 @@ class _HomePageState extends State<HomePage> {
       required VoidCallback onTap}) {
     final theme = Theme.of(context);
     return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: ListTile(
         onTap: onTap,
         leading: Container(
@@ -876,14 +873,30 @@ class _RoomCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
+Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Expanded(
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [AppColors.primary, AppColors.primary.withValues(alpha: 0.7)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(20),
+                        bottomRight: Radius.circular(20),
+                      ),
+                    ),
                     child: Text(
                       'Room ${room.roomNumber}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                      ),
                     ),
                   ),
                   StatusPill.room(room.status),
