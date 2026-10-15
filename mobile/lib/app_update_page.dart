@@ -192,18 +192,15 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
                     padding: const EdgeInsets.all(20),
                     child: Column(
                       children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(24),
-                          child: Image.asset(
-                            'logo.png',
-                            width: 96,
-                            height: 96,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, _, _) => const Icon(
-                              Icons.home_work_outlined,
-                              size: 48,
-                              color: AppColors.primary,
-                            ),
+                        Image.asset(
+                          'logo.png',
+                          width: 96,
+                          height: 96,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, _, _) => const Icon(
+                            Icons.home_work_outlined,
+                            size: 48,
+                            color: AppColors.primary,
                           ),
                         ),
                         const SizedBox(height: 12),

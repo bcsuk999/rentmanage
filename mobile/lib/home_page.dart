@@ -261,20 +261,29 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Rent Manager',
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 22)),
-            Text(
-              '${monthLabel(_period)} · reporting filter',
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: AppColors.secondaryText),
+        leadingWidth: 56,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 12, top: 8, bottom: 8),
+          child: Image.asset(
+            'logo.png',
+            fit: BoxFit.contain,
+            errorBuilder: (_, _, _) => const Icon(
+              Icons.home_work_outlined,
+              color: AppColors.primary,
             ),
-          ],
+          ),
         ),
+        centerTitle: true,
+        title: const Text('Dashboard',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20)),
+        actions: [
+          IconButton(
+            tooltip: 'Overdue dues',
+            icon: const Icon(Icons.notifications_outlined),
+            onPressed: () => setState(() => _tab = 1),
+          ),
+          const SizedBox(width: 4),
+        ],
       ),
       body: _tab == 0
           ? _roomsTab(context)
@@ -338,56 +347,43 @@ class _HomePageState extends State<HomePage> {
             );
           }
           final rooms = snapshot.data ?? [];
-          return LayoutBuilder(
-            builder: (context, constraints) {
-              final maxW = constraints.maxWidth;
-              final cardWidth = maxW < 620 ? maxW : 380.0;
-              return SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 1180),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _periodRow(context),
+          // Mobile viewport everywhere: one centered phone-width column,
+          // even on desktop.
+          return SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 480),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _periodRow(context),
+                    const SizedBox(height: 12),
+                    _summaryGrid(context),
+                    const SizedBox(height: 12),
+                    _searchRow(context),
+                    const SizedBox(height: 8),
+                    _chipRow(context),
+                    if (_searching) ...[
+                      const SizedBox(height: 8),
+                      const LinearProgressIndicator(),
+                    ],
+                    const SizedBox(height: 12),
+                    if (rooms.isEmpty)
+                      _emptyState(context)
+                    else
+                      for (final room in rooms) ...[
+                        _RoomCard(
+                          room: room,
+                          onOpen: () => _openDetails(room),
+                        ),
                         const SizedBox(height: 12),
-                        _summaryGrid(context),
-                        const SizedBox(height: 12),
-                        _searchRow(context),
-                        const SizedBox(height: 8),
-                        _chipRow(context),
-                        if (_searching) ...[
-                          const SizedBox(height: 8),
-                          const LinearProgressIndicator(),
-                        ],
-                        const SizedBox(height: 12),
-                        if (rooms.isEmpty)
-                          _emptyState(context)
-                        else
-                          Center(
-                            child: Wrap(
-                              spacing: 12,
-                              runSpacing: 12,
-                              children: [
-                                for (final room in rooms)
-                                  SizedBox(
-                                    width: cardWidth,
-                                    child: _RoomCard(
-                                      room: room,
-                                      onOpen: () => _openDetails(room),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
                       ],
-                    ),
-                  ),
+                  ],
                 ),
-              );
-            },
+              ),
+            ),
           );
         },
       ),
