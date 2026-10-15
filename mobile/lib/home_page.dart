@@ -431,9 +431,9 @@ class _HomePageState extends State<HomePage> {
     if (_summaryLoading && _summary == null) {
       return const Row(
         children: [
-          Expanded(child: SkeletonBlock(height: 96)),
-          SizedBox(width: 12),
-          Expanded(child: SkeletonBlock(height: 96)),
+          Expanded(child: SkeletonBlock(height: 62)),
+          SizedBox(width: 10),
+          Expanded(child: SkeletonBlock(height: 62)),
         ],
       );
     }
@@ -443,9 +443,9 @@ class _HomePageState extends State<HomePage> {
       crossAxisCount: 2,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: 12,
-      crossAxisSpacing: 12,
-      childAspectRatio: 1.55,
+      mainAxisSpacing: 10,
+      crossAxisSpacing: 10,
+      childAspectRatio: 2.1,
       children: [
         SummaryMetric(
           icon: Icons.wallet_outlined,
