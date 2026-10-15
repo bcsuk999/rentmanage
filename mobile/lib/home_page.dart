@@ -39,7 +39,8 @@ class _HomePageState extends State<HomePage> {
   String _statusFilter = 'All';
   String _payFilter = 'All';
 
-  bool get _isAdmin => widget.user['role'] == 'admin';
+  /// Single-role system: every signed-in landlord has full access.
+  bool get _isAdmin => true;
   bool get _filtered =>
       _search.text.trim().isNotEmpty || _statusFilter != 'All' || _payFilter != 'All';
 
@@ -94,13 +95,16 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  /// Fetch rooms; an expired/revoked token signs out instead of error-looping.
+  /// Fetch rooms for the selected month; an expired/revoked token signs
+  /// out instead of error-looping.
   Future<List<Room>> _loadRooms(String query) async {
     try {
       return await widget.api.rooms(
         search: query,
         status: _statusFilter,
         paymentState: _payFilter,
+        from: monthStart(_period),
+        to: monthEnd(_period),
       );
     } on ApiException catch (e) {
       if (e.statusCode == 401 && mounted) _signOut();
@@ -110,6 +114,7 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _refresh({bool silent = false}) async {
     final id = ++_requestId;
+    if (!silent && mounted) setState(() => _searching = true);
     try {
       final rooms = await _loadRooms(_search.text);
       if (!mounted || id != _requestId) return;
@@ -120,6 +125,7 @@ class _HomePageState extends State<HomePage> {
     } catch (e) {
       if (!mounted || id != _requestId) return;
       if (e is ApiException && e.statusCode == 401) return; // signed out above
+      setState(() => _searching = false);
       if (silent) {
         // Cached list stays on screen; mention the stale data quietly.
         ScaffoldMessenger.of(context).showSnackBar(
@@ -178,7 +184,7 @@ class _HomePageState extends State<HomePage> {
           _payFilter = 'Overdue';
         case 'Paid':
           _payFilter = 'Fully Paid';
-        case 'Pending':
+        case 'Due':
           _payFilter = 'Pending';
       }
     });
@@ -518,7 +524,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _chipRow(BuildContext context) {
-    const chips = ['All', 'Occupied', 'Vacant', 'Partial', 'Overdue', 'Paid', 'Pending'];
+    const chips = ['All', 'Occupied', 'Vacant', 'Partial', 'Overdue', 'Paid', 'Due'];
     final selected = _chip ?? 'All';
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
@@ -576,8 +582,8 @@ class _HomePageState extends State<HomePage> {
 
   Widget _accountTab(BuildContext context) {
     final theme = Theme.of(context);
-    final name = '${widget.user['name'] ?? widget.user['username'] ?? 'Account'}';
-    final contact = '${widget.user['contact'] ?? ''}';
+    final name = '${widget.user['name'] ?? widget.user['mobile'] ?? 'Account'}';
+    final mobile = '${widget.user['mobile'] ?? widget.user['username'] ?? ''}';
     final isAdmin = _isAdmin;
     return SafeArea(
       child: ListView(
@@ -609,16 +615,13 @@ class _HomePageState extends State<HomePage> {
                             overflow: TextOverflow.ellipsis,
                             style: theme.textTheme.titleMedium
                                 ?.copyWith(fontWeight: FontWeight.w700)),
-                        Text('@${widget.user['username'] ?? ''}',
-                            style: theme.textTheme.bodySmall
-                                ?.copyWith(color: AppColors.secondaryText)),
-                        if (contact.isNotEmpty)
-                          Text(contact,
+                        if (mobile.isNotEmpty)
+                          Text('+91 $mobile',
                               style: theme.textTheme.bodySmall
                                   ?.copyWith(color: AppColors.secondaryText)),
                         const SizedBox(height: 6),
                         StatusPill(
-                          text: isAdmin ? 'Admin · Active' : 'Viewer · Active',
+                          text: 'Landlord · Active',
                           color: AppColors.primary,
                           soft: AppColors.primary.withValues(alpha: 0.12),
                         ),
@@ -822,11 +825,17 @@ class _FilterSheetState extends State<_FilterSheet> {
             Wrap(
               spacing: 8,
               children: [
-                for (final p in ['All', 'Fully Paid', 'Partial', 'Pending', 'Overdue'])
+                for (final entry in const [
+                  {'label': 'All', 'value': 'All'},
+                  {'label': 'Fully Paid', 'value': 'Fully Paid'},
+                  {'label': 'Partial', 'value': 'Partial'},
+                  {'label': 'Due', 'value': 'Pending'},
+                  {'label': 'Overdue', 'value': 'Overdue'},
+                ])
                   FilterChip(
-                    label: Text(p),
-                    selected: _payment == p,
-                    onSelected: (_) => setState(() => _payment = p),
+                    label: Text(entry['label']!),
+                    selected: _payment == entry['value'],
+                    onSelected: (_) => setState(() => _payment = entry['value']!),
                   ),
               ],
             ),
@@ -906,7 +915,11 @@ class _RoomCard extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      'Outstanding ${inr(room.totalPending)}',
+                      room.paymentState.isEmpty || displayStatus(room.paymentState) == 'Due'
+                          ? 'Due ${inr(room.totalPending)}'
+                          : 'Due ${inr(room.totalPending)} · ${displayStatus(room.paymentState)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.titleSmall?.copyWith(
                           fontWeight: FontWeight.w800, color: AppColors.danger),
                     ),

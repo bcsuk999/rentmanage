@@ -13,7 +13,7 @@ class StatusPill extends StatelessWidget {
   final Color soft;
 
   factory StatusPill.member(String status) => StatusPill(
-        text: status,
+        text: displayStatus(status),
         color: memberStatusColor(status),
         soft: memberStatusSoft(status),
       );

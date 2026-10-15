@@ -22,6 +22,11 @@ Color memberStatusColor(String status) {
 
 bool isOverdueStatus(String status) => status.toLowerCase() == 'overdue';
 
+/// Display label for a rent status. Backend values stay untouched;
+/// users see "Due" instead of "Pending" everywhere.
+String displayStatus(String status) =>
+    status.toLowerCase() == 'pending' ? 'Due' : status;
+
 /// Soft pill background for a status.
 Color memberStatusSoft(String status) {
   switch (status.toLowerCase()) {

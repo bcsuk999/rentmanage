@@ -2,10 +2,11 @@
 
 const express = require('express');
 const bcrypt = require('bcryptjs');
+const Landlord = require('../models/Landlord');
 const Admin = require('../models/Admin');
 const { publicAccount, requireAuth, signToken, validatePassword } = require('../middleware/auth');
 const { sendApiError, wrap } = require('../utils/http');
-const { ValidationError, requireUsername } = require('../utils/validate');
+const { ValidationError, requireMobile } = require('../utils/validate');
 
 const router = express.Router();
 
@@ -14,19 +15,52 @@ function registrationOpen() {
   return String(process.env.ALLOW_REGISTRATION || 'true').toLowerCase() !== 'false';
 }
 
+/** Normalize a mobile number or throw a 422. */
+function parseMobile(value) {
+  try {
+    return requireMobile(value, 'Mobile');
+  } catch (err) {
+    if (err instanceof ValidationError) {
+      throw new ValidationError(
+        err.errors.map((e) => ({ field: 'mobile', message: e.message.replace(/^Mobile\s*/i, '').trim() || e.message }))
+      );
+    }
+    throw err;
+  }
+}
+
+/**
+ * Landlord sign-in with mobile + password.
+ * Legacy Admin username logins still work during migration: when no landlord
+ * matches, the username store is checked with the same password.
+ */
 router.post(
   '/login',
   wrap(async (req, res) => {
     try {
-      const username = String(req.body.username || '').trim().toLowerCase();
+      const rawId = String(req.body.mobile ?? req.body.username ?? '').trim();
       const password = String(req.body.password || '');
-      const account = await Admin.findOne({ username });
+      const looksMobile = /^[0-9\s-]{10,14}$/.test(rawId);
+      const mobile = looksMobile ? rawId.replace(/[\s-]/g, '') : null;
+
+      let account = null;
+      let isLandlord = false;
+      if (mobile && /^[0-9]{10}$/.test(mobile)) {
+        account = await Landlord.findOne({ mobile });
+        isLandlord = true;
+      }
+      if (!account && !looksMobile) {
+        const username = rawId.toLowerCase();
+        account = await Admin.findOne({ username });
+        isLandlord = false;
+      }
       const ok = account ? await bcrypt.compare(password, account.passwordHash) : false;
       if (!account || !ok) {
-        return res.status(401).json({ error: 'Invalid username or password' });
+        return res.status(401).json({ error: 'Invalid mobile number or password' });
       }
       account.lastLoginAt = new Date();
       await account.save();
+      void isLandlord;
       return res.json({ token: signToken(account), user: publicAccount(account) });
     } catch (err) {
       return sendApiError(res, err);
@@ -35,8 +69,8 @@ router.post(
 );
 
 /**
- * Self-service sign-up. New accounts are always created with the read-only
- * "user" role; only an existing admin can grant admin access.
+ * Landlord sign-up with mobile + password.
+ * Req: { mobile*, password*, confirmPassword?, name? }
  */
 router.post(
   '/register',
@@ -45,25 +79,24 @@ router.post(
       if (!registrationOpen()) {
         return res.status(403).json({ error: 'Registration is closed on this server.' });
       }
-      const username = requireUsername(req.body.username);
-      const name = String(req.body.name || '').trim().slice(0, 80) || username;
+      const mobile = parseMobile(req.body.mobile);
+      const name = String(req.body.name || '').trim().slice(0, 80) || `Landlord ${mobile.slice(-4)}`;
       const password = String(req.body.password || '');
-      const confirm = String(req.body.confirmPassword || '');
+      const confirm = req.body.confirmPassword === undefined ? password : String(req.body.confirmPassword || '');
 
-      const errors = validatePassword(password);
+      const errors = validatePassword(password).map((e) => ({ ...e, field: 'password' }));
       if (password !== confirm) {
         errors.push({ field: 'confirmPassword', message: 'Passwords do not match' });
       }
-      if (await Admin.exists({ username })) {
-        errors.push({ field: 'username', message: 'That username is already taken' });
+      if (await Landlord.exists({ mobile })) {
+        errors.push({ field: 'mobile', message: 'This mobile number is already registered' });
       }
       if (errors.length) throw new ValidationError(errors);
 
-      const account = await Admin.create({
+      const account = await Landlord.create({
         name,
-        username,
+        mobile,
         passwordHash: await bcrypt.hash(password, 12),
-        role: 'user',
       });
       account.lastLoginAt = new Date();
       await account.save();
@@ -91,7 +124,9 @@ router.post(
       const current = String(req.body.currentPassword || '');
       const next = String(req.body.newPassword || '');
       const confirm = String(req.body.confirmPassword || '');
-      const account = await Admin.findById(req.user._id);
+      const account = req.user._isLegacyAdmin
+        ? await Admin.findById(req.user._id)
+        : await Landlord.findById(req.user._id);
       if (!account) {
         return res.status(401).json({ error: 'Account no longer exists. Sign in again.' });
       }
@@ -99,7 +134,7 @@ router.post(
       if (!(await bcrypt.compare(current, account.passwordHash))) {
         errors.push({ field: 'currentPassword', message: 'Current password is incorrect' });
       }
-      errors.push(...validatePassword(next));
+      errors.push(...validatePassword(next).map((e) => ({ ...e, field: 'password' })));
       if (next !== confirm) {
         errors.push({ field: 'confirmPassword', message: 'Passwords do not match' });
       }

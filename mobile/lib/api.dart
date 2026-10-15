@@ -311,14 +311,37 @@ class ApiClient {
     throw ApiException(message, statusCode: res.statusCode);
   }
 
-  /// Returns the signed-in user map and stores the token.
-  Future<Map<String, dynamic>> login(String username, String password) async {
+  /// Returns the signed-in landlord map and stores the token.
+  /// [mobile] is the 10-digit landlord mobile number.
+  Future<Map<String, dynamic>> login(String mobile, String password) async {
     final res = await http.post(
       Uri.parse('$baseUrl/api/auth/login'),
       headers: _headers,
-      body: jsonEncode({'username': username, 'password': password}),
+      body: jsonEncode({'mobile': mobile, 'password': password}),
     );
     if (res.statusCode != 200) _throw(res);
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    token = body['token'] as String?;
+    return (body['user'] as Map).cast<String, dynamic>();
+  }
+
+  /// Registers a landlord with mobile + password. Returns the new user map
+  /// and stores the token, same shape as [login].
+  Future<Map<String, dynamic>> register({
+    required String mobile,
+    required String password,
+    String? name,
+  }) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/auth/register'),
+      headers: _headers,
+      body: jsonEncode({
+        'mobile': mobile,
+        'password': password,
+        if (name != null && name.trim().isNotEmpty) 'name': name.trim(),
+      }),
+    );
+    if (res.statusCode != 201) _throw(res);
     final body = jsonDecode(res.body) as Map<String, dynamic>;
     token = body['token'] as String?;
     return (body['user'] as Map).cast<String, dynamic>();
@@ -327,13 +350,18 @@ class ApiClient {
   /// Room list. [search] matches room numbers and member name/mobile;
   /// [status] is a room status (Occupied/Empty/Maintenance), [paymentState]
   /// is Fully Paid/Partial/Pending/Overdue. 'All'/empty means no filter.
-  /// The unfiltered list is cached on-device for offline-first startup.
-  Future<List<Room>> rooms({String? search, String? status, String? paymentState}) async {
+  /// [from]/[to] ('YYYY-MM-DD') scope every snapshot to that rental range
+  /// instead of the current cycle. The plain current-month list is cached
+  /// on-device for offline-first startup.
+  Future<List<Room>> rooms(
+      {String? search, String? status, String? paymentState, String? from, String? to}) async {
     final q = (search ?? '').trim();
     final params = <String, String>{};
     if (q.isNotEmpty) params['search'] = q;
     if (status != null && status != 'All') params['status'] = status;
     if (paymentState != null && paymentState != 'All') params['paymentState'] = paymentState;
+    if (from != null && from.isNotEmpty) params['from'] = from;
+    if (to != null && to.isNotEmpty) params['to'] = to;
     final uri =
         Uri.parse('$baseUrl/api/rooms').replace(queryParameters: params.isEmpty ? null : params);
     final res = await http.get(uri, headers: _headers);
@@ -341,7 +369,7 @@ class ApiClient {
     final body = jsonDecode(res.body) as Map<String, dynamic>;
     final list = (body['rooms'] as List? ?? []);
     final rooms = list.map((e) => Room.fromJson((e as Map).cast<String, dynamic>())).toList();
-    if (params.isEmpty) {
+    if (_isCacheable(search: q, status: status, paymentState: paymentState, from: from, to: to)) {
       // Best-effort cache; never fail the request because of storage.
       try {
         await SessionCache.saveRooms(rooms);
@@ -350,6 +378,23 @@ class ApiClient {
       }
     }
     return rooms;
+  }
+
+  /// Only the default current-month list is cached: filtered or historical
+  /// months always come fresh from the server.
+  bool _isCacheable(
+      {required String search, String? status, String? paymentState, String? from, String? to}) {
+    if (search.isNotEmpty) return false;
+    if (status != null && status != 'All') return false;
+    if (paymentState != null && paymentState != 'All') return false;
+    if ((from == null) != (to == null)) return false;
+    if (from == null) return true;
+    final now = DateTime.now();
+    final first = DateTime(now.year, now.month, 1);
+    final last = DateTime(now.year, now.month + 1, 0);
+    String day(DateTime d) =>
+        '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+    return from == day(first) && to == day(last);
   }
 
   /// Full room details. Pass [from]/[to] ('YYYY-MM-DD') to view another month.

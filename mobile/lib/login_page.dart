@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'api.dart';
 import 'app_theme.dart';
@@ -14,25 +15,45 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-  final _username = TextEditingController();
+  final _mobile = TextEditingController();
+  final _name = TextEditingController();
   final _password = TextEditingController();
+  bool _registerMode = false;
   bool _busy = false;
   String? _error;
 
   @override
   void dispose() {
-    _username.dispose();
+    _mobile.dispose();
+    _name.dispose();
     _password.dispose();
     super.dispose();
   }
 
+  String _digits(String v) => v.replaceAll(RegExp(r'[\s-]'), '');
+
   Future<void> _submit() async {
+    final mobile = _digits(_mobile.text.trim());
+    if (!RegExp(r'^[0-9]{10}$').hasMatch(mobile)) {
+      setState(() => _error = 'Enter your 10-digit mobile number.');
+      return;
+    }
+    if (_password.text.isEmpty) {
+      setState(() => _error = 'Enter your password.');
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      final user = await widget.api.login(_username.text.trim(), _password.text);
+      final user = _registerMode
+          ? await widget.api.register(
+              mobile: mobile,
+              password: _password.text,
+              name: _name.text.trim().isEmpty ? null : _name.text.trim(),
+            )
+          : await widget.api.login(mobile, _password.text);
       widget.onSignedIn(user);
     } on ApiException catch (e) {
       setState(() => _error = e.message);
@@ -54,12 +75,14 @@ class _LoginPageState extends State<LoginPage> {
             constraints: const BoxConstraints(maxWidth: 420),
             child: Column(
               children: [
-                Image.asset(
-                  'logo.png',
-                  width: 120,
-                  height: 120,
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) => Container(
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(24),
+                  child: Image.asset(
+                    'logo.png',
+                    width: 120,
+                    height: 120,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) => Container(
                       padding: const EdgeInsets.all(16),
                       decoration: const BoxDecoration(
                         color: AppColors.primary,
@@ -68,6 +91,7 @@ class _LoginPageState extends State<LoginPage> {
                       child: const Icon(Icons.home_work_outlined,
                           size: 36, color: Colors.white),
                     ),
+                  ),
                 ),
                 const SizedBox(height: 12),
                 Text('Manage your rooms, collect rent, stay organized.',
@@ -81,9 +105,10 @@ class _LoginPageState extends State<LoginPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Text('Sign in', style: Theme.of(context).textTheme.headlineSmall),
+                        Text(_registerMode ? 'Create account' : 'Sign in',
+                            style: Theme.of(context).textTheme.headlineSmall),
                         const SizedBox(height: 6),
-                        const Text('Room rent management.'),
+                        const Text('Landlord access with your mobile number.'),
                         const SizedBox(height: 16),
                         if (_error != null) ...[
                           Container(
@@ -96,16 +121,39 @@ class _LoginPageState extends State<LoginPage> {
                           ),
                           const SizedBox(height: 12),
                         ],
+                        if (_registerMode) ...[
+                          TextField(
+                            controller: _name,
+                            decoration: const InputDecoration(labelText: 'Name (optional)'),
+                            textInputAction: TextInputAction.next,
+                            autofillHints: const [AutofillHints.name],
+                          ),
+                          const SizedBox(height: 12),
+                        ],
                         TextField(
-                          controller: _username,
-                          decoration: const InputDecoration(labelText: 'Username'),
+                          controller: _mobile,
+                          decoration: const InputDecoration(
+                            labelText: 'Mobile number',
+                            hintText: '10-digit mobile number',
+                            prefixText: '+91 ',
+                          ),
+                          keyboardType: TextInputType.phone,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.allow(RegExp(r'[0-9\s-]')),
+                            LengthLimitingTextInputFormatter(14),
+                          ],
                           textInputAction: TextInputAction.next,
-                          autofillHints: const [AutofillHints.username],
+                          autofillHints: const [AutofillHints.telephoneNumber],
                         ),
                         const SizedBox(height: 12),
                         TextField(
                           controller: _password,
-                          decoration: const InputDecoration(labelText: 'Password'),
+                          decoration: InputDecoration(
+                            labelText: 'Password',
+                            helperText: _registerMode
+                                ? '8+ characters with upper, lower case and a number'
+                                : null,
+                          ),
                           obscureText: true,
                           textInputAction: TextInputAction.done,
                           autofillHints: const [AutofillHints.password],
@@ -120,7 +168,18 @@ class _LoginPageState extends State<LoginPage> {
                                   width: 18,
                                   child: CircularProgressIndicator(strokeWidth: 2),
                                 )
-                              : const Text('Sign in'),
+                              : Text(_registerMode ? 'Register' : 'Sign in'),
+                        ),
+                        TextButton(
+                          onPressed: _busy
+                              ? null
+                              : () => setState(() {
+                                    _registerMode = !_registerMode;
+                                    _error = null;
+                                  }),
+                          child: Text(_registerMode
+                              ? 'Already have an account? Sign in'
+                              : 'New landlord? Create an account'),
                         ),
                       ],
                     ),

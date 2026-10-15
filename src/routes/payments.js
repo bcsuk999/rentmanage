@@ -5,7 +5,6 @@ const paymentService = require('../services/paymentService');
 const Room = require('../models/Room');
 const Member = require('../models/Member');
 const { PAYMENT_METHODS } = require('../models/Payment');
-const { requireRole } = require('../middleware/auth');
 const { sendApiError, wrap } = require('../utils/http');
 
 const router = express.Router();
@@ -39,7 +38,6 @@ router.get(
 /** Record a payment against a rent period. */
 router.post(
   '/',
-  requireRole('admin'),
   wrap(async (req, res) => {
     try {
       const payment = await paymentService.addPayment({

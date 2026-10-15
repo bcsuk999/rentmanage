@@ -3,6 +3,7 @@
 const dns = require('node:dns');
 const mongoose = require('mongoose');
 const Admin = require('../models/Admin');
+const Landlord = require('../models/Landlord');
 const Member = require('../models/Member');
 const Payment = require('../models/Payment');
 const RentPeriod = require('../models/RentPeriod');
@@ -23,7 +24,7 @@ dns.setServers(dnsServers);
  * compound prefixes, which is cheaper to maintain on every write).
  */
 async function syncIndexes() {
-  const models = [Room, Member, RentPeriod, Payment, Admin];
+  const models = [Room, Member, RentPeriod, Payment, Admin, Landlord];
   for (const model of models) {
     // syncIndexes() resolves with the dropped index names.
     const dropped = await model.syncIndexes();

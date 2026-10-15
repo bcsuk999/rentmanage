@@ -3,7 +3,6 @@
 const express = require('express');
 const memberService = require('../services/memberService');
 const Room = require('../models/Room');
-const { requireRole } = require('../middleware/auth');
 const { sendApiError, wrap } = require('../utils/http');
 const { cycleEnd, parseDateInput } = require('../utils/dates');
 
@@ -47,7 +46,6 @@ router.get(
 
 router.patch(
   '/:id',
-  requireRole('admin'),
   wrap(async (req, res) => {
     try {
       const member = await memberService.updateMember(req.params.id, req.body);
@@ -73,7 +71,6 @@ router.get(
 
 router.post(
   '/:id/vacate',
-  requireRole('admin'),
   wrap(async (req, res) => {
     try {
       const result = await memberService.vacateMember(req.params.id, req.body);

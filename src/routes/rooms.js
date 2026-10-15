@@ -3,13 +3,13 @@
 const express = require('express');
 const roomService = require('../services/roomService');
 const memberService = require('../services/memberService');
-const { requireRole } = require('../middleware/auth');
 const { sendApiError, wrap } = require('../utils/http');
 const { parseDateInput, startOfDay } = require('../utils/dates');
 
 const router = express.Router();
 
-/** Room list with current-cycle totals. Query: ?search=&status=&paymentState= */
+/** Room list. Current cycle by default; ?from=&to= (YYYY-MM-DD) scopes
+ *  every room and member snapshot to that rental range instead. */
 router.get(
   '/',
   wrap(async (req, res) => {
@@ -17,7 +17,15 @@ router.get(
       const search = String(req.query.search || '').trim();
       const status = String(req.query.status || 'All');
       const paymentState = String(req.query.paymentState || 'All');
-      const rooms = await roomService.listRoomsWithSummary({ search, status, paymentState });
+      const fromInput = String(req.query.from || '').trim();
+      const toInput = String(req.query.to || '').trim();
+      const rooms = await roomService.listRoomsWithSummary({
+        search,
+        status,
+        paymentState,
+        from: fromInput || null,
+        to: toInput || null,
+      });
       const round = (n) => Math.round(n * 100) / 100;
       return res.json({
         rooms,
@@ -37,7 +45,6 @@ router.get(
 
 router.post(
   '/',
-  requireRole('admin'),
   wrap(async (req, res) => {
     try {
       const room = await roomService.createRoom(req.body);
@@ -66,7 +73,6 @@ router.get(
 
 router.patch(
   '/:id',
-  requireRole('admin'),
   wrap(async (req, res) => {
     try {
       const room = await roomService.updateRoom(req.params.id, req.body);
@@ -79,7 +85,6 @@ router.patch(
 
 router.delete(
   '/:id',
-  requireRole('admin'),
   wrap(async (req, res) => {
     try {
       const room = await roomService.deleteRoom(req.params.id);
@@ -93,7 +98,6 @@ router.delete(
 /** Add a member from inside a room. */
 router.post(
   '/:id/members',
-  requireRole('admin'),
   wrap(async (req, res) => {
     try {
       const member = await memberService.createMember({ ...req.body, roomId: req.params.id });

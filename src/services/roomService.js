@@ -6,7 +6,7 @@ const Member = require('../models/Member');
 const RentPeriod = require('../models/RentPeriod');
 const { ROOM_STATUSES } = require('../models/Room');
 const { ensurePeriodsForActiveMembers, summarise } = require('./rentService');
-const { startOfDay, today } = require('../utils/dates');
+const { parseDateInput, startOfDay, today } = require('../utils/dates');
 const {
   ValidationError,
   collect,
@@ -116,12 +116,27 @@ async function deleteRoom(id) {
 }
 
 /**
- * Rooms joined with their current-period rollup.
+ * Rooms joined with their period rollup.
  * Periods are (re)generated for active members first so totals are current.
+ * Without from/to this covers each member's current cycle; with an explicit
+ * range every snapshot (room totals, per-member rows) comes from the periods
+ * overlapping that range, so list screens can show any month.
  */
-async function listRoomsWithSummary({ search = '', status = 'All', paymentState = 'All' } = {}) {
+async function listRoomsWithSummary({ search = '', status = 'All', paymentState = 'All', from = null, to = null } = {}) {
   const reference = today();
-  await ensurePeriodsForActiveMembers({ reference });
+  let range = null;
+  if (from || to) {
+    const parsedFrom = from ? parseDateInput(from) : null;
+    const parsedTo = to ? parseDateInput(to) : null;
+    if (!parsedFrom || !parsedTo || parsedFrom > parsedTo) {
+      throw new ValidationError([
+        { field: 'to', message: 'Give a valid from and to date (YYYY-MM-DD) with to on or after from' },
+      ]);
+    }
+    range = { from: startOfDay(parsedFrom), to: startOfDay(parsedTo) };
+  }
+  const effectiveRef = range ? range.to : reference;
+  await ensurePeriodsForActiveMembers({ reference: effectiveRef });
 
   let matchingRoomIds = null;
   if (search) {
@@ -150,15 +165,23 @@ async function listRoomsWithSummary({ search = '', status = 'All', paymentState 
   const rooms = await Room.find(roomFilter).sort({ roomNumber: 1 }).lean();
 
   const roomIds = rooms.map((r) => r._id);
+  const periodMatch = range
+    ? {
+      roomId: { $in: roomIds },
+      startDate: { $lte: range.to },
+      endDate: { $gte: range.from },
+    }
+    : {
+      roomId: { $in: roomIds },
+      startDate: { $lte: reference },
+      endDate: { $gte: reference },
+    };
   const [members, periods] = await Promise.all([
     Member.find({ roomId: { $in: roomIds }, status: 'active' })
       .select('roomId name monthlyRent rentStartDate')
       .lean(),
-    RentPeriod.find({
-      roomId: { $in: roomIds },
-      startDate: { $lte: reference },
-      endDate: { $gte: reference },
-    })
+    RentPeriod.find(periodMatch)
+      .sort({ startDate: 1 })
       .select('memberId roomId startDate endDate rentAmount paidAmount pendingAmount status')
       .lean(),
   ]);
@@ -176,7 +199,10 @@ async function listRoomsWithSummary({ search = '', status = 'All', paymentState 
     periodsByRoom.get(key).push(p);
   }
   const periodsByMember = new Map();
-  for (const p of periods) periodsByMember.set(p.memberId.toString(), p);
+  // First (earliest) overlapping period wins per member, same as roomDetail.
+  for (const p of periods) {
+    if (!periodsByMember.has(p.memberId.toString())) periodsByMember.set(p.memberId.toString(), p);
+  }
 
   let rows = rooms.map((room) => {
     const roomMembers = membersByRoom.get(room._id.toString()) || [];
@@ -206,9 +232,21 @@ async function listRoomsWithSummary({ search = '', status = 'All', paymentState 
       paymentState: summary.paymentState,
       periodStart,
       periodEnd,
-      // Per-member current-cycle snapshot for mobile room cards.
+      // Per-member snapshot for mobile room cards. In range mode a member
+      // without an overlapping period owes nothing that month.
       members: roomMembers.map((m) => {
         const p = periodsByMember.get(m._id.toString());
+        if (!p && range) {
+          return {
+            id: m._id,
+            name: m.name,
+            rent: 0,
+            paid: 0,
+            pending: 0,
+            status: 'No period',
+            dueDate: null,
+          };
+        }
         return {
           id: m._id,
           name: m.name,

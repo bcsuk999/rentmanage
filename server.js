@@ -5,7 +5,7 @@ const cors = require('cors');
 require('dotenv').config();
 
 const connectDb = require('./src/config/db');
-const { requireAuth, requireRole } = require('./src/middleware/auth');
+const { requireAuth } = require('./src/middleware/auth');
 
 const authRoutes = require('./src/routes/auth');
 const roomRoutes = require('./src/routes/rooms');
@@ -15,7 +15,7 @@ const paymentRoutes = require('./src/routes/payments');
 const reportRoutes = require('./src/routes/reports');
 const overdueRoutes = require('./src/routes/overdue');
 const settingsRoutes = require('./src/routes/settings');
-const { ensureAdminFromEnv } = require('./src/services/adminService');
+const { ensureAdminFromEnv, ensureLandlordFromEnv } = require('./src/services/landlordService');
 
 const app = express();
 
@@ -51,7 +51,7 @@ app.use('/api/rent-periods', requireAuth, rentRoutes);
 app.use('/api/payments', requireAuth, paymentRoutes);
 app.use('/api/reports', requireAuth, reportRoutes);
 app.use('/api/overdue', requireAuth, overdueRoutes);
-app.use('/api/settings', requireAuth, requireRole('admin'), settingsRoutes);
+app.use('/api/settings', requireAuth, settingsRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Not found.' });
@@ -69,6 +69,7 @@ const PORT = Number(process.env.PORT) || 3000;
 
 async function start() {
   await connectDb();
+  await ensureLandlordFromEnv();
   await ensureAdminFromEnv();
   return app.listen(PORT, () => {
     console.log(`Rent management API running on http://localhost:${PORT}`);

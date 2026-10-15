@@ -274,7 +274,7 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
                         ? 'No period yet'
                         : '${fmtDateIso(detail.rangeStartIso!)} – ${fmtDateIso(detail.rangeEndIso!)}'),
                 if (detail.paymentState.isNotEmpty)
-                  fact('Payment state', detail.paymentState),
+                  fact('Payment state', displayStatus(detail.paymentState)),
               ],
             ),
           ),

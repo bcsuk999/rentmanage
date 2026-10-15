@@ -1,8 +1,8 @@
 'use strict';
 
 /**
- * Seeds the admin account from .env and (optionally) demo rooms/members/payments.
- * Usage: npm run seed            -> admin only
+ * Seeds the landlord account from .env and (optionally) demo rooms/members/payments.
+ * Usage: npm run seed            -> landlord (+ legacy admin) only
  *        npm run seed -- --demo  -> admin + sample rooms, members and payments
  */
 require('dotenv').config();
@@ -10,6 +10,7 @@ require('dotenv').config();
 const bcrypt = require('bcryptjs');
 const connectDb = require('../src/config/db');
 const Admin = require('../src/models/Admin');
+const Landlord = require('../src/models/Landlord');
 const Member = require('../src/models/Member');
 const Payment = require('../src/models/Payment');
 const Room = require('../src/models/Room');
@@ -18,6 +19,36 @@ const { addDays, cycleAt, today } = require('../src/utils/dates');
 
 const DEMO = process.argv.includes('--demo');
 const RESET_PASSWORD = process.argv.includes('--reset-password');
+
+async function seedLandlord() {
+  const mobile = String(process.env.LANDLORD_MOBILE || '').replace(/[\s-]/g, '')
+    || String(process.env.ADMIN_CONTACT || '').replace(/[\s-]/g, '');
+  const password = process.env.LANDLORD_PASSWORD || process.env.ADMIN_PASSWORD || 'Landlord@123';
+  if (!/^[0-9]{10}$/.test(mobile)) {
+    console.log('Skipping landlord seed: set LANDLORD_MOBILE to a 10-digit number.');
+    return null;
+  }
+  const existing = await Landlord.findOne({ mobile });
+  if (existing) {
+    if (!RESET_PASSWORD) {
+      console.log(`Landlord "${mobile}" already exists; leaving it untouched.`);
+      console.log('Run "npm run seed -- --reset-password" to set it to LANDLORD_PASSWORD.');
+      return existing;
+    }
+    existing.passwordHash = await bcrypt.hash(password, 12);
+    if (process.env.LANDLORD_NAME) existing.name = process.env.LANDLORD_NAME;
+    await existing.save();
+    console.log(`Reset password for landlord "${mobile}" to the LANDLORD_PASSWORD value.`);
+    return existing;
+  }
+  const landlord = await Landlord.create({
+    name: process.env.LANDLORD_NAME || process.env.ADMIN_NAME || 'Landlord',
+    mobile,
+    passwordHash: await bcrypt.hash(password, 12),
+  });
+  console.log(`Created landlord "${mobile}" with the seed password. Change it after first sign in.`);
+  return landlord;
+}
 
 async function seedAdmin() {
   const username = (process.env.ADMIN_USERNAME || 'admin').toLowerCase();
@@ -123,6 +154,7 @@ async function seedDemo() {
 (async () => {
   try {
     await connectDb();
+    await seedLandlord();
     await seedAdmin();
     await backfillCapacity();
     if (DEMO) await seedDemo();
