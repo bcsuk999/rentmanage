@@ -1,8 +1,13 @@
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:open_filex/open_filex.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'app_theme.dart';
@@ -46,6 +51,9 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
   bool _checking = true;
   String? _error;
   bool _opening = false;
+  bool _downloading = false;
+  double _progress = 0;
+  String? _downloadedApkPath;
 
   @override
   void initState() {
@@ -149,6 +157,92 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
         _checking = false;
         _error = 'Could not reach GitHub. Check your internet connection and try again.';
       });
+    }
+  }
+
+  Future<void> _downloadAndInstall() async {
+    final url = _latest?.downloadUrl;
+    if (url == null || url.isEmpty) return;
+
+    final status = await Permission.storage.request();
+    if (!status.isGranted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Storage permission is required to download and install the update.')),
+        );
+      }
+      return;
+    }
+
+    setState(() {
+      _downloading = true;
+      _progress = 0;
+    });
+
+    try {
+      final dir = await getExternalStorageDirectory();
+      final fileName = 'rentmanage_${_latest!.version}.apk';
+      final filePath = '${dir!.path}/$fileName';
+
+      await Dio().download(
+        url,
+        filePath,
+        onReceiveProgress: (received, total) {
+          if (total > 0 && mounted) {
+            setState(() => _progress = received / total);
+          }
+        },
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _downloading = false;
+        _downloadedApkPath = filePath;
+      });
+
+      await _installApk(filePath);
+    } on DioException catch (e) {
+      if (!mounted) return;
+      setState(() => _downloading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Download failed: ${e.message}')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _downloading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+    }
+  }
+
+  Future<void> _installApk(String filePath) async {
+    final file = File(filePath);
+    if (!await file.exists()) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Downloaded file not found.')),
+        );
+      }
+      return;
+    }
+
+    try {
+      final result = await OpenFilex.open(filePath);
+      if (result.type != ResultType.done) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not open installer: ${result.message}')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Install failed: $e')),
+        );
+      }
     }
   }
 
@@ -286,21 +380,59 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
                             ),
                           ],
                           const SizedBox(height: 12),
-                          if (updateAvailable)
-                            SizedBox(
-                              width: double.infinity,
-                              child: FilledButton.icon(
-                                onPressed: _opening ? null : _download,
-                                icon: const Icon(Icons.download_outlined),
-                                label: Text(_opening
-                                    ? 'Opening…'
-                                    : 'Download v${latest.version} (${_mb(latest.size)})'),
-                              ),
+                          if (_downloading)
+                            Column(
+                              children: [
+                                LinearProgressIndicator(value: _progress, minHeight: 6),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Downloading… ${(_progress * 100).toStringAsFixed(0)}%',
+                                  style: theme.textTheme.bodySmall?.copyWith(color: AppColors.secondaryText),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 12),
+                              ],
+                            )
+                          else if (updateAvailable)
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                FilledButton.icon(
+                                  onPressed: _downloading ? null : _downloadAndInstall,
+                                  icon: const Icon(Icons.system_update_alt),
+                                  label: Text('Download & Install v${latest.version} (${_mb(latest.size)})'),
+                                  style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+                                ),
+                                const SizedBox(height: 8),
+                                OutlinedButton.icon(
+                                  onPressed: _opening ? null : _download,
+                                  icon: const Icon(Icons.download_outlined),
+                                  label: Text('Open in browser instead (${_mb(latest.size)})'),
+                                ),
+                              ],
+                            )
+                          else if (_downloadedApkPath != null)
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                FilledButton.icon(
+                                  onPressed: () => _installApk(_downloadedApkPath!),
+                                  icon: const Icon(Icons.install_desktop),
+                                  label: const Text('Install Downloaded APK'),
+                                  style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'APK saved to: $_downloadedApkPath',
+                                  style: theme.textTheme.bodySmall?.copyWith(color: AppColors.secondaryText),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
                             ),
                           SizedBox(
                             width: double.infinity,
                             child: OutlinedButton.icon(
-                              onPressed: _opening ? null : _check,
+                              onPressed: (_opening || _downloading) ? null : _check,
                               icon: const Icon(Icons.refresh, size: 18),
                               label: const Text('Check Again'),
                             ),

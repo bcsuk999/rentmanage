@@ -83,6 +83,8 @@ class _OverduePageState extends State<OverduePage> {
       rentPeriodId: p.id,
       memberName: m.name,
       pending: p.pending,
+      totalOverdue: m.totalOverdue,
+      totalCurrentDue: 0,
       periodStart: p.start,
       periodEnd: p.end,
     );

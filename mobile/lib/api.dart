@@ -87,6 +87,7 @@ class Room {
     required this.totalRent,
     required this.totalPaid,
     required this.members,
+    this.notes,
   });
 
   final String id;
@@ -100,6 +101,7 @@ class Room {
   final double totalRent;
   final double totalPaid;
   final List<RoomMember> members;
+  final String? notes;
 
   factory Room.fromJson(Map<String, dynamic> json) {
     int asInt(dynamic v) => v is int ? v : int.tryParse('$v') ?? 0;
@@ -116,6 +118,7 @@ class Room {
       totalPending: asDouble(json['totalPending']),
       totalRent: asDouble(json['totalRent']),
       totalPaid: asDouble(json['totalPaid']),
+      notes: json['notes'] == null ? null : '${json['notes']}',
       members: rawMembers.map((e) => RoomMember.fromJson((e as Map).cast<String, dynamic>())).toList(),
     );
   }
@@ -131,6 +134,7 @@ class Room {
         'totalPending': totalPending,
         'totalRent': totalRent,
         'totalPaid': totalPaid,
+        'notes': notes,
         'members': members.map((m) => m.toJson()).toList(),
       };
 }
@@ -438,6 +442,28 @@ class ApiClient {
     return (jsonDecode(res.body) as Map).cast<String, dynamic>();
   }
 
+  /// Update a room (admin only).
+  Future<Map<String, dynamic>> updateRoom({
+    required String roomId,
+    required String roomNumber,
+    required int capacity,
+    required String status,
+    String? notes,
+  }) async {
+    final res = await http.patch(
+      Uri.parse('$baseUrl/api/rooms/$roomId'),
+      headers: _headers,
+      body: jsonEncode({
+        'roomNumber': roomNumber,
+        'capacity': capacity,
+        'status': status,
+        if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
+      }),
+    );
+    if (res.statusCode != 200) _throw(res);
+    return (jsonDecode(res.body) as Map).cast<String, dynamic>();
+  }
+
   /// Add a member to a room (admin only). Throws [ApiException] when full.
   Future<Map<String, dynamic>> addMember(String roomId, Map<String, dynamic> data) async {
     final res = await http.post(
@@ -446,6 +472,17 @@ class ApiClient {
       body: jsonEncode(data),
     );
     if (res.statusCode != 201) _throw(res);
+    return (jsonDecode(res.body) as Map).cast<String, dynamic>();
+  }
+
+  /// Update a member (name, mobile, rent, aadhaar, dates, notes).
+  Future<Map<String, dynamic>> updateMember(String memberId, Map<String, dynamic> data) async {
+    final res = await http.patch(
+      Uri.parse('$baseUrl/api/members/$memberId'),
+      headers: _headers,
+      body: jsonEncode(data),
+    );
+    if (res.statusCode != 200) _throw(res);
     return (jsonDecode(res.body) as Map).cast<String, dynamic>();
   }
 
@@ -522,6 +559,13 @@ class ApiClient {
     final body = jsonDecode(res.body) as Map<String, dynamic>;
     final list = (body['periods'] as List? ?? []);
     return list.map((e) => MemberPeriod.fromJson((e as Map).cast<String, dynamic>())).toList();
+  }
+
+  /// Full member profile (info + periods + totals) for the Member Details page.
+  Future<MemberProfile> memberProfile(String memberId) async {
+    final res = await http.get(Uri.parse('$baseUrl/api/members/$memberId'), headers: _headers);
+    if (res.statusCode != 200) _throw(res);
+    return MemberProfile.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
   }
 
   /// Change the signed-in account password.
@@ -785,6 +829,94 @@ class MemberPeriod {
       paid: asDouble(json['paidAmount']),
       pending: asDouble(json['pendingAmount']),
       status: '${json['status']}',
+    );
+  }
+}
+
+/// Full member profile for the Member Details page: personal info,
+/// rent periods and money totals (due + overdue computed on-device).
+class MemberProfile {
+  MemberProfile({
+    required this.member,
+    required this.periods,
+    required this.outstanding,
+    required this.paidTotal,
+    required this.futurePending,
+    required this.roomNumber,
+  });
+
+  final Map<String, dynamic> member;
+  final List<MemberPeriod> periods;
+  final double outstanding;
+  final double paidTotal;
+  final double futurePending;
+  final String roomNumber;
+
+  String get id => '${member['_id']}';
+  String get name => '${member['name']}';
+  String get mobile => '${member['mobile'] ?? ''}';
+  String get aadhaar => '${member['aadhaarNumber'] ?? ''}';
+  String get status => '${member['status'] ?? 'active'}';
+  bool get isActive => status.toLowerCase() == 'active';
+
+  double get monthlyRent {
+    final v = member['monthlyRent'];
+    return v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
+  }
+
+  DateTime? get rentStartDate => _asDate(member['rentStartDate']);
+  DateTime? get joiningDate => _asDate(member['joiningDate']) ?? rentStartDate;
+
+  static DateTime? _asDate(dynamic v) => v == null ? null : DateTime.tryParse('$v');
+
+  /// The period covering today, else the latest started one, else the newest.
+  MemberPeriod? get current {
+    final now = DateTime.now();
+    final day = DateTime(now.year, now.month, now.day);
+    for (final p in periods) {
+      final s = DateTime.tryParse(p.startIso);
+      final e = DateTime.tryParse(p.endIso);
+      if (s == null || e == null) continue;
+      if (!day.isBefore(DateTime(s.year, s.month, s.day)) &&
+          !day.isAfter(DateTime(e.year, e.month, e.day))) {
+        return p;
+      }
+    }
+    final started = periods.where((p) {
+      final s = DateTime.tryParse(p.startIso);
+      return s != null && !DateTime(s.year, s.month, s.day).isAfter(day);
+    }).toList();
+    if (started.isNotEmpty) return started.first;
+    return periods.isNotEmpty ? periods.first : null;
+  }
+
+  /// Pending rent on periods whose end date already passed.
+  double get overdue {
+    final now = DateTime.now();
+    double sum = 0;
+    for (final p in periods) {
+      final e = DateTime.tryParse(p.endIso);
+      if (e == null) continue;
+      final endOfDay = DateTime(e.year, e.month, e.day, 23, 59, 59);
+      if (endOfDay.isBefore(now) && p.pending > 0) sum += p.pending;
+    }
+    return sum;
+  }
+
+  factory MemberProfile.fromJson(Map<String, dynamic> json) {
+    double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
+    final member = (json['member'] as Map? ?? {}).cast<String, dynamic>();
+    final periods = ((json['periods'] as List? ?? []).cast<Map>())
+        .map((e) => MemberPeriod.fromJson(e.cast<String, dynamic>()))
+        .toList();
+    final room = (json['room'] as Map?)?.cast<String, dynamic>();
+    return MemberProfile(
+      member: member,
+      periods: periods,
+      outstanding: asDouble(json['outstanding']),
+      paidTotal: asDouble(json['paidTotal']),
+      futurePending: asDouble(json['futurePending']),
+      roomNumber: '${room?['roomNumber'] ?? ''}',
     );
   }
 }

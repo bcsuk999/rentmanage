@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import 'api.dart';
 import 'app_theme.dart';
+import 'motion.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key, required this.api, required this.onSignedIn});
@@ -154,13 +155,16 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                               ),
                               const SizedBox(height: 16),
                               if (_error != null) ...[
-                                Container(
-                                  padding: const EdgeInsets.all(10),
-                                  decoration: BoxDecoration(
-                                    color: Theme.of(context).colorScheme.errorContainer,
-                                    borderRadius: BorderRadius.circular(8),
+                                ShakeOnError(
+                                  trigger: _error,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      color: Theme.of(context).colorScheme.errorContainer,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(_error!),
                                   ),
-                                  child: Text(_error!),
                                 ),
                                 const SizedBox(height: 12),
                               ],

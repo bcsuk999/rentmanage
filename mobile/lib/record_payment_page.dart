@@ -42,6 +42,9 @@ class _RecordPaymentPageState extends State<RecordPaymentPage> {
   String? _error;
   bool _customAmount = false;
 
+  double _totalOverdue = 0;
+  double _totalCurrentDue = 0;
+
   @override
   void initState() {
     super.initState();
@@ -75,6 +78,21 @@ class _RecordPaymentPageState extends State<RecordPaymentPage> {
     return '';
   }
 
+  void _calculateDues() {
+    final now = DateTime.now();
+    _totalOverdue = 0;
+    _totalCurrentDue = 0;
+    for (final p in _periods) {
+      if (p.pending <= 0) continue;
+      final periodEnd = DateTime.tryParse(p.endIso);
+      if (periodEnd != null && periodEnd.isBefore(now)) {
+        _totalOverdue += p.pending;
+      } else {
+        _totalCurrentDue += p.pending;
+      }
+    }
+  }
+
   Future<void> _loadPeriods() async {
     final id = _memberId;
     if (id == null) return;
@@ -96,6 +114,7 @@ class _RecordPaymentPageState extends State<RecordPaymentPage> {
         _periods = periods;
         _periodsLoading = false;
         _periodId = (firstOwed ?? periods.firstOrNull)?.id;
+        _calculateDues();
         if (_periodId != null) _applyFullAmount();
       });
     } on ApiException catch (e) {
@@ -123,6 +142,19 @@ class _RecordPaymentPageState extends State<RecordPaymentPage> {
   void _applyChip(double value) {
     _customAmount = false;
     _amount.text = value.toStringAsFixed(0);
+  }
+
+  Map<String, double> _getAllocationBreakdown(double amount) {
+    final overduePaid = amount.clamp(0.0, _totalOverdue);
+    final currentPaid = (amount - overduePaid).clamp(0.0, _totalCurrentDue);
+    final remainingOverdue = _totalOverdue - overduePaid;
+    final remainingCurrent = _totalCurrentDue - currentPaid;
+    return {
+      'overduePaid': overduePaid,
+      'currentPaid': currentPaid,
+      'remainingOverdue': remainingOverdue,
+      'remainingCurrent': remainingCurrent,
+    };
   }
 
   String _dateInput(DateTime d) =>
@@ -191,6 +223,19 @@ class _RecordPaymentPageState extends State<RecordPaymentPage> {
       if (mounted) setState(() => _busy = false);
     }
   }
+
+  Widget _allocRow(String label, double value, Color color) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(label, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: color)),
+            Text(inr(value),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w700, color: color)),
+          ],
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -268,6 +313,62 @@ class _RecordPaymentPageState extends State<RecordPaymentPage> {
               },
             ),
             const SizedBox(height: 12),
+            if (_totalOverdue > 0 || _totalCurrentDue > 0)
+              Card(
+                color: AppColors.primary.withValues(alpha: 0.05),
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Outstanding Breakdown',
+                          style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Overdue',
+                                    style: theme.textTheme.bodySmall?.copyWith(color: AppColors.danger)),
+                                Text(inr(_totalOverdue),
+                                    style: theme.textTheme.titleMedium?.copyWith(
+                                        fontWeight: FontWeight.w800, color: AppColors.danger)),
+                              ],
+                            ),
+                          ),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Current Due',
+                                    style: theme.textTheme.bodySmall?.copyWith(color: AppColors.primary)),
+                                Text(inr(_totalCurrentDue),
+                                    style: theme.textTheme.titleMedium?.copyWith(
+                                        fontWeight: FontWeight.w800, color: AppColors.primary)),
+                              ],
+                            ),
+                          ),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text('Total Outstanding',
+                                    style: theme.textTheme.bodySmall?.copyWith(color: AppColors.secondaryText)),
+                                Text(inr(_totalOverdue + _totalCurrentDue),
+                                    style: theme.textTheme.titleMedium?.copyWith(
+                                        fontWeight: FontWeight.w800, color: AppColors.mainText)),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            const SizedBox(height: 12),
             Text('Rent Period', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
             const SizedBox(height: 6),
             if (_periodsLoading)
@@ -328,6 +429,33 @@ class _RecordPaymentPageState extends State<RecordPaymentPage> {
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               onChanged: (_) => setState(() => _customAmount = true),
             ),
+            const SizedBox(height: 8),
+            if (_amount.text.isNotEmpty && (_totalOverdue > 0 || _totalCurrentDue > 0))
+              Builder(builder: (context) {
+                final amount = double.tryParse(_amount.text.trim()) ?? 0;
+                final breakdown = _getAllocationBreakdown(amount);
+                return Card(
+                  color: AppColors.successSoft,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Payment Allocation Preview',
+                            style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+                        const SizedBox(height: 8),
+                        if (breakdown['overduePaid']! > 0)
+                          _allocRow('Overdue', breakdown['overduePaid']!, AppColors.danger),
+                        if (breakdown['currentPaid']! > 0)
+                          _allocRow('Current Due', breakdown['currentPaid']!, AppColors.primary),
+                        const Divider(height: 12),
+                        _allocRow('Remaining Overdue', breakdown['remainingOverdue']!, AppColors.danger),
+                        _allocRow('Remaining Current Due', breakdown['remainingCurrent']!, AppColors.primary),
+                      ],
+                    ),
+                  ),
+                );
+              }),
             const SizedBox(height: 12),
             ListTile(
               contentPadding: EdgeInsets.zero,

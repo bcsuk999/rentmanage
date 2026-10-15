@@ -1,21 +1,52 @@
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'motion.dart';
 import 'widgets.dart';
 
 String _dateInput(DateTime d) =>
     '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
-/// Add-member form (admin only). Returns true when a member was created.
+/// Add or edit a member. Returns true when a member was created or updated.
 class MemberFormPage extends StatefulWidget {
-  const MemberFormPage({super.key, required this.api, required this.roomId, required this.roomNumber});
+  const MemberFormPage({
+    super.key,
+    required this.api,
+    required this.roomId,
+    required this.roomNumber,
+    this.member,
+  });
 
   final ApiClient api;
   final String roomId;
   final String roomNumber;
 
+  /// Existing member to edit; null adds a new one.
+  final RoomMemberFormData? member;
+
+  bool get isEdit => member != null;
+
   @override
   State<MemberFormPage> createState() => _MemberFormPageState();
+}
+
+/// Minimal member data needed to populate the edit form.
+class RoomMemberFormData {
+  const RoomMemberFormData({
+    required this.id,
+    required this.name,
+    required this.mobile,
+    required this.monthlyRent,
+    required this.rentStartDate,
+    this.aadhaarNumber,
+  });
+
+  final String id;
+  final String name;
+  final String mobile;
+  final double monthlyRent;
+  final DateTime rentStartDate;
+  final String? aadhaarNumber;
 }
 
 class _MemberFormPageState extends State<MemberFormPage> {
@@ -23,9 +54,22 @@ class _MemberFormPageState extends State<MemberFormPage> {
   final _mobile = TextEditingController();
   final _rent = TextEditingController();
   final _aadhaar = TextEditingController();
-  DateTime _start = DateTime.now();
+  late DateTime _start;
   bool _busy = false;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final m = widget.member;
+    _start = m?.rentStartDate ?? DateTime.now();
+    if (m != null) {
+      _name.text = m.name;
+      _mobile.text = m.mobile;
+      _rent.text = m.monthlyRent.toStringAsFixed(0);
+      _aadhaar.text = m.aadhaarNumber ?? '';
+    }
+  }
 
   @override
   void dispose() {
@@ -51,16 +95,23 @@ class _MemberFormPageState extends State<MemberFormPage> {
       _busy = true;
       _error = null;
     });
+    final payload = {
+      'name': _name.text.trim(),
+      'mobile': _mobile.text.trim(),
+      'monthlyRent': _rent.text.trim(),
+      'rentStartDate': _dateInput(_start),
+      if (_aadhaar.text.trim().isNotEmpty) 'aadhaarNumber': _aadhaar.text.trim(),
+    };
     try {
-      await widget.api.addMember(widget.roomId, {
-        'name': _name.text.trim(),
-        'mobile': _mobile.text.trim(),
-        'monthlyRent': _rent.text.trim(),
-        'rentStartDate': _dateInput(_start),
-        if (_aadhaar.text.trim().isNotEmpty) 'aadhaarNumber': _aadhaar.text.trim(),
-      });
-      if (!mounted) return;
-      toastOk(context, '${_name.text.trim()} added to Room ${widget.roomNumber}.');
+      if (widget.isEdit) {
+        await widget.api.updateMember(widget.member!.id, payload);
+        if (!mounted) return;
+        toastOk(context, '${_name.text.trim()} updated.');
+      } else {
+        await widget.api.addMember(widget.roomId, payload);
+        if (!mounted) return;
+        toastOk(context, '${_name.text.trim()} added to Room ${widget.roomNumber}.');
+      }
       Navigator.of(context).pop(true);
     } on ApiException catch (e) {
       setState(() => _error = e.message);
@@ -74,20 +125,23 @@ class _MemberFormPageState extends State<MemberFormPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Add member · Room ${widget.roomNumber}')),
+      appBar: AppBar(title: Text('${widget.isEdit ? 'Edit' : 'Add'} member · Room ${widget.roomNumber}')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (_error != null) ...[
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.errorContainer,
-                  borderRadius: BorderRadius.circular(8),
+              ShakeOnError(
+                trigger: _error,
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.errorContainer,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(_error!),
                 ),
-                child: Text(_error!),
               ),
               const SizedBox(height: 12),
             ],
@@ -129,9 +183,17 @@ class _MemberFormPageState extends State<MemberFormPage> {
             const SizedBox(height: 20),
             FilledButton(
               onPressed: _busy ? null : _submit,
-              child: _busy
-                  ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Text('Add member'),
+              child: AnimatedSwitcher(
+                duration: MotionDuration.quick,
+                child: _busy
+                    ? const SizedBox(
+                        key: ValueKey('busy'),
+                        height: 18,
+                        width: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : Text(widget.isEdit ? 'Save changes' : 'Add member',
+                        key: const ValueKey('idle')),
+              ),
             ),
           ],
         ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'app_theme.dart';
+import 'motion.dart';
 import 'status_colors.dart';
 
 /// Shared PRD components: pills, progress, skeletons, state panels, toasts.
@@ -197,11 +198,11 @@ class SummaryMetric extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(value,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w800, color: AppColors.mainText)),
+                  PopInValue(
+                    value: value,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w800, color: AppColors.mainText),
+                  ),
                   Text(label,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -217,7 +218,7 @@ class SummaryMetric extends StatelessWidget {
   }
 }
 
-class SkeletonBlock extends StatelessWidget {
+class SkeletonBlock extends StatefulWidget {
   const SkeletonBlock({super.key, required this.height, this.width = double.infinity, this.radius = 12});
 
   final double height;
@@ -225,11 +226,50 @@ class SkeletonBlock extends StatelessWidget {
   final double radius;
 
   @override
+  State<SkeletonBlock> createState() => _SkeletonBlockState();
+}
+
+class _SkeletonBlockState extends State<SkeletonBlock>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1200),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Container(
-      height: height,
-      width: width,
-      decoration: BoxDecoration(color: AppColors.skeleton, borderRadius: BorderRadius.circular(radius)),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(widget.radius),
+      child: SizedBox(
+        height: widget.height,
+        width: widget.width,
+        child: AnimatedBuilder(
+          animation: _c,
+          builder: (context, _) {
+            final x = -1.5 + _c.value * 3;
+            return DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: const [
+                    AppColors.skeleton,
+                    Color(0xFFF1F4FA),
+                    AppColors.skeleton,
+                  ],
+                  stops: const [0.15, 0.5, 0.85],
+                  begin: Alignment(x, 0),
+                  end: Alignment(x + 1, 0),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
     );
   }
 }

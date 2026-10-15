@@ -6,6 +6,7 @@ import 'api.dart';
 import 'app_theme.dart';
 import 'app_update_page.dart';
 import 'change_password_page.dart';
+import 'motion.dart';
 import 'overdue_page.dart';
 import 'payment_history_page.dart';
 import 'room_detail_page.dart';
@@ -235,8 +236,8 @@ class _HomePageState extends State<HomePage> {
 
   void _openDetails(Room room) async {
     await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => RoomDetailPage(
+      smoothRoute(
+        RoomDetailPage(
           api: widget.api,
           roomId: room.id,
           roomNumber: room.roomNumber,
@@ -334,14 +335,15 @@ class _HomePageState extends State<HomePage> {
         future: _future,
         builder: (context, snapshot) {
           final hasData = snapshot.hasData && snapshot.data!.isNotEmpty;
+          Widget child;
           if (snapshot.connectionState == ConnectionState.waiting && !hasData) {
-            return const SkeletonRooms();
-          }
-          if (snapshot.hasError && !hasData) {
+            child = const SkeletonRooms(key: ValueKey('rooms-skeleton'));
+          } else if (snapshot.hasError && !hasData) {
             final message = snapshot.error is ApiException
                 ? (snapshot.error as ApiException).message
                 : 'Unable to load the latest data. Check your internet connection and try again.';
-            return ListView(
+            child = ListView(
+              key: const ValueKey('rooms-error'),
               padding: const EdgeInsets.all(20),
               children: [
                 ErrorPanel(
@@ -351,45 +353,57 @@ class _HomePageState extends State<HomePage> {
                 ),
               ],
             );
-          }
-          final rooms = snapshot.data ?? [];
-          // Mobile viewport everywhere: one centered phone-width column,
-          // even on desktop.
-          return SingleChildScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 480),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _periodRow(context),
-                    const SizedBox(height: 12),
-                    _summaryGrid(context),
-                    const SizedBox(height: 12),
-                    _searchRow(context),
-                    const SizedBox(height: 8),
-                    _chipRow(context),
-                    if (_searching) ...[
+          } else {
+            final rooms = snapshot.data ?? [];
+            // Mobile viewport everywhere: one centered phone-width column,
+            // even on desktop.
+            child = SingleChildScrollView(
+              key: const ValueKey('rooms-content'),
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 480),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _periodRow(context),
+                      const SizedBox(height: 12),
+                      _summaryGrid(context),
+                      const SizedBox(height: 12),
+                      _searchRow(context),
                       const SizedBox(height: 8),
-                      const LinearProgressIndicator(),
-                    ],
-                    const SizedBox(height: 12),
-                    if (rooms.isEmpty)
-                      _emptyState(context)
-                    else
-                      for (final room in rooms) ...[
-                        _RoomCard(
-                          room: room,
-                          onOpen: () => _openDetails(room),
-                        ),
-                        const SizedBox(height: 12),
+                      _chipRow(context),
+                      if (_searching) ...[
+                        const SizedBox(height: 8),
+                        const LinearProgressIndicator(),
                       ],
-                  ],
+                      const SizedBox(height: 12),
+                      if (rooms.isEmpty)
+                        _emptyState(context)
+                      else
+                        for (var i = 0; i < rooms.length; i++) ...[
+                          Reveal(
+                            key: ValueKey('room-${rooms[i].id}'),
+                            delay: MotionDuration.stagger * (i % 8),
+                            child: _RoomCard(
+                              room: rooms[i],
+                              onOpen: () => _openDetails(rooms[i]),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                    ],
+                  ),
                 ),
               ),
-            ),
+            );
+          }
+          return AnimatedSwitcher(
+            duration: MotionDuration.slow,
+            switchInCurve: MotionCurve.smoothOut,
+            switchOutCurve: MotionCurve.easeInOut,
+            child: child,
           );
         },
       ),
@@ -647,8 +661,8 @@ class _HomePageState extends State<HomePage> {
             title: 'Payment History',
             subtitle: 'Every saved payment, newest first',
             onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => PaymentHistoryPage(api: widget.api, isAdmin: isAdmin),
+              smoothRoute(
+                PaymentHistoryPage(api: widget.api, isAdmin: isAdmin),
               ),
             ),
           ),
@@ -660,8 +674,8 @@ class _HomePageState extends State<HomePage> {
             title: 'Change Password',
             subtitle: 'Update your sign-in password',
             onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => ChangePasswordPage(api: widget.api),
+              smoothRoute(
+                ChangePasswordPage(api: widget.api),
               ),
             ),
           ),
@@ -673,8 +687,8 @@ class _HomePageState extends State<HomePage> {
             title: 'App Updates',
             subtitle: 'Check for and install new versions',
             onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const AppUpdatePage(),
+              smoothRoute(
+                const AppUpdatePage(),
               ),
             ),
           ),
@@ -865,6 +879,7 @@ class _RoomCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: onOpen,
@@ -899,15 +914,21 @@ Row(
                       ),
                     ),
                   ),
-                  StatusPill.room(room.status),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '${room.memberCount}/${room.capacity}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.secondaryText,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      StatusPill.room(room.status),
+                    ],
+                  ),
                 ],
-              ),
-              const SizedBox(height: 2),
-              Text(
-                '${room.memberCount}/${room.capacity} occupied${room.isFull ? ' · Full' : ''} · ${room.paymentState}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodySmall?.copyWith(color: AppColors.secondaryText),
               ),
               const SizedBox(height: 10),
               if (room.members.isEmpty)
@@ -1010,14 +1031,17 @@ class _AddRoomDialogState extends State<_AddRoomDialog> {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (_error != null) ...[
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: AppColors.dangerSoft,
-                  borderRadius: BorderRadius.circular(8),
+              ShakeOnError(
+                trigger: _error,
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.dangerSoft,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(_error!),
                 ),
-                child: Text(_error!),
               ),
               const SizedBox(height: 12),
             ],
@@ -1048,9 +1072,16 @@ class _AddRoomDialogState extends State<_AddRoomDialog> {
         TextButton(onPressed: _busy ? null : () => Navigator.of(context).pop(false), child: const Text('Cancel')),
         FilledButton(
           onPressed: _busy ? null : _submit,
-          child: _busy
-              ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
-              : const Text('Add room'),
+          child: AnimatedSwitcher(
+            duration: MotionDuration.quick,
+            child: _busy
+                ? const SizedBox(
+                    key: ValueKey('busy'),
+                    height: 18,
+                    width: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : const Text('Add room', key: ValueKey('idle')),
+          ),
         ),
       ],
     );
