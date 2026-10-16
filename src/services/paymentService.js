@@ -85,6 +85,20 @@ async function addPayment({
     ]);
   }
 
+  // Allocation split: strictly older overdue cycles first, remainder to the
+  // cycle this payment was booked against.
+  const overduePeriods = await RentPeriod.find({
+    memberId: fresh.memberId,
+    status: 'Overdue',
+    endDate: { $lt: fresh.startDate },
+  })
+    .select('pendingAmount')
+    .lean();
+  const totalOverdue = Math.round(
+    overduePeriods.reduce((s, p) => s + (p.pendingAmount || 0), 0) * 100,
+  ) / 100;
+  const allocOverdue = Math.min(amountValue, totalOverdue);
+
   const payment = await Payment.create({
     rentPeriodId: fresh._id,
     memberId: fresh.memberId,
@@ -92,6 +106,8 @@ async function addPayment({
     amount: Math.round(amountValue * 100) / 100,
     paymentDate: on,
     paymentMethod,
+    allocOverdue: Math.round(allocOverdue * 100) / 100,
+    allocCurrent: Math.round((amountValue - allocOverdue) * 100) / 100,
     reference: reference ? String(reference).trim() : undefined,
     notes: notes ? String(notes).trim() : undefined,
   });

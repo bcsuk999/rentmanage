@@ -5,7 +5,7 @@ const Room = require('../models/Room');
 const Member = require('../models/Member');
 const RentPeriod = require('../models/RentPeriod');
 const Payment = require('../models/Payment');
-const { ensurePeriodsForActiveMembers } = require('./rentService');
+const { ensurePeriodsForActiveMembers, selectPeriodsByMember } = require('./rentService');
 const { startOfDay, today } = require('../utils/dates');
 const { ValidationError } = require('../utils/validate');
 
@@ -52,6 +52,17 @@ async function buildReport({ from, to, roomId = null }) {
     .populate('roomId', 'roomNumber status')
     .lean();
 
+  // Rent figures use ONE period per member. Cycles are anchored to each
+  // member's own rent start day, so a range can include a just-ended (paid)
+  // cycle and a just-started one; prefer the cycle active at the reference
+  // point (today when the range covers today, else the range end). Cash figures
+  // (below) still use every overlapping period so received payments are
+  // complete.
+  const now = today();
+  const inRange = startOfDay(now) >= range.from && startOfDay(now) <= range.to;
+  const rowReference = inRange ? now : range.to;
+  const primaryPeriods = [...selectPeriodsByMember(periods, rowReference).values()];
+
   const periodIds = periods.map((p) => p._id);
   const paymentsInRange = periodIds.length
     ? await Payment.find({
@@ -76,7 +87,7 @@ async function buildReport({ from, to, roomId = null }) {
 
   const byRoomMap = new Map();
   const byMemberMap = new Map();
-  for (const p of periods) {
+  for (const p of primaryPeriods) {
     const roomKey = p.roomId ? p.roomId._id.toString() : 'unknown';
     const roomLabel = p.roomId ? p.roomId.roomNumber : 'Unknown room';
     if (!byRoomMap.has(roomKey)) {
@@ -128,7 +139,7 @@ async function buildReport({ from, to, roomId = null }) {
     a.name.localeCompare(b.name, undefined, { numeric: true })
   );
 
-  const counts = countByStatus(periods);
+  const counts = countByStatus(primaryPeriods);
 
   return {
     range,
@@ -136,13 +147,14 @@ async function buildReport({ from, to, roomId = null }) {
       totalRooms: rooms.length,
       totalMembers: memberCount,
       totalHistoricalMembers: allMemberCount,
-      totalRent: sum(periods, (p) => p.rentAmount),
-      totalPaid: sum(periods, (p) => p.paidAmount),
-      totalPending: sum(periods, (p) => p.pendingAmount),
+      totalRent: sum(primaryPeriods, (p) => p.rentAmount),
+      totalPaid: sum(primaryPeriods, (p) => p.paidAmount),
+      totalPending: sum(primaryPeriods, (p) => p.pendingAmount),
+      overduePending: sum(primaryPeriods.filter((p) => p.status === 'Overdue'), (p) => p.pendingAmount),
       receivedInRange: sum(paymentsInRange, (p) => p.amount),
       paymentCount: paymentsInRange.length,
       methodTotals,
-      periodCount: periods.length,
+      periodCount: primaryPeriods.length,
       paidMembers: counts.Paid,
       partialMembers: counts.Partial,
       pendingMembers: counts.Pending,

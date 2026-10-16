@@ -24,6 +24,10 @@ const paymentSchema = new mongoose.Schema(
     amount: { type: Number, required: [true, 'Amount is required'], min: [1, 'Amount must be greater than 0'] },
     paymentDate: { type: Date, required: true, default: Date.now },
     paymentMethod: { type: String, enum: PAYMENT_METHODS, required: true },
+    // How this payment was split: oldest dues first, then the current cycle.
+    // Absent on payments recorded before the split was tracked.
+    allocOverdue: { type: Number, default: null, min: 0 },
+    allocCurrent: { type: Number, default: null, min: 0 },
     reference: { type: String, trim: true, maxlength: 120 },
     notes: { type: String, trim: true, maxlength: 500 },
     createdAt: { type: Date, default: Date.now },

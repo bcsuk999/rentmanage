@@ -261,6 +261,36 @@ function periodOverlapping(periods, range) {
   );
 }
 
+/** Stable member key for a period, whether memberId is populated or raw. */
+function periodMemberKey(p) {
+  const m = p.memberId;
+  if (!m) return p._id ? p._id.toString() : String(p._id);
+  if (m._id) return m._id.toString();
+  return m.toString();
+}
+
+/**
+ * Pick one period per member for a date range. Cycles are anchored to each
+ * member's own rent start day, so a range can contain a just-ended (paid) cycle
+ * *and* a just-started one. Prefer the cycle that is active at `reference` (so
+ * a new cycle shows as soon as it starts); fall back to the earliest
+ * overlapping period when none contains the reference.
+ */
+function selectPeriodsByMember(periods, reference) {
+  const ref = startOfDay(reference);
+  const state = new Map();
+  for (const p of periods) {
+    const key = periodMemberKey(p);
+    const contains = startOfDay(p.startDate) <= ref && startOfDay(p.endDate) >= ref;
+    const cur = state.get(key);
+    if (!cur) state.set(key, { period: p, contains });
+    else if (contains && !cur.contains) state.set(key, { period: p, contains });
+  }
+  const result = new Map();
+  for (const [key, v] of state) result.set(key, v.period);
+  return result;
+}
+
 /** Roll up member periods into room totals. */
 function summarise(members) {
   const totals = members.reduce(
@@ -303,5 +333,6 @@ module.exports = {
   refreshOverdueStatuses,
   recalcPeriod,
   roomPeriodOptions,
+  selectPeriodsByMember,
   summarise,
 };

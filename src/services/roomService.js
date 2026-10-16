@@ -5,7 +5,7 @@ const Room = require('../models/Room');
 const Member = require('../models/Member');
 const RentPeriod = require('../models/RentPeriod');
 const { ROOM_STATUSES } = require('../models/Room');
-const { ensurePeriodsForActiveMembers, summarise } = require('./rentService');
+const { ensurePeriodsForActiveMembers, selectPeriodsByMember, summarise } = require('./rentService');
 const { parseDateInput, startOfDay, today } = require('../utils/dates');
 const {
   ValidationError,
@@ -192,21 +192,29 @@ async function listRoomsWithSummary({ search = '', status = 'All', paymentState 
     if (!membersByRoom.has(key)) membersByRoom.set(key, []);
     membersByRoom.get(key).push(m);
   }
-  const periodsByRoom = new Map();
-  for (const p of periods) {
-    const key = p.roomId.toString();
-    if (!periodsByRoom.has(key)) periodsByRoom.set(key, []);
-    periodsByRoom.get(key).push(p);
-  }
   const periodsByMember = new Map();
-  // First (earliest) overlapping period wins per member, same as roomDetail.
-  for (const p of periods) {
-    if (!periodsByMember.has(p.memberId.toString())) periodsByMember.set(p.memberId.toString(), p);
+  // One row per member: the cycle active at the reference point (today while the
+  // range covers today, else the range end) or the earliest overlapping cycle.
+  // This makes a freshly started cycle show its due immediately, instead of the
+  // just-ended (already paid) cycle it replaced.
+  const now = today();
+  const inRange = range && startOfDay(now) >= range.from && startOfDay(now) <= range.to;
+  const rowReference = range && !inRange ? range.to : now;
+  // First occurrence per member is the fallback; a cycle containing the
+  // reference overrides it.
+  for (const [key, p] of selectPeriodsByMember(periods, rowReference)) {
+    periodsByMember.set(key, p);
   }
 
   let rows = rooms.map((room) => {
     const roomMembers = membersByRoom.get(room._id.toString()) || [];
-    const roomPeriods = periodsByRoom.get(room._id.toString()) || [];
+    // One period per member — the same single period shown on each member row.
+    // Summing every overlapping period would double-count when a member's cycle
+    // straddles the selected month (cycles are anchored to the member's own
+    // rent start day, so a calendar month can overlap two of them).
+    const roomPeriods = roomMembers
+      .map((m) => periodsByMember.get(m._id.toString()))
+      .filter(Boolean);
     const summary = summarise(
       roomPeriods.map((p) => ({
         rent: p.rentAmount,
