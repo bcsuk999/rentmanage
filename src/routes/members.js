@@ -16,8 +16,8 @@ router.get(
       const search = String(req.query.search || '').trim();
       const status = String(req.query.status || 'active');
       const roomId = String(req.query.roomId || '').trim();
-      const members = await memberService.searchMembers({ search, roomId, status });
-      const rooms = await Room.find().select('roomNumber').sort({ roomNumber: 1 }).lean();
+      const members = await memberService.searchMembers({ search, roomId, status, ownerId: req.user._id });
+      const rooms = await Room.find({ ownerId: req.user._id }).select('roomNumber').sort({ roomNumber: 1 }).lean();
       const roomMap = new Map(rooms.map((r) => [r._id.toString(), r.roomNumber]));
       return res.json({
         members: members.map((m) => ({ ...m, roomNumber: roomMap.get(m.roomId.toString()) || '-' })),
@@ -33,7 +33,7 @@ router.get(
   '/:id',
   wrap(async (req, res) => {
     try {
-      const detail = await memberService.memberDetail(req.params.id);
+      const detail = await memberService.memberDetail(req.params.id, req.user._id);
       return res.json({
         ...detail,
         paymentsByPeriod: Object.fromEntries(detail.paymentsByPeriod || new Map()),
@@ -48,7 +48,7 @@ router.patch(
   '/:id',
   wrap(async (req, res) => {
     try {
-      const member = await memberService.updateMember(req.params.id, req.body);
+      const member = await memberService.updateMember(req.params.id, req.body, req.user._id);
       return res.json({ member, message: `${member.name} updated.` });
     } catch (err) {
       return sendApiError(res, err);
@@ -73,7 +73,7 @@ router.post(
   '/:id/vacate',
   wrap(async (req, res) => {
     try {
-      const result = await memberService.vacateMember(req.params.id, req.body);
+      const result = await memberService.vacateMember(req.params.id, req.body, req.user._id);
       return res.json({
         member: result.member,
         outstanding: result.outstanding,

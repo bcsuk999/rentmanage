@@ -8,6 +8,7 @@ const Payment = require('../models/Payment');
 const { ensurePeriodsForActiveMembers, selectPeriodsByMember } = require('./rentService');
 const { startOfDay, today } = require('../utils/dates');
 const { ValidationError } = require('../utils/validate');
+const { requireOwnerId } = require('../utils/owner');
 
 /** Periods that overlap the requested date range. */
 function overlapFilter(from, to) {
@@ -31,9 +32,10 @@ function countByStatus(periods) {
  * Rent figures come from the rent periods overlapping the range; cash figures
  * come from payments actually made inside the range.
  */
-async function buildReport({ from, to, roomId = null }) {
+async function buildReport({ from, to, roomId = null, ownerId = null }) {
+  const owner = requireOwnerId(ownerId);
   const range = { from: startOfDay(from), to: startOfDay(to) };
-  await ensurePeriodsForActiveMembers({ reference: range.to });
+  await ensurePeriodsForActiveMembers({ reference: range.to, ownerId: owner });
 
   let roomObjectId = null;
   if (roomId) {
@@ -43,7 +45,7 @@ async function buildReport({ from, to, roomId = null }) {
     roomObjectId = new mongoose.Types.ObjectId(String(roomId));
   }
 
-  const periodQuery = overlapFilter(range.from, range.to);
+  const periodQuery = { ...overlapFilter(range.from, range.to), ownerId: owner };
   if (roomObjectId) periodQuery.roomId = roomObjectId;
 
   const periods = await RentPeriod.find(periodQuery)
@@ -66,6 +68,7 @@ async function buildReport({ from, to, roomId = null }) {
   const periodIds = periods.map((p) => p._id);
   const paymentsInRange = periodIds.length
     ? await Payment.find({
+        ownerId: owner,
         rentPeriodId: { $in: periodIds },
         paymentDate: { $gte: range.from, $lte: range.to },
       })
@@ -73,10 +76,11 @@ async function buildReport({ from, to, roomId = null }) {
         .lean()
     : [];
 
-  const roomFilter = {};
+  const roomFilter = { ownerId: owner };
   if (roomObjectId) roomFilter._id = roomObjectId;
   const rooms = await Room.find(roomFilter).select('roomNumber status').lean();
-  const memberFilter = roomObjectId ? { roomId: roomObjectId } : {};
+  const memberFilter = { ownerId: owner };
+  if (roomObjectId) memberFilter.roomId = roomObjectId;
   const memberCount = await Member.countDocuments({ ...memberFilter, status: 'active' });
   const allMemberCount = await Member.countDocuments(memberFilter);
 
@@ -173,10 +177,13 @@ function rollup(statuses) {
   return 'Partial';
 }
 
-/** Default report range: the current rental cycle for the whole system. */
-async function defaultRange() {
+/** Default report range: the current rental cycle for the signed-in landlord. */
+async function defaultRange(ownerId) {
   const reference = today();
-  const first = await RentPeriod.find().sort({ startDate: 1 }).select('startDate endDate').lean();
+  const first = await RentPeriod.find({ ownerId: requireOwnerId(ownerId) })
+    .sort({ startDate: 1 })
+    .select('startDate endDate')
+    .lean();
   const started = first.filter((p) => startOfDay(p.startDate) <= reference);
   const current =
     first.find((p) => startOfDay(p.startDate) <= reference && startOfDay(p.endDate) >= reference) ||

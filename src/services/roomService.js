@@ -7,6 +7,7 @@ const RentPeriod = require('../models/RentPeriod');
 const { ROOM_STATUSES } = require('../models/Room');
 const { ensurePeriodsForActiveMembers, selectPeriodsByMember, summarise } = require('./rentService');
 const { parseDateInput, startOfDay, today } = require('../utils/dates');
+const { requireOwnerId } = require('../utils/owner');
 const {
   ValidationError,
   collect,
@@ -19,8 +20,11 @@ const {
 const PAYMENT_FILTERS = ['Fully Paid', 'Partial', 'Pending', 'Overdue'];
 
 /** Room numbers are matched case-insensitively via the indexed roomNumberKey. */
-function findRoomByNumber(roomNumber) {
-  return Room.findOne({ roomNumberKey: String(roomNumber).trim().toLowerCase() });
+function findRoomByNumber(roomNumber, ownerId) {
+  return Room.findOne({
+    ownerId: requireOwnerId(ownerId),
+    roomNumberKey: String(roomNumber).trim().toLowerCase(),
+  });
 }
 
 function toObjectId(value, field = 'id') {
@@ -30,19 +34,20 @@ function toObjectId(value, field = 'id') {
   return new mongoose.Types.ObjectId(String(value));
 }
 
-async function createRoom(body) {
+async function createRoom(body, ownerId) {
+  const owner = requireOwnerId(ownerId);
   const data = collect((ok) => ({
     roomNumber: requireText(body.roomNumber, 'Room number', { max: 40 }),
     capacity: requireCapacity(body.capacity),
     status: body.status ? oneOf(body.status, ROOM_STATUSES, 'Status') : 'Empty',
     notes: ok(() => optionalText(body.notes, 'Notes', { max: 1000 })),
   }));
-  const exists = await findRoomByNumber(data.roomNumber);
+  const exists = await findRoomByNumber(data.roomNumber, owner);
   if (exists) {
     throw new ValidationError([{ field: 'roomNumber', message: 'This room number already exists' }]);
   }
   try {
-    return await Room.create(data);
+    return await Room.create({ ...data, ownerId: owner });
   } catch (err) {
     if (err && err.code === 11000) {
       throw new ValidationError([
@@ -53,8 +58,8 @@ async function createRoom(body) {
   }
 }
 
-async function updateRoom(id, body) {
-  const room = await Room.findById(toObjectId(id, 'roomId'));
+async function updateRoom(id, body, ownerId) {
+  const room = await Room.findOne({ _id: toObjectId(id, 'roomId'), ownerId: requireOwnerId(ownerId) });
   if (!room) throw new ValidationError([{ field: 'roomId', message: 'Room not found' }]);
   const data = collect((ok) => ({
     roomNumber: body.roomNumber === undefined
@@ -65,7 +70,7 @@ async function updateRoom(id, body) {
     notes: body.notes === undefined ? room.notes : ok(() => optionalText(body.notes, 'Notes', { max: 1000 })),
   }));
   if (data.capacity < room.capacity) {
-    const activeMembers = await Member.countDocuments({ roomId: room._id, status: 'active' });
+    const activeMembers = await Member.countDocuments({ ownerId: room.ownerId, roomId: room._id, status: 'active' });
     if (data.capacity < activeMembers) {
       throw new ValidationError([
         {
@@ -93,10 +98,10 @@ async function updateRoom(id, body) {
 }
 
 /** Rooms are never deleted while members or financial history reference them. */
-async function deleteRoom(id) {
-  const room = await Room.findById(toObjectId(id, 'roomId'));
+async function deleteRoom(id, ownerId) {
+  const room = await Room.findOne({ _id: toObjectId(id, 'roomId'), ownerId: requireOwnerId(ownerId) });
   if (!room) throw new ValidationError([{ field: 'roomId', message: 'Room not found' }]);
-  const members = await Member.countDocuments({ roomId: room._id });
+  const members = await Member.countDocuments({ ownerId: room.ownerId, roomId: room._id });
   if (members > 0) {
     throw new ValidationError([
       {
@@ -105,7 +110,7 @@ async function deleteRoom(id) {
       },
     ]);
   }
-  const periods = await RentPeriod.countDocuments({ roomId: room._id });
+  const periods = await RentPeriod.countDocuments({ ownerId: room.ownerId, roomId: room._id });
   if (periods > 0) {
     throw new ValidationError([
       { field: 'roomId', message: 'This room has rent history and cannot be deleted.' },
@@ -122,7 +127,8 @@ async function deleteRoom(id) {
  * range every snapshot (room totals, per-member rows) comes from the periods
  * overlapping that range, so list screens can show any month.
  */
-async function listRoomsWithSummary({ search = '', status = 'All', paymentState = 'All', from = null, to = null } = {}) {
+async function listRoomsWithSummary({ search = '', status = 'All', paymentState = 'All', from = null, to = null, ownerId = null } = {}) {
+  const owner = requireOwnerId(ownerId);
   const reference = today();
   let range = null;
   if (from || to) {
@@ -136,12 +142,13 @@ async function listRoomsWithSummary({ search = '', status = 'All', paymentState 
     range = { from: startOfDay(parsedFrom), to: startOfDay(parsedTo) };
   }
   const effectiveRef = range ? range.to : reference;
-  await ensurePeriodsForActiveMembers({ reference: effectiveRef });
+  await ensurePeriodsForActiveMembers({ reference: effectiveRef, ownerId: owner });
 
   let matchingRoomIds = null;
   if (search) {
     const term = search.trim();
     const memberFilter = {
+      ownerId: owner,
       $or: [
         { name: { $regex: term, $options: 'i' } },
         { mobile: { $regex: term, $options: 'i' } },
@@ -152,7 +159,7 @@ async function listRoomsWithSummary({ search = '', status = 'All', paymentState 
     matchingRoomIds = memberRooms.map((r) => r.toString());
   }
 
-  const roomFilter = {};
+  const roomFilter = { ownerId: owner };
   if (status !== 'All' && ROOM_STATUSES.includes(status)) roomFilter.status = status;
   if (search) {
     // Prefix match on the indexed key so the unique index can be used.
@@ -167,17 +174,19 @@ async function listRoomsWithSummary({ search = '', status = 'All', paymentState 
   const roomIds = rooms.map((r) => r._id);
   const periodMatch = range
     ? {
+      ownerId: owner,
       roomId: { $in: roomIds },
       startDate: { $lte: range.to },
       endDate: { $gte: range.from },
     }
     : {
+      ownerId: owner,
       roomId: { $in: roomIds },
       startDate: { $lte: reference },
       endDate: { $gte: reference },
     };
   const [members, periods] = await Promise.all([
-    Member.find({ roomId: { $in: roomIds }, status: 'active' })
+    Member.find({ ownerId: owner, roomId: { $in: roomIds }, status: 'active' })
       .select('roomId name monthlyRent rentStartDate')
       .lean(),
     RentPeriod.find(periodMatch)
@@ -275,19 +284,20 @@ async function listRoomsWithSummary({ search = '', status = 'All', paymentState 
 }
 
 /** Full detail for the Room Details page, for the selected date range. */
-async function roomDetail(id, selectedRange) {
-  const room = await Room.findById(toObjectId(id, 'roomId')).lean();
+async function roomDetail(id, selectedRange, ownerId) {
+  const owner = requireOwnerId(ownerId);
+  const room = await Room.findOne({ _id: toObjectId(id, 'roomId'), ownerId: owner }).lean();
   if (!room) throw new ValidationError([{ field: 'roomId', message: 'Room not found' }]);
 
-  await ensurePeriodsForActiveMembers({ roomId: room._id });
+  await ensurePeriodsForActiveMembers({ roomId: room._id, ownerId: owner });
 
-  const members = await Member.find({ roomId: room._id, status: 'active' })
+  const members = await Member.find({ ownerId: owner, roomId: room._id, status: 'active' })
     .sort({ name: 1 })
     .lean();
   const memberIds = members.map((m) => m._id);
 
   const periods = memberIds.length
-    ? await RentPeriod.find({ memberId: { $in: memberIds } })
+    ? await RentPeriod.find({ ownerId: owner, memberId: { $in: memberIds } })
         .sort({ startDate: 1 })
         .lean()
     : [];
@@ -334,7 +344,7 @@ async function roomDetail(id, selectedRange) {
     }))
   );
 
-  const historical = await Member.find({ roomId: room._id, status: 'inactive' })
+  const historical = await Member.find({ ownerId: owner, roomId: room._id, status: 'inactive' })
     .sort({ vacatingDate: -1 })
     .lean();
 

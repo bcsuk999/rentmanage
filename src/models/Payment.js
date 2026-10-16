@@ -6,6 +6,12 @@ const PAYMENT_METHODS = ['Cash', 'UPI', 'Bank Transfer', 'Other'];
 
 const paymentSchema = new mongoose.Schema(
   {
+    // Owning landlord account (copied from the period/member). Scopes every query.
+    ownerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      required: true,
+      index: true,
+    },
     rentPeriodId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'RentPeriod',
@@ -38,10 +44,11 @@ const paymentSchema = new mongoose.Schema(
 
 // Per-period totals (recalcPeriod), member history, room/date filtered lists and
 // cash-in-range reports.
+paymentSchema.index({ ownerId: 1, paymentDate: -1 });
 paymentSchema.index({ rentPeriodId: 1, paymentDate: 1 });
-paymentSchema.index({ memberId: 1, paymentDate: -1 });
-paymentSchema.index({ roomId: 1, paymentDate: -1 });
-paymentSchema.index({ paymentMethod: 1, paymentDate: -1 });
+paymentSchema.index({ ownerId: 1, memberId: 1, paymentDate: -1 });
+paymentSchema.index({ ownerId: 1, roomId: 1, paymentDate: -1 });
+paymentSchema.index({ ownerId: 1, paymentMethod: 1, paymentDate: -1 });
 
 module.exports = mongoose.model('Payment', paymentSchema);
 module.exports.PAYMENT_METHODS = PAYMENT_METHODS;

@@ -683,6 +683,7 @@ class ReportTotals {
     required this.totalRent,
     required this.totalPaid,
     required this.totalPending,
+    required this.overduePending,
     required this.receivedInRange,
     required this.totalRooms,
     required this.totalMembers,
@@ -693,11 +694,18 @@ class ReportTotals {
   final double totalRent;
   final double totalPaid;
   final double totalPending;
+  final double overduePending;
   final double receivedInRange;
   final int totalRooms;
   final int totalMembers;
   final String from;
   final String to;
+
+  /// Outstanding rent that is not yet past its due date (current cycle).
+  double get duePending {
+    final due = totalPending - overduePending;
+    return due < 0 ? 0 : due;
+  }
 
   factory ReportTotals.fromJson(Map<String, dynamic> json) {
     double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
@@ -710,6 +718,7 @@ class ReportTotals {
       totalRent: asDouble(totals['totalRent']),
       totalPaid: asDouble(totals['totalPaid']),
       totalPending: asDouble(totals['totalPending']),
+      overduePending: asDouble(totals['overduePending']),
       receivedInRange: asDouble(totals['receivedInRange']),
       totalRooms: asInt(totals['totalRooms']),
       totalMembers: asInt(totals['totalMembers']),
@@ -733,6 +742,9 @@ class PaymentRecord {
     required this.roomNumber,
     required this.periodStartIso,
     required this.periodEndIso,
+    this.createdAtIso = '',
+    this.allocOverdue,
+    this.allocCurrent,
   });
 
   final String id;
@@ -746,6 +758,14 @@ class PaymentRecord {
   final String roomNumber;
   final String periodStartIso;
   final String periodEndIso;
+
+  /// When the record was saved; [dateIso] alone carries no clock time.
+  final String createdAtIso;
+
+  /// Split of [amount] into oldest dues and the current cycle; null when the
+  /// payment predates allocation tracking.
+  final double? allocOverdue;
+  final double? allocCurrent;
 
   factory PaymentRecord.fromJson(Map<String, dynamic> json) {
     double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
@@ -766,6 +786,9 @@ class PaymentRecord {
       roomNumber: room == null ? '-' : '${room['roomNumber'] ?? '-'}',
       periodStartIso: period == null ? '' : '${period['startDate'] ?? ''}',
       periodEndIso: period == null ? '' : '${period['endDate'] ?? ''}',
+      createdAtIso: '${json['createdAt'] ?? ''}',
+      allocOverdue: json['allocOverdue'] == null ? null : asDouble(json['allocOverdue']),
+      allocCurrent: json['allocCurrent'] == null ? null : asDouble(json['allocCurrent']),
     );
   }
 }

@@ -8,7 +8,6 @@ import 'package:open_filex/open_filex.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import 'app_theme.dart';
 import 'widgets.dart';
@@ -50,7 +49,6 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
   _Release? _latest;
   bool _checking = true;
   String? _error;
-  bool _opening = false;
   bool _downloading = false;
   double _progress = 0;
   String? _downloadedApkPath;
@@ -164,11 +162,19 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
     final url = _latest?.downloadUrl;
     if (url == null || url.isEmpty) return;
 
-    final status = await Permission.storage.request();
+    // Installing a downloaded APK needs the "Install unknown apps" special
+    // access (Android O+), not storage permission.
+    final status = await Permission.requestInstallPackages.request();
     if (!status.isGranted) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Storage permission is required to download and install the update.')),
+          SnackBar(
+            content: const Text(
+                'Allow Rent Manager to install unknown apps, then tap Download & Install again.'),
+            action: status.isPermanentlyDenied
+                ? SnackBarAction(label: 'Settings', onPressed: openAppSettings)
+                : null,
+          ),
         );
       }
       return;
@@ -243,24 +249,6 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
           SnackBar(content: Text('Install failed: $e')),
         );
       }
-    }
-  }
-
-  Future<void> _download() async {
-    final url = _latest?.downloadUrl;
-    if (url == null || url.isEmpty) return;
-    setState(() => _opening = true);
-    try {
-      final uri = Uri.parse(url);
-      if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Could not open the download link.')),
-          );
-        }
-      }
-    } finally {
-      if (mounted) setState(() => _opening = false);
     }
   }
 
@@ -394,22 +382,11 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
                               ],
                             )
                           else if (updateAvailable)
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                FilledButton.icon(
-                                  onPressed: _downloading ? null : _downloadAndInstall,
-                                  icon: const Icon(Icons.system_update_alt),
-                                  label: Text('Download & Install v${latest.version} (${_mb(latest.size)})'),
-                                  style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
-                                ),
-                                const SizedBox(height: 8),
-                                OutlinedButton.icon(
-                                  onPressed: _opening ? null : _download,
-                                  icon: const Icon(Icons.download_outlined),
-                                  label: Text('Open in browser instead (${_mb(latest.size)})'),
-                                ),
-                              ],
+                            FilledButton.icon(
+                              onPressed: _downloading ? null : _downloadAndInstall,
+                              icon: const Icon(Icons.system_update_alt),
+                              label: Text('Download & Install v${latest.version} (${_mb(latest.size)})'),
+                              style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
                             )
                           else if (_downloadedApkPath != null)
                             Column(
@@ -432,7 +409,7 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
                           SizedBox(
                             width: double.infinity,
                             child: OutlinedButton.icon(
-                              onPressed: (_opening || _downloading) ? null : _check,
+                              onPressed: _downloading ? null : _check,
                               icon: const Icon(Icons.refresh, size: 18),
                               label: const Text('Check Again'),
                             ),

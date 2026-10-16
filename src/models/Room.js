@@ -7,6 +7,13 @@ const MAX_CAPACITY = 100;
 
 const roomSchema = new mongoose.Schema(
   {
+    // Owning landlord account. Every query is scoped to this so one landlord
+    // can never see or touch another's data.
+    ownerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      required: true,
+      index: true,
+    },
     roomNumber: {
       type: String,
       required: [true, 'Room number is required'],
@@ -33,9 +40,10 @@ const roomSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-roomSchema.index({ roomNumberKey: 1 }, { unique: true });
-// Serves the room list: status filter + roomNumber sort.
-roomSchema.index({ status: 1, roomNumberKey: 1 });
+// Room numbers are unique per landlord (two landlords may both have "101").
+roomSchema.index({ ownerId: 1, roomNumberKey: 1 }, { unique: true });
+// Serves the room list: status filter + roomNumber sort, scoped per landlord.
+roomSchema.index({ ownerId: 1, status: 1, roomNumberKey: 1 });
 
 /** Keep roomNumberKey in sync with roomNumber on every write. */
 roomSchema.pre('validate', function syncRoomNumberKey() {

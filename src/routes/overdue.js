@@ -11,7 +11,7 @@ router.get(
   '/',
   wrap(async (req, res) => {
     try {
-      const report = await overdueReport();
+      const report = await overdueReport(req.user._id);
       return res.json(report);
     } catch (err) {
       return sendApiError(res, err);

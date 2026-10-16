@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Soft app background; used so the native launch window matches the
+         first Flutter frame instead of flashing black. -->
+    <color name="launch_background">#F5F7FB</color>
+</resources>

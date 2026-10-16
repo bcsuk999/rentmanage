@@ -12,17 +12,20 @@ class RecordPaymentPage extends StatefulWidget {
   const RecordPaymentPage({
     super.key,
     required this.api,
-    required this.roomId,
-    required this.roomNumber,
-    required this.members,
+    this.roomId,
+    this.roomNumber,
+    this.members,
   });
 
   final ApiClient api;
-  final String roomId;
-  final String roomNumber;
+
+  /// Optional preselected room. When null the page starts empty and the
+  /// landlord picks room -> member here.
+  final String? roomId;
+  final String? roomNumber;
 
   /// [{memberId, name, pending}] snapshots from the details screen.
-  final List<Map<String, dynamic>> members;
+  final List<Map<String, dynamic>>? members;
 
   @override
   State<RecordPaymentPage> createState() => _RecordPaymentPageState();
@@ -45,11 +48,24 @@ class _RecordPaymentPageState extends State<RecordPaymentPage> {
   double _totalOverdue = 0;
   double _totalCurrentDue = 0;
 
+  List<Room> _rooms = [];
+  bool _roomsLoading = false;
+  String? _roomId;
+  late String _roomNumber;
+  late List<Map<String, dynamic>> _members;
+
   @override
   void initState() {
     super.initState();
-    final firstOwed = widget.members.where((m) => (m['pending'] as num? ?? 0) > 0);
-    final first = firstOwed.isNotEmpty ? firstOwed.first : widget.members.firstOrNull;
+    _members = List.of(widget.members ?? const []);
+    _roomNumber = widget.roomNumber ?? '';
+    _roomId = widget.roomId;
+    if (_roomId == null) {
+      _loadRooms();
+      return;
+    }
+    final firstOwed = _members.where((m) => (m['pending'] as num? ?? 0) > 0);
+    final first = firstOwed.isNotEmpty ? firstOwed.first : _members.firstOrNull;
     if (first != null) {
       _memberId = '${first['memberId']}';
       _loadPeriods();
@@ -72,10 +88,83 @@ class _RecordPaymentPageState extends State<RecordPaymentPage> {
   }
 
   String _memberName() {
-    for (final m in widget.members) {
+    for (final m in _members) {
       if ('${m['memberId']}' == _memberId) return '${m['name']}';
     }
     return '';
+  }
+
+  Future<void> _loadRooms() async {
+    setState(() {
+      _roomsLoading = true;
+      _error = null;
+    });
+    try {
+      final rooms = await widget.api.rooms();
+      if (!mounted) return;
+      setState(() {
+        _rooms = rooms;
+        _roomsLoading = false;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _roomsLoading = false;
+        _error = e.message;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _roomsLoading = false;
+        _error = 'Could not reach the server.';
+      });
+    }
+  }
+
+  /// Room chosen inside this page: pull its active members, then auto-select
+  /// the first one who owes something.
+  Future<void> _selectRoom(String roomId) async {
+    var roomNumber = roomId;
+    for (final r in _rooms) {
+      if (r.id == roomId) {
+        roomNumber = r.roomNumber;
+        break;
+      }
+    }
+    setState(() {
+      _roomId = roomId;
+      _roomNumber = roomNumber;
+      _memberId = null;
+      _members = [];
+      _periodId = null;
+      _periods = [];
+      _totalOverdue = 0;
+      _totalCurrentDue = 0;
+      _error = null;
+    });
+    try {
+      final detail = await widget.api.roomDetail(roomId);
+      if (!mounted) return;
+      final members = [
+        for (final r in detail.rows)
+          {'memberId': r.memberId, 'name': r.name, 'pending': r.pending},
+      ];
+      setState(() => _members = members);
+      final owed = members.where((m) => (m['pending'] as num? ?? 0) > 0);
+      final first = owed.isNotEmpty ? owed.first : members.firstOrNull;
+      if (first != null) {
+        setState(() => _memberId = '${first['memberId']}');
+        _loadPeriods();
+      } else {
+        setState(() => _error = 'No active members in this room.');
+      }
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.message);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _error = 'Could not reach the server.');
+    }
   }
 
   void _calculateDues() {
@@ -173,7 +262,9 @@ class _RecordPaymentPageState extends State<RecordPaymentPage> {
   Future<void> _submit() async {
     final period = _period;
     if (_memberId == null || period == null) {
-      setState(() => _error = 'Choose a member and a rent period first.');
+      setState(() => _error = _roomId == null
+          ? 'Choose a room, a member and a rent period first.'
+          : 'Choose a member and a rent period first.');
       return;
     }
     final amount = double.tryParse(_amount.text.trim()) ?? 0;
@@ -203,7 +294,7 @@ class _RecordPaymentPageState extends State<RecordPaymentPage> {
       final snapshot = PaymentConfirmationData(
         amount: amount,
         memberName: _memberName(),
-        roomNumber: widget.roomNumber,
+        roomNumber: _roomNumber,
         memberId: _memberId!,
         date: _date,
         periodLabel: '${fmtDateIso(period.startIso)} – ${fmtDateIso(period.endIso)}',
@@ -242,48 +333,23 @@ class _RecordPaymentPageState extends State<RecordPaymentPage> {
     final theme = Theme.of(context);
     final period = _period;
     return Scaffold(
-      appBar: AppBar(title: const Text('Record Payment')),
+      appBar: AppBar(
+        leading: const BackButton(),
+        centerTitle: true,
+        title: const Text(
+          'Record Payment',
+          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+        ),
+        actions: [
+          _SaveActionButton(busy: _busy, onPressed: _submit),
+          const SizedBox(width: 10),
+        ],
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(Icons.person_outline, color: AppColors.primary),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(_memberName().isEmpty ? 'Choose member' : _memberName(),
-                              style: theme.textTheme.titleSmall
-                                  ?.copyWith(fontWeight: FontWeight.w700)),
-                          Text('Room ${widget.roomNumber}',
-                              style: theme.textTheme.bodySmall
-                                  ?.copyWith(color: AppColors.secondaryText)),
-                        ],
-                      ),
-                    ),
-                    if (period != null)
-                      Text(inr(period.pending),
-                          style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w800, color: AppColors.danger)),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
             if (_error != null) ...[
               Container(
                 width: double.infinity,
@@ -296,21 +362,52 @@ class _RecordPaymentPageState extends State<RecordPaymentPage> {
               ),
               const SizedBox(height: 12),
             ],
+            if (widget.roomId == null) ...[
+              Text('Room *', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 6),
+              if (_roomsLoading)
+                const SkeletonBlock(height: 56)
+              else if (_rooms.isEmpty)
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text('No rooms found.',
+                          style: theme.textTheme.bodySmall
+                              ?.copyWith(color: AppColors.secondaryText)),
+                    ),
+                    TextButton(onPressed: _loadRooms, child: const Text('Retry')),
+                  ],
+                )
+              else
+                DropdownButtonFormField<String>(
+                  initialValue: _roomId,
+                  items: [
+                    for (final r in _rooms)
+                      DropdownMenuItem(value: r.id, child: Text('Room ${r.roomNumber}')),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) _selectRoom(v);
+                  },
+                ),
+              const SizedBox(height: 12),
+            ],
             Text('Member', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
             const SizedBox(height: 6),
             DropdownButtonFormField<String>(
               initialValue: _memberId,
               items: [
-                for (final m in widget.members)
+                for (final m in _members)
                   DropdownMenuItem(
                     value: '${m['memberId']}',
                     child: Text('${m['name']} · due ${inr((m['pending'] as num? ?? 0).toDouble())}'),
                   ),
               ],
-              onChanged: (v) {
-                setState(() => _memberId = v);
-                _loadPeriods();
-              },
+              onChanged: _members.isEmpty
+                  ? null
+                  : (v) {
+                      setState(() => _memberId = v);
+                      _loadPeriods();
+                    },
             ),
             const SizedBox(height: 12),
             if (_totalOverdue > 0 || _totalCurrentDue > 0)
@@ -457,13 +554,35 @@ class _RecordPaymentPageState extends State<RecordPaymentPage> {
                 );
               }),
             const SizedBox(height: 12),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Payment Date *'),
-              subtitle: Text(fmtDateIso(_dateInput(_date))),
-              trailing: const Icon(Icons.calendar_month_outlined),
-              onTap: _pickDate,
+            Card(
+              child: InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: _pickDate,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Payment Date *',
+                                style: theme.textTheme.bodySmall
+                                    ?.copyWith(color: AppColors.secondaryText)),
+                            const SizedBox(height: 2),
+                            Text(fmtDateIso(_dateInput(_date)),
+                                style: theme.textTheme.titleSmall
+                                    ?.copyWith(fontWeight: FontWeight.w700)),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.calendar_month_outlined, color: AppColors.primary),
+                    ],
+                  ),
+                ),
+              ),
             ),
+            const SizedBox(height: 12),
             DropdownButtonFormField<String>(
               initialValue: _method,
               decoration: const InputDecoration(labelText: 'Method *'),
@@ -482,6 +601,7 @@ class _RecordPaymentPageState extends State<RecordPaymentPage> {
               controller: _notes,
               decoration: const InputDecoration(labelText: 'Notes (optional)'),
               maxLines: 2,
+              textCapitalization: TextCapitalization.sentences,
             ),
             const SizedBox(height: 20),
             FilledButton(
@@ -492,6 +612,63 @@ class _RecordPaymentPageState extends State<RecordPaymentPage> {
                   : const Text('Save Payment'),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Header action: raised "Save" pill that submits the payment.
+class _SaveActionButton extends StatelessWidget {
+  const _SaveActionButton({required this.busy, required this.onPressed});
+
+  final bool busy;
+  final Future<void> Function() onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.primary,
+        borderRadius: BorderRadius.circular(10),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withValues(alpha: 0.38),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: busy ? null : onPressed,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (busy)
+                  const SizedBox(
+                    height: 11,
+                    width: 11,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  )
+                else
+                  const Icon(Icons.check_rounded, size: 13, color: Colors.white),
+                const SizedBox(width: 3),
+                Text(
+                  'Save',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

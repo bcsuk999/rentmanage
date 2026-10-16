@@ -39,6 +39,7 @@ class PaymentSheet extends StatefulWidget {
 
 class _PaymentSheetState extends State<PaymentSheet> {
   late final TextEditingController _amount;
+  final _notes = TextEditingController();
   late DateTime _date;
   String _method = paymentMethods.first;
   bool _busy = false;
@@ -78,6 +79,7 @@ class _PaymentSheetState extends State<PaymentSheet> {
   @override
   void dispose() {
     _amount.dispose();
+    _notes.dispose();
     super.dispose();
   }
 
@@ -102,6 +104,7 @@ class _PaymentSheetState extends State<PaymentSheet> {
         amount: _amount.text.trim(),
         paymentDate: _dateInput(_date),
         paymentMethod: _method,
+        notes: _notes.text.trim(),
       );
       if (!mounted) return;
       toastOk(context, 'Payment of ₹${_amount.text.trim()} recorded for ${widget.memberName}.');
@@ -258,6 +261,13 @@ class _PaymentSheetState extends State<PaymentSheet> {
               decoration: const InputDecoration(labelText: 'Method'),
               items: [for (final m in paymentMethods) DropdownMenuItem(value: m, child: Text(m))],
               onChanged: (v) => setState(() => _method = v ?? paymentMethods.first),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _notes,
+              decoration: const InputDecoration(labelText: 'Notes (optional)'),
+              maxLines: 2,
+              textCapitalization: TextCapitalization.sentences,
             ),
             const SizedBox(height: 16),
             FilledButton(

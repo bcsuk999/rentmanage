@@ -6,6 +6,12 @@ const MEMBER_STATUSES = ['active', 'inactive'];
 
 const memberSchema = new mongoose.Schema(
   {
+    // Owning landlord account (copied from the room). Scopes every query.
+    ownerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      required: true,
+      index: true,
+    },
     roomId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Room',
@@ -43,11 +49,11 @@ const memberSchema = new mongoose.Schema(
 // Compound indexes only: every single-field lookup below is a prefix of one of
 // these, so keeping both would just add write cost. No text index: search runs
 // on regex, and a text index would be write overhead for nothing.
-memberSchema.index({ roomId: 1, status: 1, rentStartDate: 1 }); // room rollup + capacity count
-memberSchema.index({ status: 1, rentStartDate: 1 }); // period generation for active members
-memberSchema.index({ name: 1 }); // name-sorted lists
-memberSchema.index({ mobile: 1 }); // exact/dup checks and search
-memberSchema.index({ aadhaarNumber: 1 });
+memberSchema.index({ ownerId: 1, roomId: 1, status: 1, rentStartDate: 1 }); // room rollup + capacity count
+memberSchema.index({ ownerId: 1, status: 1, rentStartDate: 1 }); // period generation for active members
+memberSchema.index({ ownerId: 1, name: 1 }); // name-sorted lists
+memberSchema.index({ ownerId: 1, mobile: 1 }); // exact/dup checks and search
+memberSchema.index({ ownerId: 1, aadhaarNumber: 1 });
 
 module.exports = mongoose.model('Member', memberSchema);
 module.exports.MEMBER_STATUSES = MEMBER_STATUSES;

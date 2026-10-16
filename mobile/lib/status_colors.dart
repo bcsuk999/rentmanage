@@ -108,6 +108,21 @@ String fmtDateShortIso(String iso) {
 /// DateTime -> '01 Oct'.
 String fmtDateShort(DateTime d) => '${d.day.toString().padLeft(2, '0')} ${_months[d.month - 1]}';
 
+/// ISO datetime -> '10:13:22 PM'. Empty string when absent/unparseable.
+String fmtTimeIso(String iso) {
+  if (iso.isEmpty) return '';
+  try {
+    final d = DateTime.parse(iso).toLocal();
+    final h24 = d.hour;
+    final h = h24 % 12 == 0 ? 12 : h24 % 12;
+    final m = d.minute.toString().padLeft(2, '0');
+    final s = d.second.toString().padLeft(2, '0');
+    return '$h:$m:$s ${h24 < 12 ? 'AM' : 'PM'}';
+  } catch (_) {
+    return '';
+  }
+}
+
 /// ISO datetime -> 'YYYY-MM-DD' for API query params.
 String toDateOnlyIso(String iso) {
   try {

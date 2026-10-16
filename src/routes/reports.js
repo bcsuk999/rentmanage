@@ -14,7 +14,7 @@ router.get(
   '/',
   wrap(async (req, res) => {
     try {
-      const rooms = await Room.find().select('roomNumber status').sort({ roomNumber: 1 }).lean();
+      const rooms = await Room.find({ ownerId: req.user._id }).select('roomNumber status').sort({ roomNumber: 1 }).lean();
       const roomId = String(req.query.roomId || '').trim();
       const fromInput = String(req.query.from || '').trim();
       const toInput = String(req.query.to || '').trim();
@@ -31,13 +31,14 @@ router.get(
         }
         range = { from, to };
       } else {
-        range = await reportService.defaultRange();
+        range = await reportService.defaultRange(req.user._id);
       }
 
       const report = await reportService.buildReport({
         from: range.from,
         to: range.to,
         roomId: roomId || null,
+        ownerId: req.user._id,
       });
       return res.json({
         report,

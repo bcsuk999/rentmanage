@@ -4,6 +4,7 @@ const RentPeriod = require('../models/RentPeriod');
 const Member = require('../models/Member');
 const Payment = require('../models/Payment');
 const { addDays, cycleAt, cycleIndexFor, isOverdue, startOfDay, today } = require('../utils/dates');
+const { ValidationError } = require('../utils/validate');
 
 /** Cycles generated ahead of today so advance payments can be recorded early. */
 const FUTURE_CYCLES = 1;
@@ -69,6 +70,7 @@ function planMissingPeriods(member, existing, reference = today()) {
       docs.some((d) => d.startDate < end && d.endDate >= start);
     if (overlaps) continue;
     docs.push({
+      ownerId: member.ownerId,
       memberId: member._id,
       roomId: member.roomId,
       startDate: start,
@@ -104,7 +106,7 @@ async function ensurePeriodsForMember(member, reference = today()) {
       throw err;
     }
   }
-  await refreshOverdueStatuses({ memberId: member._id, reference });
+  await refreshOverdueStatuses({ memberId: member._id, ownerId: member.ownerId, reference });
   return created;
 }
 
@@ -133,11 +135,14 @@ function bulkInsertedCount(err, attempted) {
  * Batched: one member query + one period query + one bulk insert, instead of
  * one period query and up to one insert per member on every rooms-list call.
  */
-async function ensurePeriodsForActiveMembers({ roomId = null, reference = today() } = {}) {
-  const filter = { status: 'active' };
+async function ensurePeriodsForActiveMembers({ roomId = null, reference = today(), ownerId = null } = {}) {
+  if (!ownerId) {
+    throw new ValidationError([{ field: 'owner', message: 'Owner is required' }]);
+  }
+  const filter = { status: 'active', ownerId };
   if (roomId) filter.roomId = roomId;
   const members = await Member.find(filter)
-    .select('rentStartDate monthlyRent roomId vacatingDate status')
+    .select('ownerId rentStartDate monthlyRent roomId vacatingDate status')
     .lean();
   if (!members.length) return { members: 0, created: 0 };
 
@@ -165,7 +170,7 @@ async function ensurePeriodsForActiveMembers({ roomId = null, reference = today(
       created = bulkInsertedCount(err, docs.length);
     }
   }
-  const overdueRefreshed = await refreshOverdueStatuses({ reference });
+  const overdueRefreshed = await refreshOverdueStatuses({ reference, ownerId });
   return { members: members.length, created, overdueRefreshed };
 }
 
@@ -178,13 +183,14 @@ async function ensurePeriodsForActiveMembers({ roomId = null, reference = today(
  * ended + still owed. Reference is clamped to today so a historical lookup
  * can never mark future cycles overdue early.
  */
-async function refreshOverdueStatuses({ memberId = null, reference = today() } = {}) {
+async function refreshOverdueStatuses({ memberId = null, reference = today(), ownerId = null } = {}) {
   const effective = startOfDay(reference) > today() ? today() : startOfDay(reference);
   const filter = {
     endDate: { $lt: effective },
     pendingAmount: { $gt: 0 },
     status: { $in: ['Pending', 'Partial'] },
   };
+  if (ownerId) filter.ownerId = ownerId;
   if (memberId) filter.memberId = memberId;
   const result = await RentPeriod.updateMany(filter, { $set: { status: 'Overdue' } });
   return result.modifiedCount || 0;

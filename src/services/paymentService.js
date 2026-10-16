@@ -8,6 +8,7 @@ const { recalcPeriod } = require('./rentService');
 const { contains, parseDateInput, startOfDay } = require('../utils/dates');
 const { ValidationError } = require('../utils/validate');
 const { PAYMENT_METHODS } = require('../models/Payment');
+const { requireOwnerId } = require('../utils/owner');
 
 /** ObjectId filter or a 422 — never let a garbage id become a 500 CastError. */
 function objectIdFilter(value, field) {
@@ -40,8 +41,11 @@ async function addPayment({
   paymentMethod,
   reference,
   notes,
+  ownerId,
 }) {
-  const period = await RentPeriod.findById(rentPeriodId);
+  const owner = requireOwnerId(ownerId);
+  const periodId = objectIdFilter(rentPeriodId, 'rentPeriod');
+  const period = periodId ? await RentPeriod.findOne({ _id: periodId, ownerId: owner }) : null;
   if (!period) {
     throw new ValidationError([{ field: 'rentPeriod', message: 'Rent period not found' }]);
   }
@@ -50,7 +54,7 @@ async function addPayment({
       { field: 'rentPeriod', message: 'This rent period is closed and cannot accept payments' },
     ]);
   }
-  const member = await Member.findById(period.memberId);
+  const member = await Member.findOne({ _id: period.memberId, ownerId: owner });
   if (!member) {
     throw new ValidationError([{ field: 'rentPeriod', message: 'Member not found for this period' }]);
   }
@@ -88,6 +92,7 @@ async function addPayment({
   // Allocation split: strictly older overdue cycles first, remainder to the
   // cycle this payment was booked against.
   const overduePeriods = await RentPeriod.find({
+    ownerId: owner,
     memberId: fresh.memberId,
     status: 'Overdue',
     endDate: { $lt: fresh.startDate },
@@ -100,6 +105,7 @@ async function addPayment({
   const allocOverdue = Math.min(amountValue, totalOverdue);
 
   const payment = await Payment.create({
+    ownerId: owner,
     rentPeriodId: fresh._id,
     memberId: fresh.memberId,
     roomId: fresh.roomId,
@@ -115,16 +121,16 @@ async function addPayment({
   return payment;
 }
 
-async function paymentsForPeriod(rentPeriodId) {
-  return Payment.find({ rentPeriodId })
+async function paymentsForPeriod(rentPeriodId, ownerId) {
+  return Payment.find({ ownerId: requireOwnerId(ownerId), rentPeriodId })
     .sort({ paymentDate: 1, createdAt: 1 })
     .populate('memberId', 'name mobile')
     .populate('roomId', 'roomNumber')
     .lean();
 }
 
-async function paymentsForMember(memberId) {
-  return Payment.find({ memberId })
+async function paymentsForMember(memberId, ownerId) {
+  return Payment.find({ ownerId: requireOwnerId(ownerId), memberId })
     .sort({ paymentDate: -1, createdAt: -1 })
     .populate('rentPeriodId', 'startDate endDate rentAmount status')
     .populate('roomId', 'roomNumber')
@@ -132,9 +138,9 @@ async function paymentsForMember(memberId) {
 }
 
 /** Payments page: filterable, newest first, with optional pagination. */
-async function listPayments(filters = {}) {
+async function listPayments(filters = {}, ownerId) {
   const { roomId, memberId, paymentMethod, from, to, rentPeriodId } = filters;
-  const query = {};
+  const query = { ownerId: requireOwnerId(ownerId) };
   const roomObjectId = objectIdFilter(roomId, 'roomId');
   if (roomObjectId) query.roomId = roomObjectId;
   const memberObjectId = objectIdFilter(memberId, 'memberId');
@@ -174,8 +180,8 @@ async function listPayments(filters = {}) {
 }
 
 /** Cash received per day inside a range (used by reports). */
-async function totalsForRange(from, to) {
-  const match = { paymentDate: { $gte: from, $lte: to } };
+async function totalsForRange(from, to, ownerId) {
+  const match = { ownerId: requireOwnerId(ownerId), paymentDate: { $gte: from, $lte: to } };
   const [result] = await Payment.aggregate([
     { $match: match },
     { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } },

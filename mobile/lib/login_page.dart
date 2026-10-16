@@ -55,7 +55,7 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
   Future<void> _submit() async {
     final mobile = _digits(_mobile.text.trim());
     if (!RegExp(r'^[0-9]{10}$').hasMatch(mobile)) {
-      setState(() => _error = 'Enter your 10-digit mobile number.');
+      setState(() => _error = 'Enter your 10 digit mobile number.');
       return;
     }
     if (_password.text.isEmpty) {
@@ -182,7 +182,7 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                                 controller: _mobile,
                                 decoration: const InputDecoration(
                                   labelText: 'Mobile number',
-                                  hintText: '10-digit mobile number',
+                                  hintText: 'Enter mobile number',
                                   prefixText: '+91 ',
                                 ),
                                 keyboardType: TextInputType.phone,

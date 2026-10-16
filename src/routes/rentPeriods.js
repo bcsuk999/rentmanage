@@ -16,14 +16,15 @@ router.get(
   '/:id',
   wrap(async (req, res) => {
     try {
-      const period = await RentPeriod.findById(req.params.id).lean();
+      const ownerId = req.user._id;
+      const period = await RentPeriod.findOne({ _id: req.params.id, ownerId }).lean();
       if (!period) {
         return res.status(404).json({ error: 'Rent period not found.' });
       }
       const [member, room, payments] = await Promise.all([
-        Member.findById(period.memberId).lean(),
-        Room.findById(period.roomId).lean(),
-        Payment.find({ rentPeriodId: period._id }).sort({ paymentDate: 1, createdAt: 1 }).lean(),
+        Member.findOne({ _id: period.memberId, ownerId }).lean(),
+        Room.findOne({ _id: period.roomId, ownerId }).lean(),
+        Payment.find({ ownerId, rentPeriodId: period._id }).sort({ paymentDate: 1, createdAt: 1 }).lean(),
       ]);
       return res.json({ period, member, room, payments, methods: PAYMENT_METHODS });
     } catch (err) {
@@ -37,7 +38,7 @@ router.post(
   '/:id/close',
   wrap(async (req, res) => {
     try {
-      const period = await RentPeriod.findById(req.params.id);
+      const period = await RentPeriod.findOne({ _id: req.params.id, ownerId: req.user._id });
       if (!period) return res.status(404).json({ error: 'Rent period not found.' });
       period.isClosed = true;
       period.closedAt = new Date();
@@ -55,7 +56,7 @@ router.post(
   '/:id/reopen',
   wrap(async (req, res) => {
     try {
-      const period = await RentPeriod.findById(req.params.id);
+      const period = await RentPeriod.findOne({ _id: req.params.id, ownerId: req.user._id });
       if (!period) return res.status(404).json({ error: 'Rent period not found.' });
       period.isClosed = false;
       period.closedAt = undefined;

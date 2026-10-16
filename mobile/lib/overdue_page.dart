@@ -77,6 +77,24 @@ class _OverduePageState extends State<OverduePage> {
   }
 
   Future<void> _record(OverdueMember m, OverduePeriod p) async {
+    // Fetch member's periods to calculate current due (non-overdue periods)
+    double totalCurrentDue = 0;
+    try {
+      final periods = await widget.api.memberPeriods(m.memberId);
+      if (!mounted) return;
+      final now = DateTime.now();
+      for (final period in periods) {
+        if (period.pending <= 0) continue;
+        final periodEnd = DateTime.tryParse(period.endIso);
+        if (periodEnd != null && !periodEnd.isBefore(now)) {
+          totalCurrentDue += period.pending;
+        }
+      }
+    } catch (_) {
+      // If fetch fails, default to 0
+    }
+    if (!mounted) return;
+
     final recorded = await showPaymentSheet(
       context,
       api: widget.api,
@@ -84,7 +102,7 @@ class _OverduePageState extends State<OverduePage> {
       memberName: m.name,
       pending: p.pending,
       totalOverdue: m.totalOverdue,
-      totalCurrentDue: 0,
+      totalCurrentDue: totalCurrentDue,
       periodStart: p.start,
       periodEnd: p.end,
     );

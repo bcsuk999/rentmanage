@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'app_theme.dart';
+import 'motion.dart';
+import 'record_payment_page.dart';
 import 'status_colors.dart';
 import 'widgets.dart';
 
-/// Payment history with backend-supported filters: method, date range,
+/// Payment records with backend-supported filters: method, date range,
 /// member and room scoping, newest-first paging.
 class PaymentHistoryPage extends StatefulWidget {
   const PaymentHistoryPage({
@@ -30,6 +32,28 @@ class PaymentHistoryPage extends StatefulWidget {
 }
 
 class _PaymentHistoryPageState extends State<PaymentHistoryPage> {
+  final _listKey = GlobalKey<PaymentHistoryListState>();
+  bool _recording = false;
+
+  Future<void> _openRecordFlow() async {
+    if (_recording) return;
+    setState(() => _recording = true);
+    try {
+      await Navigator.of(context).push(
+        smoothRoute(
+          RecordPaymentPage(
+            api: widget.api,
+            roomId: widget.roomId,
+            roomNumber: widget.roomNumber,
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _recording = false);
+    }
+    if (mounted) await _listKey.currentState?.reload();
+  }
+
   @override
   Widget build(BuildContext context) {
     final scope = [
@@ -37,8 +61,20 @@ class _PaymentHistoryPageState extends State<PaymentHistoryPage> {
       if (widget.memberName != null) widget.memberName!,
     ].join(' · ');
     return Scaffold(
-      appBar: AppBar(title: const Text('Payment History')),
+      appBar: AppBar(
+        leading: const BackButton(),
+        centerTitle: true,
+        title: const Text(
+          'Payment Records',
+          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+        ),
+        actions: [
+          _RecordActionButton(busy: _recording, onPressed: _openRecordFlow),
+          const SizedBox(width: 10),
+        ],
+      ),
       body: PaymentHistoryList(
+        key: _listKey,
         api: widget.api,
         isAdmin: widget.isAdmin,
         memberId: widget.memberId,
@@ -51,7 +87,65 @@ class _PaymentHistoryPageState extends State<PaymentHistoryPage> {
   }
 }
 
-/// Embeddable history list (also used inside the Room Details History tab).
+/// Header action: raised "Record" pill, shadowed so it reads as tappable.
+class _RecordActionButton extends StatelessWidget {
+  const _RecordActionButton({required this.busy, required this.onPressed});
+
+  final bool busy;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.primary,
+        borderRadius: BorderRadius.circular(10),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withValues(alpha: 0.38),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: busy ? null : onPressed,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (busy)
+                  const SizedBox(
+                    height: 11,
+                    width: 11,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  )
+                else
+                  const Icon(Icons.add_rounded, size: 13, color: Colors.white),
+                const SizedBox(width: 3),
+                Text(
+                  'Record',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+/// Embeddable records list (also used inside the Member Details page).
 class PaymentHistoryList extends StatefulWidget {
   const PaymentHistoryList({
     super.key,
@@ -77,20 +171,22 @@ class PaymentHistoryList extends StatefulWidget {
   final bool embedded;
 
   @override
-  State<PaymentHistoryList> createState() => _PaymentHistoryListState();
+  State<PaymentHistoryList> createState() => PaymentHistoryListState();
 }
 
-class _PaymentHistoryListState extends State<PaymentHistoryList> {
+class PaymentHistoryListState extends State<PaymentHistoryList> {
   final List<PaymentRecord> _rows = [];
   int _page = 1;
   int _pages = 1;
-  double _totalAmount = 0;
   bool _loading = true;
   bool _loadingMore = false;
   String? _error;
   String _method = 'All';
   DateTime? _from;
   DateTime? _to;
+  final _searchController = TextEditingController();
+  String _searchQuery = '';
+  final _searchFocus = FocusNode();
 
   @override
   void initState() {
@@ -98,9 +194,27 @@ class _PaymentHistoryListState extends State<PaymentHistoryList> {
     _load(reset: true);
   }
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchFocus.dispose();
+    super.dispose();
+  }
+
+  /// Public so the page header can refresh after a payment is recorded.
+  Future<void> reload() => _load(reset: true);
+
   String? _dateInput(DateTime? d) => d == null
       ? null
       : '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  bool get _hasFilters => _method != 'All' || _from != null || _to != null;
+
+  void _runSearch([String? value]) {
+    _searchFocus.unfocus();
+    setState(() => _searchQuery = (value ?? _searchController.text).trim());
+    _load(reset: true);
+  }
 
   Future<void> _load({bool reset = false}) async {
     if (reset) {
@@ -122,14 +236,21 @@ class _PaymentHistoryListState extends State<PaymentHistoryList> {
         page: reset ? 1 : _page + 1,
       );
       if (!mounted) return;
+      var filtered = result.rows;
+      if (_searchQuery.isNotEmpty) {
+        final q = _searchQuery.toLowerCase();
+        filtered = filtered.where((r) =>
+            r.memberName.toLowerCase().contains(q) ||
+            r.memberMobile.contains(q) ||
+            r.reference.toLowerCase().contains(q)).toList();
+      }
       setState(() {
         if (reset) {
           _rows.clear();
         }
-        _rows.addAll(result.rows);
+        _rows.addAll(filtered);
         _page = result.page;
         _pages = result.pages;
-        _totalAmount = result.totalAmount;
         _loading = false;
         _loadingMore = false;
       });
@@ -182,6 +303,69 @@ class _PaymentHistoryListState extends State<PaymentHistoryList> {
     _load(reset: true);
   }
 
+  Future<void> _openMethodPicker() async {
+    final theme = Theme.of(context);
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SizedBox(height: 12),
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: theme.dividerColor,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Text('Payment method',
+                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+            ),
+            const SizedBox(height: 4),
+            for (final m in ['All', ...paymentMethods])
+              ListTile(
+                dense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+                title: Text(m,
+                    style: TextStyle(
+                      fontWeight: m == _method ? FontWeight.w700 : FontWeight.w500,
+                      color: m == _method ? AppColors.primary : AppColors.mainText,
+                    )),
+                trailing: m == _method
+                    ? const Icon(Icons.check_circle, color: AppColors.primary, size: 20)
+                    : null,
+                onTap: () => Navigator.of(context).pop(m),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _method = picked);
+    _load(reset: true);
+  }
+
+  void _clearFilters() {
+    setState(() {
+      _method = 'All';
+      _from = null;
+      _to = null;
+    });
+    _load(reset: true);
+  }
+
   @override
   Widget build(BuildContext context) {
     if (widget.embedded) {
@@ -210,78 +394,194 @@ class _PaymentHistoryListState extends State<PaymentHistoryList> {
         ].join(' · ');
     return Container(
       color: AppColors.card,
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      padding: const EdgeInsets.only(top: 10, bottom: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Card 1: search input with the search button on its right.
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(6),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _searchController,
+                        focusNode: _searchFocus,
+                        textInputAction: TextInputAction.search,
+                        onChanged: (_) => setState(() {}),
+                        onSubmitted: _runSearch,
+                        decoration: InputDecoration(
+                          hintText: 'Search name, phone, reference...',
+                          hintMaxLines: 1,
+                          prefixIcon: const Icon(Icons.search, size: 18),
+                          prefixIconConstraints:
+                              const BoxConstraints(minWidth: 34, minHeight: 34),
+                          suffixIcon: _searchController.text.isEmpty
+                              ? null
+                              : IconButton(
+                                  tooltip: 'Clear',
+                                  icon: const Icon(Icons.clear, size: 18),
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    _runSearch('');
+                                  },
+                                ),
+                          isDense: true,
+                          contentPadding:
+                              const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide.none,
+                          ),
+                          filled: true,
+                          fillColor: AppColors.primary.withValues(alpha: 0.05),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    _SearchButton(onPressed: _runSearch),
+                  ],
+                ),
+              ),
+            ),
+          ),
           if (scope.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
               child: Text(scope,
                   style: Theme.of(context)
                       .textTheme
                       .bodySmall
                       ?.copyWith(color: AppColors.secondaryText)),
             ),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                _methodChip(context),
-                const SizedBox(width: 8),
-                _dateChip(context, true),
-                const SizedBox(width: 8),
-                _dateChip(context, false),
-                if (_method != 'All' || _from != null || _to != null) ...[
-                  const SizedBox(width: 8),
-                  ActionChip(
-                    label: const Text('Clear'),
-                    onPressed: () {
-                      setState(() {
-                        _method = 'All';
-                        _from = null;
-                        _to = null;
-                      });
-                      _load(reset: true);
-                    },
+          const SizedBox(height: 8),
+          // Cards 2, 3, 4: method and the two date pickers, each its own card.
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: _filterCard(
+                      context,
+                      label: 'Method',
+                      value: _method == 'All' ? 'All' : _method,
+                      icon: Icons.payments_outlined,
+                      active: _method != 'All',
+                      onTap: _openMethodPicker,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _filterCard(
+                      context,
+                      label: 'From',
+                      value: _from == null ? 'Any date' : fmtDateShort(_from!),
+                      icon: Icons.calendar_month_outlined,
+                      active: _from != null,
+                      onTap: () => _pickDate(true),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _filterCard(
+                      context,
+                      label: 'To',
+                      value: _to == null ? 'Any date' : fmtDateShort(_to!),
+                      icon: Icons.event_available_outlined,
+                      active: _to != null,
+                      onTap: () => _pickDate(false),
+                    ),
                   ),
                 ],
-              ],
+              ),
             ),
           ),
+          if (_hasFilters)
+            Align(
+              alignment: Alignment.centerRight,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 2, 16, 0),
+                child: TextButton.icon(
+                  onPressed: _clearFilters,
+                  icon: const Icon(Icons.restart_alt, size: 16),
+                  label: const Text('Clear', style: TextStyle(fontSize: 12)),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.danger,
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    minimumSize: const Size(0, 30),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
   }
 
-  Widget _methodChip(BuildContext context) {
-    return PopupMenuButton<String>(
-      tooltip: 'Payment method',
-      onSelected: (v) {
-        setState(() => _method = v);
-        _load(reset: true);
-      },
-      itemBuilder: (_) => [
-        'All',
-        ...paymentMethods,
-      ].map((m) => PopupMenuItem(value: m, child: Text(m))).toList(),
-      child: Chip(
-        label: Text(_method == 'All' ? 'Method' : _method),
-        avatar: const Icon(Icons.payments_outlined, size: 16),
+  /// One filter control, always rendered as its own card.
+  Widget _filterCard(
+    BuildContext context, {
+    required String label,
+    required String value,
+    required IconData icon,
+    required bool active,
+    required VoidCallback onTap,
+  }) {
+    final theme = Theme.of(context);
+    return Card(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
         side: BorderSide(
-            color: _method == 'All' ? AppColors.border : AppColors.primary),
+          color: active ? AppColors.primary : AppColors.border,
+          width: active ? 1.4 : 1,
+        ),
       ),
-    );
-  }
-
-  Widget _dateChip(BuildContext context, bool isFrom) {
-    final value = isFrom ? _from : _to;
-    return ActionChip(
-      label: Text(value == null
-          ? (isFrom ? 'From' : 'To')
-          : '${isFrom ? 'From ' : 'To '}${fmtDateShort(value)}'),
-      avatar: const Icon(Icons.calendar_month_outlined, size: 16),
-      onPressed: () => _pickDate(isFrom),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Icon(icon,
+                      size: 13,
+                      color: active ? AppColors.primary : AppColors.secondaryText),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall
+                            ?.copyWith(fontSize: 10, color: AppColors.secondaryText)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                  color: active ? AppColors.primary : AppColors.mainText,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -312,44 +612,22 @@ class _PaymentHistoryListState extends State<PaymentHistoryList> {
       return widget.embedded ? panel : ListView(children: [panel]);
     }
     if (_rows.isEmpty) {
-      const panel = EmptyPanel(
+      final panel = EmptyPanel(
         icon: Icons.receipt_long_outlined,
         title: 'No payments yet',
-        body: 'Recorded payments for this filter will appear here.',
+        body: _hasFilters
+            ? 'No records match these filters. Try clearing them.'
+            : 'Recorded payments for this filter will appear here.',
       );
-      return widget.embedded ? panel : ListView(children: const [panel]);
+      return widget.embedded ? panel : ListView(children: [panel]);
     }
     final list = ListView.builder(
       padding: EdgeInsets.fromLTRB(16, widget.embedded ? 0 : 12, 16, 24),
       shrinkWrap: widget.embedded,
       physics: widget.embedded ? const NeverScrollableScrollPhysics() : null,
-      itemCount: _rows.length + 2,
+      itemCount: _rows.length + 1,
       itemBuilder: (context, index) {
-        if (index == 0) {
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: Card(
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text('${_rows.length} payment${_rows.length == 1 ? '' : 's'}',
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleSmall
-                              ?.copyWith(fontWeight: FontWeight.w700)),
-                    ),
-                    Text(inr(_totalAmount),
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w800, color: AppColors.success)),
-                  ],
-                ),
-              ),
-            ),
-          );
-        }
-        if (index == _rows.length + 1) {
+        if (index == _rows.length) {
           if (_page >= _pages) return const SizedBox(height: 8);
           return Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
@@ -366,9 +644,14 @@ class _PaymentHistoryListState extends State<PaymentHistoryList> {
             ),
           );
         }
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: _PaymentCard(record: _rows[index - 1]),
+        return Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _PaymentCard(record: _rows[index]),
+            ),
+          ),
         );
       },
     );
@@ -380,121 +663,186 @@ class _PaymentHistoryListState extends State<PaymentHistoryList> {
   }
 }
 
-class _PaymentCard extends StatelessWidget {
-  const _PaymentCard({required this.record});
+/// Square primary search trigger sitting to the right of the search field.
+class _SearchButton extends StatelessWidget {
+  const _SearchButton({required this.onPressed});
 
-  final PaymentRecord record;
+  final void Function([String?]) onPressed;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card(
+    return Material(
+      color: AppColors.primary,
+      borderRadius: BorderRadius.circular(12),
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () => showDialog<void>(
-          context: context,
-          builder: (_) => _PaymentDetailDialog(record: record),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(record.memberName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.titleSmall
-                            ?.copyWith(fontWeight: FontWeight.w700)),
-                  ),
-                  Text('+${inr(record.amount)}',
-                      style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w800, color: AppColors.success)),
-                ],
-              ),
-              const SizedBox(height: 2),
-              Text('Room ${record.roomNumber} · ${record.method}',
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: AppColors.secondaryText)),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  StatusPill(
-                    text: 'Paid',
-                    color: AppColors.success,
-                    soft: AppColors.successSoft,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      fmtDateIso(record.dateIso),
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: AppColors.secondaryText),
-                    ),
-                  ),
-                  const Icon(Icons.chevron_right,
-                      size: 18, color: AppColors.secondaryText),
-                ],
-              ),
-            ],
-          ),
+        borderRadius: BorderRadius.circular(10),
+        onTap: () => onPressed(),
+        child: const SizedBox(
+          height: 38,
+          width: 38,
+          child: Icon(Icons.search, color: Colors.white, size: 20),
         ),
       ),
     );
   }
 }
 
-class _PaymentDetailDialog extends StatelessWidget {
-  const _PaymentDetailDialog({required this.record});
+class _PaymentCard extends StatefulWidget {
+  const _PaymentCard({required this.record});
 
   final PaymentRecord record;
 
   @override
+  State<_PaymentCard> createState() => _PaymentCardState();
+}
+
+class _PaymentCardState extends State<_PaymentCard> {
+  bool _expanded = false;
+
+  PaymentRecord get record => widget.record;
+
+  void _toggle() => setState(() => _expanded = !_expanded);
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    Widget row(String label, String value) => Padding(
-          padding: const EdgeInsets.symmetric(vertical: 5),
+    final clock = fmtTimeIso(record.createdAtIso);
+    final time = clock.isEmpty
+        ? fmtDateIso(record.dateIso)
+        : '$clock  ·  ${fmtDateIso(record.dateIso)}';
+    final rentPeriod = record.periodStartIso.isEmpty
+        ? '-'
+        : '${fmtDateShortIso(record.periodStartIso)} – ${fmtDateShortIso(record.periodEndIso)}';
+    Widget detail(String label, String value) => Padding(
+          padding: const EdgeInsets.only(bottom: 6),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SizedBox(
-                  width: 110,
-                  child: Text(label,
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: AppColors.secondaryText))),
               Expanded(
-                  child: Text(value,
-                      style: theme.textTheme.bodyMedium
-                          ?.copyWith(fontWeight: FontWeight.w600))),
+                child: Text(label,
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: AppColors.secondaryText)),
+              ),
+              Text(':',
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: AppColors.secondaryText)),
+              Expanded(
+                child: Text(value,
+                    textAlign: TextAlign.right,
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(fontWeight: FontWeight.w600)),
+              ),
             ],
           ),
         );
-    return AlertDialog(
-      title: const Text('Payment details'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            row('Amount', inr(record.amount)),
-            row('Date', fmtDateIso(record.dateIso)),
-            row('Member', record.memberName),
-            if (record.memberMobile.isNotEmpty) row('Phone', record.memberMobile),
-            row('Room', record.roomNumber),
-            if (record.periodStartIso.isNotEmpty)
-              row('Period',
-                  '${fmtDateShortIso(record.periodStartIso)} – ${fmtDateShortIso(record.periodEndIso)}'),
-            row('Method', record.method),
-            if (record.reference.isNotEmpty) row('Reference', record.reference),
-            if (record.notes.isNotEmpty) row('Notes', record.notes),
-          ],
+    return Card(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: _toggle,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              AppColors.primary,
+                              AppColors.primary.withValues(alpha: 0.7),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: const BorderRadius.only(
+                            topLeft: Radius.circular(20),
+                            bottomRight: Radius.circular(20),
+                          ),
+                        ),
+                        child: Text(
+                          record.memberName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Paid :',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.secondaryText,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        inr(record.amount),
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.success,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      time,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: AppColors.secondaryText),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: _expanded ? 'Hide details' : 'Show details',
+                    visualDensity: VisualDensity.compact,
+                    icon: Icon(
+                      _expanded ? Icons.expand_less : Icons.expand_more,
+                      size: 20,
+                      color: AppColors.secondaryText,
+                    ),
+                    onPressed: _toggle,
+                  ),
+                ],
+              ),
+              if (_expanded) ...[
+                const SizedBox(height: 8),
+                const Divider(height: 1),
+                const SizedBox(height: 10),
+                detail('Room', record.roomNumber),
+                if (record.memberMobile.isNotEmpty)
+                  detail('Phone', record.memberMobile),
+                detail('Rent period', rentPeriod),
+                if (record.allocOverdue != null)
+                  detail(
+                      'Allocation',
+                      'Overdue ${inr(record.allocOverdue!)} · Current ${inr(record.allocCurrent ?? 0)}'),
+                detail('Method', record.method),
+                if (record.notes.isNotEmpty) detail('Note', record.notes),
+              ],
+            ],
+          ),
         ),
       ),
-      actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Close')),
-      ],
     );
   }
 }

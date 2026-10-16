@@ -6,6 +6,12 @@ const RENT_STATUSES = ['Pending', 'Partial', 'Paid', 'Overdue'];
 
 const rentPeriodSchema = new mongoose.Schema(
   {
+    // Owning landlord account (copied from the member/room). Scopes every query.
+    ownerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      required: true,
+      index: true,
+    },
     memberId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Member',
@@ -38,6 +44,9 @@ rentPeriodSchema.index({ roomId: 1, startDate: -1, endDate: 1, status: 1 });
 rentPeriodSchema.index({ startDate: 1, endDate: 1, status: 1 });
 // Lapsed-cycle sweep: ended + still owed + awaiting overdue flag.
 rentPeriodSchema.index({ status: 1, endDate: 1 });
+// Per-landlord overdue sweep and range queries.
+rentPeriodSchema.index({ ownerId: 1, status: 1, endDate: 1 });
+rentPeriodSchema.index({ ownerId: 1, startDate: 1, endDate: 1 });
 
 module.exports = mongoose.model('RentPeriod', rentPeriodSchema);
 module.exports.RENT_STATUSES = RENT_STATUSES;

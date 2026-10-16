@@ -5,6 +5,7 @@ const RentPeriod = require('../models/RentPeriod');
 const Room = require('../models/Room');
 const { ensurePeriodsForActiveMembers } = require('./rentService');
 const { today } = require('../utils/dates');
+const { requireOwnerId } = require('../utils/owner');
 
 const round = (n) => Math.round(n * 100) / 100;
 
@@ -13,11 +14,12 @@ const round = (n) => Math.round(n * 100) / 100;
  * and member-level totals. Sorted by highest overdue amount first so the
  * biggest dues are on top.
  */
-async function overdueReport() {
+async function overdueReport(ownerId) {
+  const owner = requireOwnerId(ownerId);
   const reference = today();
-  await ensurePeriodsForActiveMembers({ reference });
+  await ensurePeriodsForActiveMembers({ reference, ownerId: owner });
 
-  const periods = await RentPeriod.find({ status: 'Overdue' })
+  const periods = await RentPeriod.find({ ownerId: owner, status: 'Overdue' })
     .sort({ endDate: 1 })
     .lean();
   if (!periods.length) {
@@ -25,13 +27,13 @@ async function overdueReport() {
   }
 
   const memberIds = [...new Set(periods.map((p) => p.memberId.toString()))];
-  const members = await Member.find({ _id: { $in: memberIds } })
+  const members = await Member.find({ ownerId: owner, _id: { $in: memberIds } })
     .select('name mobile roomId status')
     .lean();
   const memberById = new Map(members.map((m) => [m._id.toString(), m]));
 
   const roomIds = [...new Set(members.map((m) => m.roomId.toString()))];
-  const rooms = await Room.find({ _id: { $in: roomIds } }).select('roomNumber').lean();
+  const rooms = await Room.find({ ownerId: owner, _id: { $in: roomIds } }).select('roomNumber').lean();
   const roomById = new Map(rooms.map((r) => [r._id.toString(), r.roomNumber]));
 
   const byMember = new Map();

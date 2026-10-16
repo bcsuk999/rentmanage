@@ -7,6 +7,7 @@ const Payment = require('../models/Payment');
 const rentService = require('./rentService');
 const { toObjectId } = require('./roomService');
 const { startOfDay, today } = require('../utils/dates');
+const { requireOwnerId } = require('../utils/owner');
 const {
   ValidationError,
   collect,
@@ -18,8 +19,8 @@ const {
   requireText,
 } = require('../utils/validate');
 
-async function assertRoom(roomId) {
-  const room = await Room.findById(toObjectId(roomId, 'roomId'));
+async function assertRoom(roomId, ownerId) {
+  const room = await Room.findOne({ _id: toObjectId(roomId, 'roomId'), ownerId: requireOwnerId(ownerId) });
   if (!room) throw new ValidationError([{ field: 'roomId', message: 'Room not found' }]);
   return room;
 }
@@ -28,7 +29,7 @@ async function assertRoom(roomId) {
 async function assertRoomHasSpace(room, field = 'roomId') {
   const capacity = Number(room.capacity);
   if (!Number.isFinite(capacity) || capacity < 1) return;
-  const activeMembers = await Member.countDocuments({ roomId: room._id, status: 'active' });
+  const activeMembers = await Member.countDocuments({ ownerId: room.ownerId, roomId: room._id, status: 'active' });
   if (activeMembers >= capacity) {
     throw new ValidationError([
       {
@@ -40,8 +41,8 @@ async function assertRoomHasSpace(room, field = 'roomId') {
 }
 
 /** Add a member to a room and open their first rental cycle. */
-async function createMember(body) {
-  const room = await assertRoom(body.roomId);
+async function createMember(body, ownerId) {
+  const room = await assertRoom(body.roomId, ownerId);
   if (room.status === 'Maintenance') {
     throw new ValidationError([
       { field: 'roomId', message: 'This room is under maintenance; change its status first' },
@@ -55,6 +56,7 @@ async function createMember(body) {
     ]);
   }
   const data = collect((ok) => ({
+    ownerId: room.ownerId,
     roomId: room._id,
     name: requireText(body.name, 'Name', { max: 120 }),
     mobile: requireMobile(body.mobile),
@@ -77,8 +79,8 @@ async function createMember(body) {
   return member;
 }
 
-async function updateMember(id, body) {
-  const member = await Member.findById(toObjectId(id, 'memberId'));
+async function updateMember(id, body, ownerId) {
+  const member = await Member.findOne({ _id: toObjectId(id, 'memberId'), ownerId: requireOwnerId(ownerId) });
   if (!member) throw new ValidationError([{ field: 'memberId', message: 'Member not found' }]);
   if (member.status !== 'active' && body.status !== 'active') {
     throw new ValidationError([
@@ -118,10 +120,10 @@ async function updateMember(id, body) {
 
   if (rentChanged) {
     // Rent/cycle edits only affect periods that have no money against them.
-    const untouched = await RentPeriod.find({ memberId: member._id, paidAmount: { $gt: 0 } })
+    const untouched = await RentPeriod.find({ ownerId: member.ownerId, memberId: member._id, paidAmount: { $gt: 0 } })
       .select('startDate endDate')
       .lean();
-    await RentPeriod.deleteMany({ memberId: member._id, paidAmount: 0 });
+    await RentPeriod.deleteMany({ ownerId: member.ownerId, memberId: member._id, paidAmount: 0 });
     await rentService.ensurePeriodsForMember(member.toObject());
     for (const period of untouched) {
       await rentService.recalcPeriod(period._id);
@@ -135,8 +137,8 @@ async function updateMember(id, body) {
  * Future auto-generated periods beyond the vacating date are removed
  * (they carry no payments), and the remaining periods are recalculated.
  */
-async function vacateMember(id, body) {
-  const member = await Member.findById(toObjectId(id, 'memberId'));
+async function vacateMember(id, body, ownerId) {
+  const member = await Member.findOne({ _id: toObjectId(id, 'memberId'), ownerId: requireOwnerId(ownerId) });
   if (!member) throw new ValidationError([{ field: 'memberId', message: 'Member not found' }]);
   if (member.status !== 'active') {
     throw new ValidationError([{ field: 'memberId', message: 'This member is already vacated' }]);
@@ -168,17 +170,18 @@ async function vacateMember(id, body) {
   // Generate the cycles the member actually lived through, then trim the rest.
   await rentService.ensurePeriodsForMember({ ...member.toObject(), vacatingDate });
   const future = await RentPeriod.find({
+    ownerId: member.ownerId,
     memberId: member._id,
     startDate: { $gt: vacatingDate },
   }).select('_id paidAmount');
   const deletable = future.filter((p) => p.paidAmount === 0).map((p) => p._id);
   if (deletable.length) await RentPeriod.deleteMany({ _id: { $in: deletable } });
 
-  const remaining = await RentPeriod.find({ memberId: member._id }).select('_id');
+  const remaining = await RentPeriod.find({ ownerId: member.ownerId, memberId: member._id }).select('_id');
   for (const period of remaining) await rentService.recalcPeriod(period._id);
 
   const outstanding = await RentPeriod.aggregate([
-    { $match: { memberId: member._id } },
+    { $match: { ownerId: member.ownerId, memberId: member._id } },
     { $group: { _id: null, pending: { $sum: '$pendingAmount' } } },
   ]);
 
@@ -190,8 +193,8 @@ async function vacateMember(id, body) {
 }
 
 /** Search / filter members (used by search and the payments filters). */
-async function searchMembers({ search = '', roomId = null, status = 'active' } = {}) {
-  const query = {};
+async function searchMembers({ search = '', roomId = null, status = 'active', ownerId = null } = {}) {
+  const query = { ownerId: requireOwnerId(ownerId) };
   if (status !== 'all') query.status = status;
   if (roomId) query.roomId = toObjectId(roomId, 'roomId');
   if (search && search.trim()) {
@@ -202,14 +205,15 @@ async function searchMembers({ search = '', roomId = null, status = 'active' } =
 }
 
 /** Member Details page: personal info, current period, rent history, payment history. */
-async function memberDetail(id) {
-  const member = await Member.findById(toObjectId(id, 'memberId')).lean();
+async function memberDetail(id, ownerId) {
+  const owner = requireOwnerId(ownerId);
+  const member = await Member.findOne({ _id: toObjectId(id, 'memberId'), ownerId: owner }).lean();
   if (!member) throw new ValidationError([{ field: 'memberId', message: 'Member not found' }]);
-  const room = await Room.findById(member.roomId).lean();
-  const live = await Member.findById(member._id);
+  const room = await Room.findOne({ _id: member.roomId, ownerId: owner }).lean();
+  const live = await Member.findOne({ _id: member._id, ownerId: owner });
   await rentService.ensurePeriodsForMember(live);
 
-  const periods = await RentPeriod.find({ memberId: member._id })
+  const periods = await RentPeriod.find({ ownerId: owner, memberId: member._id })
     .sort({ startDate: -1 })
     .lean();
   const reference = today();
@@ -218,7 +222,7 @@ async function memberDetail(id) {
     periods.filter((p) => startOfDay(p.startDate) <= reference)[0] ||
     periods[0] ||
     null;
-  const payments = await Payment.find({ memberId: member._id })
+  const payments = await Payment.find({ ownerId: owner, memberId: member._id })
     .sort({ paymentDate: -1, createdAt: -1 })
     .populate('rentPeriodId', 'startDate endDate rentAmount status')
     .lean();

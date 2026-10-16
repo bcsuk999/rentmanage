@@ -28,9 +28,12 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int _tab = 0;
-  late Future<List<Room>> _future;
+  List<Room>? _rooms;
+  Object? _roomsError;
+  bool _roomsLoading = true;
   ReportTotals? _summary;
   bool _summaryLoading = true;
+  int _summaryId = 0;
   final _search = TextEditingController();
   Timer? _debounce;
   int _requestId = 0;
@@ -54,11 +57,12 @@ class _HomePageState extends State<HomePage> {
     });
     if (widget.initialRooms != null) {
       // Show the cached list instantly, then refresh quietly in background.
-      _future = Future.value(widget.initialRooms!);
-      WidgetsBinding.instance.addPostFrameCallback((_) => _refresh(silent: true));
-    } else {
-      _future = _loadRooms('');
+      _rooms = widget.initialRooms;
+      _roomsLoading = false;
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _refresh(silent: widget.initialRooms != null);
+    });
     _loadSummary();
   }
 
@@ -76,25 +80,7 @@ class _HomePageState extends State<HomePage> {
 
   /// Search fetch that keeps the current list on screen with an inline loader,
   /// and ignores responses that a newer keystroke has superseded.
-  Future<void> _runSearch(String value) async {
-    final id = ++_requestId;
-    if (mounted) setState(() => _searching = true);
-    try {
-      final rooms = await _loadRooms(value);
-      if (!mounted || id != _requestId) return;
-      setState(() {
-        _future = Future.value(rooms);
-        _searching = false;
-      });
-    } catch (e) {
-      if (!mounted || id != _requestId) return;
-      if (e is ApiException && e.statusCode == 401) return; // signed out above
-      setState(() {
-        _future = Future.error(e);
-        _searching = false;
-      });
-    }
-  }
+  Future<void> _runSearch(String value) => _refresh(keepList: true);
 
   /// Fetch rooms for the selected month; an expired/revoked token signs
   /// out instead of error-looping.
@@ -113,60 +99,96 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Future<void> _refresh({bool silent = false}) async {
+  /// Loads rooms for the active month/filter.
+  ///
+  /// [keepList] keeps the current cards on screen with an inline loader (used
+  /// while typing/filtering). Otherwise the previous month's data is cleared
+  /// first, so stale rooms never linger behind a newly selected month.
+  /// [silent] keeps a cached list on screen and reports offline failures with
+  /// a snackbar instead of an error panel.
+  ///
+  /// Every call bumps [_requestId]; responses from superseded requests are
+  /// dropped, so rapid month switching can't race or overwrite newer data.
+  Future<void> _refresh({bool silent = false, bool keepList = false}) async {
     final id = ++_requestId;
-    if (!silent && mounted) setState(() => _searching = true);
+    if (mounted) {
+      setState(() {
+        if (keepList || silent) {
+          _searching = !silent;
+        } else {
+          _roomsLoading = true;
+          _roomsError = null;
+          _rooms = null;
+        }
+      });
+    }
     try {
       final rooms = await _loadRooms(_search.text);
       if (!mounted || id != _requestId) return;
       setState(() {
-        _future = Future.value(rooms);
+        _rooms = rooms;
+        _roomsError = null;
+        _roomsLoading = false;
         _searching = false;
       });
     } catch (e) {
       if (!mounted || id != _requestId) return;
       if (e is ApiException && e.statusCode == 401) return; // signed out above
-      setState(() => _searching = false);
+      setState(() {
+        _roomsLoading = false;
+        _searching = false;
+      });
       if (silent) {
         // Cached list stays on screen; mention the stale data quietly.
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Offline — showing saved rooms.')),
         );
       } else {
-        setState(() => _future = Future.error(e));
+        setState(() {
+          _roomsError = e;
+          _rooms = null;
+        });
       }
     }
   }
 
-  Future<void> _loadSummary() async {
-    if (mounted) setState(() => _summaryLoading = true);
+  /// Loads the totals for the active month. Guarded by [_summaryId] so a slow
+  /// response for a previous month can't overwrite the current one.
+  Future<void> _loadSummary({bool clear = false}) async {
+    final id = ++_summaryId;
+    if (mounted) {
+      setState(() {
+        if (clear) _summary = null;
+        _summaryLoading = true;
+      });
+    }
     try {
       final totals = await widget.api.report(
         from: monthStart(_period),
         to: monthEnd(_period),
       );
-      if (mounted) {
-        setState(() {
-          _summary = totals;
-          _summaryLoading = false;
-        });
-      }
+      if (!mounted || id != _summaryId) return;
+      setState(() {
+        _summary = totals;
+        _summaryLoading = false;
+      });
     } catch (_) {
-      if (mounted) setState(() => _summaryLoading = false);
+      if (!mounted || id != _summaryId) return;
+      setState(() => _summaryLoading = false);
     }
   }
 
   void _movePeriod(int delta) {
     setState(() => _period = DateTime(_period.year, _period.month + delta));
     _refresh();
-    _loadSummary();
+    _loadSummary(clear: true);
   }
 
   void _goThisMonth() {
     final now = DateTime.now();
     setState(() => _period = DateTime(now.year, now.month));
     _refresh();
-    _loadSummary();
+    _loadSummary(clear: true);
   }
 
   void _applyChip(String? chip) {
@@ -222,8 +244,12 @@ class _HomePageState extends State<HomePage> {
       cached = null;
     }
     if (!mounted) return;
-    if (cached != null) {
-      setState(() => _future = Future.value(cached!));
+    if (cached != null && cached.isNotEmpty) {
+      setState(() {
+        _rooms = cached;
+        _roomsError = null;
+        _roomsLoading = false;
+      });
     } else {
       _refresh();
     }
@@ -248,7 +274,7 @@ class _HomePageState extends State<HomePage> {
     // Members/payments may have changed inside details — reload so the
     // cards behind never show stale occupancy or totals.
     if (mounted) {
-      _refresh();
+      _refresh(keepList: true);
       _loadSummary();
     }
   }
@@ -259,7 +285,7 @@ class _HomePageState extends State<HomePage> {
       builder: (_) => _AddRoomDialog(api: widget.api),
     );
     if (created == true) {
-      _refresh();
+      _refresh(keepList: true);
       _loadSummary();
     }
   }
@@ -328,84 +354,80 @@ class _HomePageState extends State<HomePage> {
   Widget _roomsTab(BuildContext context) {
     return RefreshIndicator(
       onRefresh: () async {
-        await _refresh();
+        await _refresh(keepList: true);
         await _loadSummary();
       },
-      child: FutureBuilder<List<Room>>(
-        future: _future,
-        builder: (context, snapshot) {
-          final hasData = snapshot.hasData && snapshot.data!.isNotEmpty;
-          Widget child;
-          if (snapshot.connectionState == ConnectionState.waiting && !hasData) {
-            child = const SkeletonRooms(key: ValueKey('rooms-skeleton'));
-          } else if (snapshot.hasError && !hasData) {
-            final message = snapshot.error is ApiException
-                ? (snapshot.error as ApiException).message
-                : 'Unable to load the latest data. Check your internet connection and try again.';
-            child = ListView(
-              key: const ValueKey('rooms-error'),
-              padding: const EdgeInsets.all(20),
-              children: [
-                ErrorPanel(
-                  message: message,
-                  onRetry: _refresh,
-                  onUseCached: _useCached,
-                ),
+      child: AnimatedSwitcher(
+        duration: MotionDuration.slow,
+        switchInCurve: MotionCurve.smoothOut,
+        switchOutCurve: MotionCurve.easeInOut,
+        child: _roomsBody(context),
+      ),
+    );
+  }
+
+  Widget _roomsBody(BuildContext context) {
+    if (_roomsLoading && _rooms == null) {
+      return const SkeletonRooms(key: ValueKey('rooms-skeleton'));
+    }
+    if (_roomsError != null && _rooms == null) {
+      final message = _roomsError is ApiException
+          ? (_roomsError as ApiException).message
+          : 'Unable to load the latest data. Check your internet connection and try again.';
+      return ListView(
+        key: const ValueKey('rooms-error'),
+        padding: const EdgeInsets.all(20),
+        children: [
+          ErrorPanel(
+            message: message,
+            onRetry: _refresh,
+            onUseCached: _useCached,
+          ),
+        ],
+      );
+    }
+    final rooms = _rooms ?? const <Room>[];
+    // Mobile viewport everywhere: one centered phone-width column, even on
+    // desktop.
+    return SingleChildScrollView(
+      key: const ValueKey('rooms-content'),
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _periodRow(context),
+              const SizedBox(height: 12),
+              _summaryGrid(context),
+              const SizedBox(height: 12),
+              _searchRow(context),
+              const SizedBox(height: 8),
+              _chipRow(context),
+              if (_searching) ...[
+                const SizedBox(height: 8),
+                const LinearProgressIndicator(),
               ],
-            );
-          } else {
-            final rooms = snapshot.data ?? [];
-            // Mobile viewport everywhere: one centered phone-width column,
-            // even on desktop.
-            child = SingleChildScrollView(
-              key: const ValueKey('rooms-content'),
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 480),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _periodRow(context),
-                      const SizedBox(height: 12),
-                      _summaryGrid(context),
-                      const SizedBox(height: 12),
-                      _searchRow(context),
-                      const SizedBox(height: 8),
-                      _chipRow(context),
-                      if (_searching) ...[
-                        const SizedBox(height: 8),
-                        const LinearProgressIndicator(),
-                      ],
-                      const SizedBox(height: 12),
-                      if (rooms.isEmpty)
-                        _emptyState(context)
-                      else
-                        for (var i = 0; i < rooms.length; i++) ...[
-                          Reveal(
-                            key: ValueKey('room-${rooms[i].id}'),
-                            delay: MotionDuration.stagger * (i % 8),
-                            child: _RoomCard(
-                              room: rooms[i],
-                              onOpen: () => _openDetails(rooms[i]),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                        ],
-                    ],
+              const SizedBox(height: 12),
+              if (rooms.isEmpty)
+                _emptyState(context)
+              else
+                for (var i = 0; i < rooms.length; i++) ...[
+                  Reveal(
+                    key: ValueKey('room-${rooms[i].id}'),
+                    delay: MotionDuration.stagger * (i % 8),
+                    child: _RoomCard(
+                      room: rooms[i],
+                      onOpen: () => _openDetails(rooms[i]),
+                    ),
                   ),
-                ),
-              ),
-            );
-          }
-          return AnimatedSwitcher(
-            duration: MotionDuration.slow,
-            switchInCurve: MotionCurve.smoothOut,
-            switchOutCurve: MotionCurve.easeInOut,
-            child: child,
-          );
-        },
+                  const SizedBox(height: 12),
+                ],
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -449,35 +471,63 @@ class _HomePageState extends State<HomePage> {
 
   Widget _summaryGrid(BuildContext context) {
     if (_summaryLoading && _summary == null) {
-      return const Row(
+      return const Column(
         children: [
-          Expanded(child: SkeletonBlock(height: 62)),
-          SizedBox(width: 10),
-          Expanded(child: SkeletonBlock(height: 62)),
+          Row(
+            children: [
+              Expanded(child: SkeletonBlock(height: 64)),
+              SizedBox(width: 10),
+              Expanded(child: SkeletonBlock(height: 64)),
+              SizedBox(width: 10),
+              Expanded(child: SkeletonBlock(height: 64)),
+            ],
+          ),
+          SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(child: SkeletonBlock(height: 64)),
+              SizedBox(width: 10),
+              Expanded(child: SkeletonBlock(height: 64)),
+              SizedBox(width: 10),
+              Expanded(child: SkeletonBlock(height: 64)),
+            ],
+          ),
         ],
       );
     }
     final s = _summary;
     if (s == null) return const SizedBox.shrink();
     return GridView.count(
-      crossAxisCount: 2,
+      crossAxisCount: 3,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       mainAxisSpacing: 10,
       crossAxisSpacing: 10,
-      childAspectRatio: 2.1,
+      childAspectRatio: 1.9,
       children: [
         SummaryMetric(
           icon: Icons.wallet_outlined,
           value: inr(s.receivedInRange),
-          label: 'Collected · ${monthLabel(_period)}',
+          label: 'Collected',
           color: AppColors.success,
         ),
         SummaryMetric(
-          icon: Icons.pending_actions_outlined,
-          value: inr(s.totalPending),
-          label: 'Outstanding',
+          icon: Icons.schedule_outlined,
+          value: inr(s.duePending),
+          label: 'Due',
+          color: AppColors.warning,
+        ),
+        SummaryMetric(
+          icon: Icons.error_outline,
+          value: inr(s.overduePending),
+          label: 'Overdue',
           color: AppColors.danger,
+        ),
+        SummaryMetric(
+          icon: Icons.receipt_long_outlined,
+          value: inr(0),
+          label: 'Expenses',
+          color: AppColors.secondaryText,
         ),
         SummaryMetric(
           icon: Icons.meeting_room_outlined,
@@ -488,7 +538,7 @@ class _HomePageState extends State<HomePage> {
         SummaryMetric(
           icon: Icons.people_outline,
           value: '${s.totalMembers}',
-          label: 'Active members',
+          label: 'Total members',
           color: AppColors.primary,
         ),
       ],
@@ -503,7 +553,7 @@ class _HomePageState extends State<HomePage> {
             controller: _search,
             onChanged: _onSearchChanged,
             textInputAction: TextInputAction.search,
-            onSubmitted: (_) => _refresh(),
+            onSubmitted: (_) => _refresh(keepList: true),
             decoration: InputDecoration(
               hintText: 'Search rooms or members...',
               prefixIcon: const Icon(Icons.search),
@@ -659,7 +709,6 @@ class _HomePageState extends State<HomePage> {
             icon: Icons.receipt_long_outlined,
             color: AppColors.primary,
             title: 'Payment History',
-            subtitle: 'Every saved payment, newest first',
             onTap: () => Navigator.of(context).push(
               smoothRoute(
                 PaymentHistoryPage(api: widget.api, isAdmin: isAdmin),
@@ -672,7 +721,6 @@ class _HomePageState extends State<HomePage> {
             icon: Icons.lock_outline,
             color: AppColors.warning,
             title: 'Change Password',
-            subtitle: 'Update your sign-in password',
             onTap: () => Navigator.of(context).push(
               smoothRoute(
                 ChangePasswordPage(api: widget.api),
@@ -683,9 +731,8 @@ class _HomePageState extends State<HomePage> {
           _menuTile(
             context,
             icon: Icons.system_update_outlined,
-            color: AppColors.primary,
+            color: AppColors.success,
             title: 'App Updates',
-            subtitle: 'Check for and install new versions',
             onTap: () => Navigator.of(context).push(
               smoothRoute(
                 const AppUpdatePage(),
@@ -717,7 +764,6 @@ class _HomePageState extends State<HomePage> {
       {required IconData icon,
       required Color color,
       required String title,
-      required String subtitle,
       required VoidCallback onTap}) {
     final theme = Theme.of(context);
     return Card(
@@ -727,14 +773,22 @@ class _HomePageState extends State<HomePage> {
         leading: Container(
           padding: const EdgeInsets.all(9),
           decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(12),
+            color: color,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(14),
+              bottomRight: Radius.circular(14),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: color.withValues(alpha: 0.32),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
+              ),
+            ],
           ),
-          child: Icon(icon, color: color, size: 20),
+          child: Icon(icon, color: Colors.white, size: 20),
         ),
         title: Text(title, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
-        subtitle: Text(subtitle,
-            style: theme.textTheme.bodySmall?.copyWith(color: AppColors.secondaryText)),
         trailing: const Icon(Icons.chevron_right, color: AppColors.secondaryText),
       ),
     );

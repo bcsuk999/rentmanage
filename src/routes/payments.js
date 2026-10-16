@@ -23,10 +23,10 @@ router.get(
         to: String(req.query.to || '').trim(),
         page: req.query.page,
       };
-      const result = await paymentService.listPayments(filters);
+      const result = await paymentService.listPayments(filters, req.user._id);
       const [rooms, members] = await Promise.all([
-        Room.find().select('roomNumber').sort({ roomNumber: 1 }).lean(),
-        Member.find().select('name mobile').sort({ name: 1 }).limit(300).lean(),
+        Room.find({ ownerId: req.user._id }).select('roomNumber').sort({ roomNumber: 1 }).lean(),
+        Member.find({ ownerId: req.user._id }).select('name mobile').sort({ name: 1 }).limit(300).lean(),
       ]);
       return res.json({ ...result, rooms, members, methods: PAYMENT_METHODS });
     } catch (err) {
@@ -47,6 +47,7 @@ router.post(
         paymentMethod: req.body.paymentMethod,
         reference: req.body.reference,
         notes: req.body.notes,
+        ownerId: req.user._id,
       });
       return res.status(201).json({ payment, message: 'Payment recorded. Rent totals recalculated.' });
     } catch (err) {

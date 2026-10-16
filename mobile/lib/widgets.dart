@@ -181,16 +181,8 @@ class SummaryMetric extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(icon, size: 16, color: color),
-            ),
+            Icon(icon, size: 20, color: color),
             const SizedBox(width: 8),
             Expanded(
               child: Column(
@@ -198,16 +190,20 @@ class SummaryMetric extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  PopInValue(
-                    value: value,
-                    style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w800, color: AppColors.mainText),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: PopInValue(
+                      value: value,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800, color: AppColors.mainText),
+                    ),
                   ),
                   Text(label,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.bodySmall?.copyWith(
-                          color: AppColors.secondaryText, fontSize: 11)),
+                          color: AppColors.secondaryText, fontSize: 10)),
                 ],
               ),
             ),

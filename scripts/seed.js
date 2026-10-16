@@ -81,7 +81,7 @@ async function seedAdmin() {
 async function backfillCapacity() {
   const rooms = await Room.find({ $or: [{ capacity: { $exists: false } }, { capacity: null }] });
   for (const room of rooms) {
-    const activeMembers = await Member.countDocuments({ roomId: room._id, status: 'active' });
+    const activeMembers = await Member.countDocuments({ ownerId: room.ownerId, roomId: room._id, status: 'active' });
     room.capacity = Math.max(1, activeMembers);
     await room.save();
   }
@@ -90,7 +90,11 @@ async function backfillCapacity() {
   }
 }
 
-async function seedDemo() {
+async function seedDemo(ownerId) {
+  if (!ownerId) {
+    console.log('Skipping demo seed: no landlord/admin account to own the demo data.');
+    return;
+  }
   const reference = today();
   const rooms = [
     { roomNumber: '101', status: 'Occupied', capacity: 4 },
@@ -99,8 +103,8 @@ async function seedDemo() {
     { roomNumber: '104', status: 'Maintenance', capacity: 1, notes: 'Painting work in progress' },
   ];
   for (const room of rooms) {
-    const exists = await Room.findOne({ roomNumberKey: room.roomNumber.toLowerCase() });
-    if (!exists) await Room.create(room);
+    const exists = await Room.findOne({ ownerId, roomNumberKey: room.roomNumber.toLowerCase() });
+    if (!exists) await Room.create({ ...room, ownerId });
     else if (!exists.capacity) await Room.updateOne({ _id: exists._id }, { $set: { capacity: room.capacity } });
   }
 
@@ -114,11 +118,12 @@ async function seedDemo() {
   ];
 
   for (const person of people) {
-    const room = await Room.findOne({ roomNumberKey: person.roomNumber.toLowerCase() });
-    const exists = await Member.findOne({ roomId: room._id, name: person.name });
+    const room = await Room.findOne({ ownerId, roomNumberKey: person.roomNumber.toLowerCase() });
+    const exists = await Member.findOne({ ownerId, roomId: room._id, name: person.name });
     if (exists) continue;
     const start = addDays(cycleAt(reference, -person.monthsAgo).start, 0);
     const member = await Member.create({
+      ownerId,
       roomId: room._id,
       name: person.name,
       mobile: person.mobile,
@@ -137,6 +142,7 @@ async function seedDemo() {
       if (value <= 0) return;
       const when = addDays(current.startDate, Math.min(2 + index * 7, 25));
       Payment.create({
+        ownerId,
         rentPeriodId: current._id,
         memberId: member._id,
         roomId: room._id,
@@ -154,10 +160,10 @@ async function seedDemo() {
 (async () => {
   try {
     await connectDb();
-    await seedLandlord();
-    await seedAdmin();
+    const landlord = await seedLandlord();
+    const admin = await seedAdmin();
     await backfillCapacity();
-    if (DEMO) await seedDemo();
+    if (DEMO) await seedDemo((landlord || admin) && (landlord || admin)._id);
     process.exit(0);
   } catch (err) {
     console.error('Seed failed:', err);
