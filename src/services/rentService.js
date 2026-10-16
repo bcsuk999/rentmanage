@@ -196,15 +196,44 @@ async function refreshOverdueStatuses({ memberId = null, reference = today(), ow
   return result.modifiedCount || 0;
 }
 
+/** Round to 2dp so money maths never drifts on floats. */
+function round2(value) {
+  return Math.round((Number(value) || 0) * 100) / 100;
+}
+
+/**
+ * Total credited to one period. New payments carry an `allocations` ledger that
+ * may credit several cycles (a spanning payment clears overdue cycles first);
+ * payments without one credit their single `rentPeriodId` in full.
+ */
+async function paidForPeriod(periodId) {
+  const [split, legacy] = await Promise.all([
+    Payment.aggregate([
+      { $match: { 'allocations.rentPeriodId': periodId } },
+      { $unwind: '$allocations' },
+      { $match: { 'allocations.rentPeriodId': periodId } },
+      { $group: { _id: null, total: { $sum: '$allocations.amount' } } },
+    ]),
+    Payment.aggregate([
+      {
+        $match: {
+          rentPeriodId: periodId,
+          $or: [{ allocations: { $exists: false } }, { allocations: { $size: 0 } }],
+        },
+      },
+      { $group: { _id: null, total: { $sum: '$amount' } } },
+    ]),
+  ]);
+  const splitTotal = split.length ? split[0].total : 0;
+  const legacyTotal = legacy.length ? legacy[0].total : 0;
+  return round2(splitTotal + legacyTotal);
+}
+
 /** Recompute one period from its payment records. */
 async function recalcPeriod(periodId, reference = today()) {
   const period = await RentPeriod.findById(periodId);
   if (!period) return null;
-  const totals = await Payment.aggregate([
-    { $match: { rentPeriodId: period._id } },
-    { $group: { _id: null, paid: { $sum: '$amount' } } },
-  ]);
-  const paid = totals.length ? totals[0].paid : 0;
+  const paid = await paidForPeriod(period._id);
   const next = deriveTotals(period.rentAmount, paid, period.endDate, reference);
   period.paidAmount = next.paidAmount;
   period.pendingAmount = next.pendingAmount;

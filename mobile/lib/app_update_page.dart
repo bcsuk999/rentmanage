@@ -82,10 +82,12 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
 
   /// Formal GitHub Release with an .apk asset, or null when none is published.
   Future<_Release?> _fromReleasesApi() async {
-    final res = await http.get(
-      Uri.parse('https://api.github.com/repos/$_owner/$_repo/releases/latest'),
-      headers: _ghHeaders,
-    );
+    final res = await http
+        .get(
+          Uri.parse('https://api.github.com/repos/$_owner/$_repo/releases/latest'),
+          headers: _ghHeaders,
+        )
+        .timeout(const Duration(seconds: 15));
     if (res.statusCode != 200) return null;
     final body = jsonDecode(res.body) as Map<String, dynamic>;
     Map<String, dynamic>? apk;
@@ -109,10 +111,12 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
 
   /// Fallback: newest versioned APK committed under releases/ on main.
   Future<_Release?> _fromRepoFolder() async {
-    final res = await http.get(
-      Uri.parse('https://api.github.com/repos/$_owner/$_repo/contents/releases?ref=main'),
-      headers: _ghHeaders,
-    );
+    final res = await http
+        .get(
+          Uri.parse('https://api.github.com/repos/$_owner/$_repo/contents/releases?ref=main'),
+          headers: _ghHeaders,
+        )
+        .timeout(const Duration(seconds: 15));
     if (res.statusCode != 200) return null;
     final files = (jsonDecode(res.body) as List).cast<Map>();
     Map<String, dynamic>? best;

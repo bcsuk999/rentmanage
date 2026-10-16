@@ -33,6 +33,12 @@ ThemeData buildLightTheme() {
     colorScheme: scheme,
     useMaterial3: true,
     scaffoldBackgroundColor: AppColors.background,
+    // Times New Roman ships with iOS/Windows/macOS but not Android, so the
+    // fallback list keeps Android on a serif face instead of dropping to
+    // Roboto. Bundling Times New Roman itself is not an option: it is a
+    // proprietary Microsoft font.
+    fontFamily: 'Times New Roman',
+    fontFamilyFallback: const ['Liberation Serif', 'Noto Serif', 'serif'],
     appBarTheme: const AppBarTheme(
       backgroundColor: AppColors.card,
       foregroundColor: AppColors.mainText,

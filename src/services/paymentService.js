@@ -5,7 +5,7 @@ const RentPeriod = require('../models/RentPeriod');
 const Member = require('../models/Member');
 const mongoose = require('mongoose');
 const { recalcPeriod } = require('./rentService');
-const { contains, parseDateInput, startOfDay } = require('../utils/dates');
+const { parseDateInput, startOfDay, today } = require('../utils/dates');
 const { ValidationError } = require('../utils/validate');
 const { PAYMENT_METHODS } = require('../models/Payment');
 const { requireOwnerId } = require('../utils/owner');
@@ -32,7 +32,9 @@ function dateFilter(value, field) {
 /**
  * Record a payment against a rent period.
  * Server-side guards: period must exist, must not be closed, the payment date
- * must fall inside the period, and the amount cannot exceed the pending amount.
+ * must fall inside the period, and the amount cannot exceed the member's total
+ * outstanding balance. The amount is allocated oldest-overdue-first, then to
+ * the selected cycle, and each cleared cycle is credited via `allocations`.
  */
 async function addPayment({
   rentPeriodId,
@@ -59,11 +61,13 @@ async function addPayment({
     throw new ValidationError([{ field: 'rentPeriod', message: 'Member not found for this period' }]);
   }
   const on = parseDateInput(paymentDate) || startOfDay(new Date());
-  if (!contains(period.startDate, period.endDate, on)) {
+  // The date may be today even when the selected cycle already ended (that is
+  // exactly the overdue case); it just cannot predate the cycle.
+  if (startOfDay(on) < startOfDay(period.startDate)) {
     throw new ValidationError([
       {
         field: 'paymentDate',
-        message: 'Payment date must fall inside the selected rent period',
+        message: 'Payment date cannot be before the selected rent period',
       },
     ]);
   }
@@ -80,44 +84,95 @@ async function addPayment({
 
   // Recalculate first so the pending amount used for validation is fresh.
   const fresh = await recalcPeriod(period._id);
-  if (amountValue > fresh.pendingAmount) {
+
+  // Every open cycle this member still owes, oldest first. Overdue cycles are
+  // always settled before anything else; the cycle the payment was booked
+  // against comes next, so a spanning payment lands exactly where the landlord
+  // pointed it even when older non-overdue cycles exist.
+  const openPeriods = await RentPeriod.find({
+    ownerId: owner,
+    memberId: fresh.memberId,
+    isClosed: { $ne: true },
+  })
+    .sort({ startDate: 1 })
+    .lean();
+
+  const refDay = startOfDay(today());
+  const isOverduePeriod = (p) => p.status === 'Overdue' || startOfDay(p.endDate) < refDay;
+  const selId = String(fresh._id);
+  const anchor =
+    openPeriods.find((p) => String(p._id) === selId) || {
+      _id: fresh._id,
+      pendingAmount: fresh.pendingAmount,
+      startDate: fresh.startDate,
+      endDate: fresh.endDate,
+      status: fresh.status,
+    };
+
+  const ordered = [];
+  for (const p of openPeriods) if (isOverduePeriod(p)) ordered.push(p);
+  if (!isOverduePeriod(anchor)) ordered.push(anchor);
+  for (const p of openPeriods) if (!isOverduePeriod(p) && String(p._id) !== selId) ordered.push(p);
+  if (!ordered.some((p) => String(p._id) === selId)) ordered.unshift(anchor);
+
+  const round2 = (v) => Math.round((Number(v) || 0) * 100) / 100;
+  const outstanding = round2(
+    ordered.reduce((sum, p) => sum + Math.max(0, Number(p.pendingAmount) || 0), 0),
+  );
+  if (outstanding <= 0) {
+    throw new ValidationError([{ field: 'amount', message: 'This member has no outstanding balance' }]);
+  }
+  if (amountValue > outstanding + 0.001) {
     throw new ValidationError([
-      {
-        field: 'amount',
-        message: `Amount exceeds the pending amount (${fresh.pendingAmount}) for this period`,
-      },
+      { field: 'amount', message: `Amount exceeds the outstanding balance (${outstanding})` },
     ]);
   }
 
-  // Allocation split: strictly older overdue cycles first, remainder to the
-  // cycle this payment was booked against.
-  const overduePeriods = await RentPeriod.find({
-    ownerId: owner,
-    memberId: fresh.memberId,
-    status: 'Overdue',
-    endDate: { $lt: fresh.startDate },
-  })
-    .select('pendingAmount')
-    .lean();
-  const totalOverdue = Math.round(
-    overduePeriods.reduce((s, p) => s + (p.pendingAmount || 0), 0) * 100,
-  ) / 100;
-  const allocOverdue = Math.min(amountValue, totalOverdue);
+  let remaining = round2(amountValue);
+  const allocations = [];
+  const touched = [];
+  for (const p of ordered) {
+    if (remaining <= 0) break;
+    const pending = round2(Math.max(0, Number(p.pendingAmount) || 0));
+    if (pending <= 0) continue;
+    const take = round2(Math.min(remaining, pending));
+    if (take <= 0) continue;
+    allocations.push({
+      rentPeriodId: p._id,
+      amount: take,
+      overdue: isOverduePeriod(p),
+      periodStart: p.startDate,
+      periodEnd: p.endDate,
+    });
+    touched.push(p._id);
+    remaining = round2(remaining - take);
+  }
+  if (remaining > 0.001) {
+    throw new ValidationError([
+      { field: 'amount', message: `Amount exceeds the outstanding balance (${outstanding})` },
+    ]);
+  }
+
+  const allocOverdue = round2(
+    allocations.filter((a) => a.overdue).reduce((sum, a) => sum + a.amount, 0),
+  );
+  const allocCurrent = round2(amountValue - allocOverdue);
 
   const payment = await Payment.create({
     ownerId: owner,
     rentPeriodId: fresh._id,
     memberId: fresh.memberId,
     roomId: fresh.roomId,
-    amount: Math.round(amountValue * 100) / 100,
+    amount: round2(amountValue),
     paymentDate: on,
     paymentMethod,
-    allocOverdue: Math.round(allocOverdue * 100) / 100,
-    allocCurrent: Math.round((amountValue - allocOverdue) * 100) / 100,
+    allocOverdue,
+    allocCurrent,
+    allocations,
     reference: reference ? String(reference).trim() : undefined,
     notes: notes ? String(notes).trim() : undefined,
   });
-  await recalcPeriod(fresh._id);
+  for (const id of touched) await recalcPeriod(id);
   return payment;
 }
 

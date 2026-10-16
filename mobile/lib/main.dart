@@ -4,6 +4,7 @@ import 'api.dart';
 import 'app_theme.dart';
 import 'home_page.dart';
 import 'login_page.dart';
+import 'payment_history_page.dart';
 import 'session_cache.dart';
 
 void main() {
@@ -73,6 +74,7 @@ class _RentManageAppState extends State<RentManageApp> {
     } catch (_) {
       // ignore
     }
+    PaymentHistoryListState.clearCache();
     if (mounted) {
       setState(() {
         _user = null;

@@ -4,9 +4,10 @@ const mongoose = require('mongoose');
 const Room = require('../models/Room');
 const Member = require('../models/Member');
 const RentPeriod = require('../models/RentPeriod');
+const Payment = require('../models/Payment');
 const { ROOM_STATUSES } = require('../models/Room');
 const { ensurePeriodsForActiveMembers, selectPeriodsByMember, summarise } = require('./rentService');
-const { parseDateInput, startOfDay, today } = require('../utils/dates');
+const { MONTHS, parseDateInput, startOfDay, today } = require('../utils/dates');
 const { requireOwnerId } = require('../utils/owner');
 const {
   ValidationError,
@@ -18,6 +19,38 @@ const {
 } = require('../utils/validate');
 
 const PAYMENT_FILTERS = ['Fully Paid', 'Partial', 'Pending', 'Overdue'];
+
+const round2 = (n) => Math.round(n * 100) / 100;
+
+/** '15 Sep' - day is not zero padded, it reads as a natural label. */
+function shortDay(value) {
+  const d = startOfDay(value);
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
+}
+
+/**
+ * One label covering every overdue cycle of a member: earliest start to latest
+ * end, e.g. '15 Sep to 16 Oct'.
+ */
+function overduePeriodLabel(periods) {
+  const start = periods.reduce((min, p) => (p.startDate < min ? p.startDate : min), periods[0].startDate);
+  const end = periods.reduce((max, p) => (p.endDate > max ? p.endDate : max), periods[0].endDate);
+  return `${shortDay(start)} to ${shortDay(end)}`;
+}
+
+/**
+ * Public room payload. Never spread the raw document into a response: that
+ * leaks ownerId, the lookup key and createdAt/updatedAt.
+ */
+function publicRoom(room) {
+  return {
+    _id: room._id,
+    roomNumber: room.roomNumber,
+    capacity: room.capacity,
+    status: room.status,
+    ...(room.notes ? { notes: room.notes } : {}),
+  };
+}
 
 /** Room numbers are matched case-insensitively via the indexed roomNumberKey. */
 function findRoomByNumber(roomNumber, ownerId) {
@@ -144,32 +177,11 @@ async function listRoomsWithSummary({ search = '', status = 'All', paymentState 
   const effectiveRef = range ? range.to : reference;
   await ensurePeriodsForActiveMembers({ reference: effectiveRef, ownerId: owner });
 
-  let matchingRoomIds = null;
-  if (search) {
-    const term = search.trim();
-    const memberFilter = {
-      ownerId: owner,
-      $or: [
-        { name: { $regex: term, $options: 'i' } },
-        { mobile: { $regex: term, $options: 'i' } },
-        { aadhaarNumber: { $regex: term, $options: 'i' } },
-      ],
-    };
-    const memberRooms = await Member.find(memberFilter).distinct('roomId');
-    matchingRoomIds = memberRooms.map((r) => r.toString());
-  }
-
-  const roomFilter = { ownerId: owner };
-  if (status !== 'All' && ROOM_STATUSES.includes(status)) roomFilter.status = status;
-  if (search) {
-    // Prefix match on the indexed key so the unique index can be used.
-    const term = search.trim().toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const ors = [{ roomNumberKey: { $regex: `^${term}` } }];
-    if (matchingRoomIds && matchingRoomIds.length) ors.push({ _id: { $in: matchingRoomIds.map((r) => new mongoose.Types.ObjectId(r)) } });
-    roomFilter.$or = ors;
-  }
-
-  const rooms = await Room.find(roomFilter).sort({ roomNumber: 1 }).lean();
+  // Every room is loaded and rolled up unfiltered; the list filters are applied
+  // to that result in memory. That keeps one query per collection (the summary
+  // needs the full set anyway) and guarantees the summary stays portfolio-wide
+  // while the list narrows.
+  const rooms = await Room.find({ ownerId: owner }).sort({ roomNumber: 1 }).lean();
 
   const roomIds = rooms.map((r) => r._id);
   const periodMatch = range
@@ -185,13 +197,24 @@ async function listRoomsWithSummary({ search = '', status = 'All', paymentState 
       startDate: { $lte: reference },
       endDate: { $gte: reference },
     };
-  const [members, periods] = await Promise.all([
+  const [members, periods, overduePeriods] = await Promise.all([
     Member.find({ ownerId: owner, roomId: { $in: roomIds }, status: 'active' })
-      .select('roomId name monthlyRent rentStartDate')
+      .select('roomId name mobile aadhaarNumber monthlyRent rentStartDate')
       .lean(),
     RentPeriod.find(periodMatch)
       .sort({ startDate: 1 })
       .select('memberId roomId startDate endDate rentAmount paidAmount pendingAmount status')
+      .lean(),
+    // Lapsed cycles are independent of the selected range, so they need their
+    // own query: every overdue period of every active member in these rooms.
+    RentPeriod.find({
+      ownerId: owner,
+      roomId: { $in: roomIds },
+      status: 'Overdue',
+      pendingAmount: { $gt: 0 },
+    })
+      .sort({ startDate: 1 })
+      .select('memberId startDate endDate pendingAmount')
       .lean(),
   ]);
 
@@ -215,7 +238,43 @@ async function listRoomsWithSummary({ search = '', status = 'All', paymentState 
     periodsByMember.set(key, p);
   }
 
-  let rows = rooms.map((room) => {
+  // Lapsed cycles grouped per member, for the per-member overdue badge.
+  const overdueByMember = new Map();
+  for (const p of overduePeriods) {
+    const key = p.memberId.toString();
+    if (!overdueByMember.has(key)) overdueByMember.set(key, []);
+    overdueByMember.get(key).push(p);
+  }
+
+  // Cash actually received in the window these cards show: every payment dated
+  // inside the range. Without an explicit range the window is the span of the
+  // selected cycles, which is what /api/reports defaults to as well. These
+  // figures cover every room, so a paymentState filter on the list does not
+  // narrow them (same as the separate /api/reports call did).
+  const selectedCycles = [...periodsByMember.values()];
+  const cashFrom = range ? range.from : selectedCycles.reduce(
+    (min, p) => (p.startDate < min ? p.startDate : min),
+    startOfDay(reference),
+  );
+  const cashTo = range ? range.to : selectedCycles.reduce(
+    (max, p) => (p.endDate > max ? p.endDate : max),
+    startOfDay(reference),
+  );
+  const paymentsInRange = roomIds.length
+    ? await Payment.find({
+        ownerId: owner,
+        roomId: { $in: roomIds },
+        paymentDate: { $gte: cashFrom, $lte: cashTo },
+      })
+        .select('amount paymentMethod')
+        .lean()
+    : [];
+  const methodTotals = paymentsInRange.reduce((acc, p) => {
+    acc[p.paymentMethod] = round2((acc[p.paymentMethod] || 0) + p.amount);
+    return acc;
+  }, {});
+
+  const allRows = rooms.map((room) => {
     const roomMembers = membersByRoom.get(room._id.toString()) || [];
     // One period per member — the same single period shown on each member row.
     // Summing every overlapping period would double-count when a member's cycle
@@ -239,7 +298,7 @@ async function listRoomsWithSummary({ search = '', status = 'All', paymentState 
       ? roomPeriods.reduce((max, p) => (p.endDate > max ? p.endDate : max), roomPeriods[0].endDate)
       : null;
     return {
-      ...room,
+      ...publicRoom(room),
       memberCount: roomMembers.length,
       capacity: room.capacity || roomMembers.length,
       isFull: roomMembers.length >= (room.capacity || roomMembers.length),
@@ -252,7 +311,17 @@ async function listRoomsWithSummary({ search = '', status = 'All', paymentState 
       // Per-member snapshot for mobile room cards. In range mode a member
       // without an overlapping period owes nothing that month.
       members: roomMembers.map((m) => {
-        const p = periodsByMember.get(m._id.toString());
+        const key = m._id.toString();
+        const p = periodsByMember.get(key);
+        // { period: '15 Sep to 16 Oct', amt: 1500 } when the member still owes
+        // lapsed cycles; null when there is nothing overdue.
+        const lapsed = overdueByMember.get(key) || [];
+        const overdue = lapsed.length
+          ? {
+            period: overduePeriodLabel(lapsed),
+            amt: round2(lapsed.reduce((s, q) => s + (q.pendingAmount || 0), 0)),
+          }
+          : null;
         if (!p && range) {
           return {
             id: m._id,
@@ -262,6 +331,7 @@ async function listRoomsWithSummary({ search = '', status = 'All', paymentState 
             pending: 0,
             status: 'No period',
             dueDate: null,
+            overdue,
           };
         }
         return {
@@ -272,15 +342,59 @@ async function listRoomsWithSummary({ search = '', status = 'All', paymentState 
           pending: p ? p.pendingAmount : m.monthlyRent || 0,
           status: p ? p.status : 'Pending',
           dueDate: p ? p.endDate : null,
+          overdue,
         };
       }),
     };
   });
 
+  // Filters narrow the list only; `totals` below stays portfolio-wide.
+  let rows = allRows;
+  if (status !== 'All' && ROOM_STATUSES.includes(status)) {
+    rows = rows.filter((r) => r.status === status);
+  }
+  if (search) {
+    // Room numbers match on their indexed prefix; member search hits name,
+    // mobile and aadhaar. Member docs are read from the lookup map, never from
+    // the response rows, so mobile/aadhaar are never serialised out.
+    const term = search.trim().toLowerCase();
+    rows = rows.filter((r) => {
+      if (String(r.roomNumber).toLowerCase().startsWith(term)) return true;
+      const roomMembers = membersByRoom.get(r._id.toString()) || [];
+      return roomMembers.some(
+        (m) =>
+          String(m.name).toLowerCase().includes(term) ||
+          String(m.mobile).toLowerCase().includes(term) ||
+          String(m.aadhaarNumber).toLowerCase().includes(term)
+      );
+    });
+  }
   if (paymentState !== 'All' && PAYMENT_FILTERS.includes(paymentState)) {
     rows = rows.filter((r) => r.paymentState === paymentState);
   }
-  return rows;
+  return {
+    rooms: rows,
+    cash: {
+      // Pending on cycles that are already past their due date, using the same
+      // "one cycle per member" selection as the rent figures above - identical
+      // to /api/reports totals.overduePending.
+      overduePending: round2(selectedCycles
+        .filter((p) => p.status === 'Overdue')
+        .reduce((s, p) => s + (p.pendingAmount || 0), 0)),
+      cashFrom,
+      cashTo,
+      receivedInRange: round2(paymentsInRange.reduce((s, p) => s + (p.amount || 0), 0)),
+      paymentCount: paymentsInRange.length,
+      methodTotals,
+    },
+    totals: {
+      roomCount: allRows.length,
+      memberCount: allRows.reduce((s, r) => s + r.memberCount, 0),
+      totalRent: round2(allRows.reduce((s, r) => s + r.totalRent, 0)),
+      totalPaid: round2(allRows.reduce((s, r) => s + r.totalPaid, 0)),
+      totalPending: round2(allRows.reduce((s, r) => s + r.totalPending, 0)),
+    },
+  };
 }
 
 /** Full detail for the Room Details page, for the selected date range. */
@@ -349,7 +463,7 @@ async function roomDetail(id, selectedRange, ownerId) {
     .lean();
 
   return {
-    room,
+    room: publicRoom(room),
     members: rows,
     summary: { ...summary, memberCount: members.length },
     capacity: room.capacity || members.length,

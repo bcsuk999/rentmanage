@@ -4,12 +4,14 @@ const express = require('express');
 const roomService = require('../services/roomService');
 const memberService = require('../services/memberService');
 const { sendApiError, wrap } = require('../utils/http');
-const { parseDateInput, startOfDay } = require('../utils/dates');
+const { parseDateInput, startOfDay, toDateInput } = require('../utils/dates');
 
 const router = express.Router();
 
 /** Room list. Current cycle by default; ?from=&to= (YYYY-MM-DD) scopes
- *  every room and member snapshot to that rental range instead. */
+ *  every room and member snapshot to that rental range instead. The summary
+ *  block also carries the cash figures the reports endpoint returns, so a
+ *  month view needs one call instead of /api/rooms + /api/reports. */
 router.get(
   '/',
   wrap(async (req, res) => {
@@ -19,7 +21,7 @@ router.get(
       const paymentState = String(req.query.paymentState || 'All');
       const fromInput = String(req.query.from || '').trim();
       const toInput = String(req.query.to || '').trim();
-      const rooms = await roomService.listRoomsWithSummary({
+      const { rooms, cash, totals } = await roomService.listRoomsWithSummary({
         search,
         status,
         paymentState,
@@ -27,15 +29,18 @@ router.get(
         to: toInput || null,
         ownerId: req.user._id,
       });
-      const round = (n) => Math.round(n * 100) / 100;
       return res.json({
         rooms,
         summary: {
-          roomCount: rooms.length,
-          memberCount: rooms.reduce((s, r) => s + r.memberCount, 0),
-          totalRent: round(rooms.reduce((s, r) => s + r.totalRent, 0)),
-          totalPaid: round(rooms.reduce((s, r) => s + r.totalPaid, 0)),
-          totalPending: round(rooms.reduce((s, r) => s + r.totalPending, 0)),
+          // Portfolio-wide on purpose: the month tiles must not shrink when the
+          // list is filtered, so these come from every room, not from `rooms`.
+          ...totals,
+          overduePending: cash.overduePending,
+          receivedInRange: cash.receivedInRange,
+          paymentCount: cash.paymentCount,
+          methodTotals: cash.methodTotals,
+          cashFrom: toDateInput(cash.cashFrom),
+          cashTo: toDateInput(cash.cashTo),
         },
       });
     } catch (err) {

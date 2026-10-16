@@ -185,14 +185,14 @@ class SummaryMetric extends StatelessWidget {
             Icon(icon, size: 20, color: color),
             const SizedBox(width: 8),
             Expanded(
+              // Value + label centred on both axes inside the card.
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
                 children: [
                   FittedBox(
                     fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
+                    alignment: Alignment.center,
                     child: PopInValue(
                       value: value,
                       style: theme.textTheme.titleSmall?.copyWith(
@@ -202,6 +202,7 @@ class SummaryMetric extends StatelessWidget {
                   Text(label,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
                       style: theme.textTheme.bodySmall?.copyWith(
                           color: AppColors.secondaryText, fontSize: 10)),
                 ],

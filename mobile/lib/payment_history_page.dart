@@ -175,6 +175,14 @@ class PaymentHistoryList extends StatefulWidget {
 }
 
 class PaymentHistoryListState extends State<PaymentHistoryList> {
+  /// In-memory first-page cache keyed by scope. Lets the list paint instantly
+  /// on revisit while a silent background fetch refreshes it - no skeleton
+  /// flash after the very first load.
+  static final Map<String, List<PaymentRecord>> _cache = {};
+
+  /// Drops every cached page (called on sign-out).
+  static void clearCache() => _cache.clear();
+
   final List<PaymentRecord> _rows = [];
   int _page = 1;
   int _pages = 1;
@@ -188,10 +196,24 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
   String _searchQuery = '';
   final _searchFocus = FocusNode();
 
+  String get _cacheKey => '${widget.roomId ?? ''}|${widget.memberId ?? ''}';
+
+  /// Only the default, unfiltered first page is cached.
+  bool get _cacheableQuery =>
+      _method == 'All' && _from == null && _to == null && _searchQuery.isEmpty;
+
   @override
   void initState() {
     super.initState();
-    _load(reset: true);
+    final cached = _cache[_cacheKey];
+    if (cached != null && cached.isNotEmpty) {
+      // Show the cached page immediately, then refresh silently.
+      _rows.addAll(cached);
+      _loading = false;
+      _load(reset: true, soft: true);
+    } else {
+      _load(reset: true);
+    }
   }
 
   @override
@@ -202,7 +224,7 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
   }
 
   /// Public so the page header can refresh after a payment is recorded.
-  Future<void> reload() => _load(reset: true);
+  Future<void> reload() => _load(reset: true, soft: _rows.isNotEmpty);
 
   String? _dateInput(DateTime? d) => d == null
       ? null
@@ -213,17 +235,21 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
   void _runSearch([String? value]) {
     _searchFocus.unfocus();
     setState(() => _searchQuery = (value ?? _searchController.text).trim());
-    _load(reset: true);
+    _load(reset: true, soft: _rows.isNotEmpty);
   }
 
-  Future<void> _load({bool reset = false}) async {
+  Future<void> _load({bool reset = false, bool soft = false}) async {
     if (reset) {
       setState(() {
-        _loading = true;
+        // Keep the current rows on screen when soft: no skeleton flashes over
+        // data we already have.
+        if (!soft) {
+          _loading = true;
+          _rows.clear();
+        }
         _error = null;
         _page = 1;
         _pages = 1;
-        _rows.clear();
       });
     }
     try {
@@ -254,6 +280,9 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
         _loading = false;
         _loadingMore = false;
       });
+      if (reset && _cacheableQuery) {
+        _cache[_cacheKey] = List<PaymentRecord>.of(_rows);
+      }
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -300,7 +329,7 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
         _to = picked;
       }
     });
-    _load(reset: true);
+    _load(reset: true, soft: _rows.isNotEmpty);
   }
 
   Future<void> _openMethodPicker() async {
@@ -354,7 +383,7 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
     );
     if (picked == null || !mounted) return;
     setState(() => _method = picked);
-    _load(reset: true);
+    _load(reset: true, soft: _rows.isNotEmpty);
   }
 
   void _clearFilters() {
@@ -363,7 +392,7 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
       _from = null;
       _to = null;
     });
-    _load(reset: true);
+    _load(reset: true, soft: _rows.isNotEmpty);
   }
 
   @override
@@ -657,7 +686,7 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
     );
     if (widget.embedded) return list;
     return RefreshIndicator(
-      onRefresh: () => _load(reset: true),
+      onRefresh: () => _load(reset: true, soft: true),
       child: list,
     );
   }
@@ -736,111 +765,130 @@ class _PaymentCardState extends State<_PaymentCard> {
           ),
         );
     return Card(
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
         onTap: _toggle,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              AppColors.primary,
-                              AppColors.primary.withValues(alpha: 0.7),
-                            ],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          borderRadius: const BorderRadius.only(
-                            topLeft: Radius.circular(20),
-                            bottomRight: Radius.circular(20),
-                          ),
-                        ),
-                        child: Text(
-                          record.memberName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Ribbon sits flush against the card's top-left corner.
+            Row(
+              children: [
+                // Expanded (not Flexible + Spacer) so the ribbon slot takes all
+            // the leftover width and the amount stays pinned to the right edge.
+            Expanded(
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        AppColors.primary,
+                        AppColors.primary.withValues(alpha: 0.7),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: const BorderRadius.only(
+                      bottomRight: Radius.circular(20),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  child: Text(
+                    record.memberName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(right: 14),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Paid :',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.secondaryText,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    inr(record.amount),
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.success,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 8, 8, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Row(
-                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(
-                        'Paid :',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.secondaryText,
+                      Expanded(
+                        child: Text(
+                          time,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall
+                              ?.copyWith(color: AppColors.secondaryText),
                         ),
                       ),
-                      const SizedBox(width: 4),
-                      Text(
-                        inr(record.amount),
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.success,
+                      IconButton(
+                        tooltip: _expanded ? 'Hide details' : 'Show details',
+                        visualDensity: VisualDensity.compact,
+                        icon: Icon(
+                          _expanded ? Icons.expand_less : Icons.expand_more,
+                          size: 20,
+                          color: AppColors.secondaryText,
                         ),
+                        onPressed: _toggle,
                       ),
                     ],
                   ),
+                  if (_expanded) ...[
+                    const SizedBox(height: 8),
+                    const Divider(height: 1),
+                    const SizedBox(height: 10),
+                    detail('Room', record.roomNumber),
+                    if (record.memberMobile.isNotEmpty)
+                      detail('Phone', record.memberMobile),
+                    detail('Rent period', rentPeriod),
+                    if (record.allocations.isNotEmpty) ...[
+                      for (final a in record.allocations.where((a) => a.overdue))
+                        detail(
+                            'Overdue · ${fmtDateShortIso(a.periodStartIso)} – ${fmtDateShortIso(a.periodEndIso)}',
+                            inr(a.amount)),
+                      if (record.allocations.any((a) => !a.overdue))
+                        detail(
+                            'Due',
+                            inr(record.allocations
+                                .where((a) => !a.overdue)
+                                .fold<double>(0, (s, a) => s + a.amount))),
+                    ] else if (record.allocOverdue != null)
+                      detail(
+                          'Allocation',
+                          'Overdue ${inr(record.allocOverdue!)} · Current ${inr(record.allocCurrent ?? 0)}'),
+                    detail('Method', record.method),
+                    if (record.notes.isNotEmpty) detail('Note', record.notes),
+                  ],
                 ],
               ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      time,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: AppColors.secondaryText),
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: _expanded ? 'Hide details' : 'Show details',
-                    visualDensity: VisualDensity.compact,
-                    icon: Icon(
-                      _expanded ? Icons.expand_less : Icons.expand_more,
-                      size: 20,
-                      color: AppColors.secondaryText,
-                    ),
-                    onPressed: _toggle,
-                  ),
-                ],
-              ),
-              if (_expanded) ...[
-                const SizedBox(height: 8),
-                const Divider(height: 1),
-                const SizedBox(height: 10),
-                detail('Room', record.roomNumber),
-                if (record.memberMobile.isNotEmpty)
-                  detail('Phone', record.memberMobile),
-                detail('Rent period', rentPeriod),
-                if (record.allocOverdue != null)
-                  detail(
-                      'Allocation',
-                      'Overdue ${inr(record.allocOverdue!)} · Current ${inr(record.allocCurrent ?? 0)}'),
-                detail('Method', record.method),
-                if (record.notes.isNotEmpty) detail('Note', record.notes),
-              ],
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

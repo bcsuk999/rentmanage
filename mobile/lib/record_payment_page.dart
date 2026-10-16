@@ -204,6 +204,7 @@ class _RecordPaymentPageState extends State<RecordPaymentPage> {
         _periodsLoading = false;
         _periodId = (firstOwed ?? periods.firstOrNull)?.id;
         _calculateDues();
+        _ensureDateValid();
         if (_periodId != null) _applyFullAmount();
       });
     } on ApiException catch (e) {
@@ -222,15 +223,25 @@ class _RecordPaymentPageState extends State<RecordPaymentPage> {
   }
 
   void _applyFullAmount() {
-    final p = _period;
-    if (p == null) return;
+    final total = _totalOverdue + _totalCurrentDue;
     _customAmount = false;
-    _amount.text = p.pending > 0 ? p.pending.toStringAsFixed(0) : '';
+    _amount.text = total > 0 ? total.toStringAsFixed(0) : '';
   }
 
   void _applyChip(double value) {
     _customAmount = false;
     _amount.text = value.toStringAsFixed(0);
+  }
+
+  /// Payments are always stamped with the current date - there is no picker.
+  /// The server only rejects a date that predates the cycle, which can happen
+  /// for an advance cycle that has not started yet; clamp that one case to the
+  /// cycle start.
+  void _ensureDateValid() {
+    final p = _period;
+    if (p == null) return;
+    final start = DateTime.tryParse(p.startIso);
+    if (start != null && _date.isBefore(start)) _date = start;
   }
 
   Map<String, double> _getAllocationBreakdown(double amount) {
@@ -246,18 +257,8 @@ class _RecordPaymentPageState extends State<RecordPaymentPage> {
     };
   }
 
-  String _dateInput(DateTime d) =>
+String _dateInput(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-
-  Future<void> _pickDate() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _date,
-      firstDate: DateTime(2000),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
-    );
-    if (picked != null) setState(() => _date = picked);
-  }
 
   Future<void> _submit() async {
     final period = _period;
@@ -272,9 +273,9 @@ class _RecordPaymentPageState extends State<RecordPaymentPage> {
       setState(() => _error = 'Amount must be greater than zero.');
       return;
     }
-    if (amount > period.pending) {
+    if (amount > _totalOverdue + _totalCurrentDue + 0.01) {
       setState(() => _error =
-          'Amount exceeds the outstanding balance (${inr(period.pending)}) for this period.');
+          'Amount exceeds the outstanding balance (${inr(_totalOverdue + _totalCurrentDue)}).');
       return;
     }
     setState(() {
@@ -486,6 +487,7 @@ class _RecordPaymentPageState extends State<RecordPaymentPage> {
                 ],
                 onChanged: (v) => setState(() {
                   _periodId = v;
+                  _ensureDateValid();
                   _applyFullAmount();
                 }),
               ),
@@ -503,7 +505,7 @@ class _RecordPaymentPageState extends State<RecordPaymentPage> {
                       onPressed: () => setState(() => _applyChip(chip)),
                     ),
                   ActionChip(
-                    label: Text('Full ${inr(period.pending)}'),
+                    label: Text('Full ${inr(_totalOverdue + _totalCurrentDue)}'),
                     backgroundColor: AppColors.primary.withValues(alpha: 0.12),
                     onPressed: () => setState(_applyFullAmount),
                   ),
@@ -553,35 +555,6 @@ class _RecordPaymentPageState extends State<RecordPaymentPage> {
                   ),
                 );
               }),
-            const SizedBox(height: 12),
-            Card(
-              child: InkWell(
-                borderRadius: BorderRadius.circular(16),
-                onTap: _pickDate,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Payment Date *',
-                                style: theme.textTheme.bodySmall
-                                    ?.copyWith(color: AppColors.secondaryText)),
-                            const SizedBox(height: 2),
-                            Text(fmtDateIso(_dateInput(_date)),
-                                style: theme.textTheme.titleSmall
-                                    ?.copyWith(fontWeight: FontWeight.w700)),
-                          ],
-                        ),
-                      ),
-                      const Icon(Icons.calendar_month_outlined, color: AppColors.primary),
-                    ],
-                  ),
-                ),
-              ),
-            ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
               initialValue: _method,

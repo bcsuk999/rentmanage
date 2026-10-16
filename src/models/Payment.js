@@ -34,6 +34,25 @@ const paymentSchema = new mongoose.Schema(
     // Absent on payments recorded before the split was tracked.
     allocOverdue: { type: Number, default: null, min: 0 },
     allocCurrent: { type: Number, default: null, min: 0 },
+    // Per-cycle credit ledger. A spanning payment (e.g. ₹2000 = ₹500 overdue +
+    // ₹1500 current) still lands as one record, but each cycle it clears is
+    // listed here so recalcPeriod() credits the exact cycle the money went to.
+    // Empty on payments recorded before the ledger existed.
+    allocations: {
+      type: [
+        new mongoose.Schema(
+          {
+            rentPeriodId: { type: mongoose.Schema.Types.ObjectId, ref: 'RentPeriod', required: true },
+            amount: { type: Number, required: true, min: 0 },
+            overdue: { type: Boolean, default: false },
+            periodStart: { type: Date },
+            periodEnd: { type: Date },
+          },
+          { _id: false }
+        ),
+      ],
+      default: [],
+    },
     reference: { type: String, trim: true, maxlength: 120 },
     notes: { type: String, trim: true, maxlength: 500 },
     createdAt: { type: Date, default: Date.now },

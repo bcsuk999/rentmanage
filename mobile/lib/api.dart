@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -297,6 +298,33 @@ class ApiClient {
         if (token != null) 'Authorization': 'Bearer $token',
       };
 
+  /// Every request fails fast after this long. Without it a cold backend
+  /// (Render spins down when idle) leaves the UI stuck on skeletons with the
+  /// buttons disabled for a minute or more - which reads as a frozen app.
+  static const Duration _requestTimeout = Duration(seconds: 25);
+
+  /// Runs one HTTP call with a timeout, surfacing hangs and network failures as
+  /// a normal [ApiException] so every screen shows its error panel.
+  Future<http.Response> _send(Future<http.Response> Function() run) async {
+    try {
+      return await run().timeout(_requestTimeout);
+    } on TimeoutException {
+      throw ApiException(
+          'The server is taking too long to respond. Check your connection and try again.');
+    } on http.ClientException {
+      throw ApiException('Could not reach the server. Check your connection and try again.');
+    }
+  }
+
+  Future<http.Response> _get(Uri uri) =>
+      _send(() => http.get(uri, headers: _headers));
+
+  Future<http.Response> _post(Uri uri, {Object? body}) =>
+      _send(() => http.post(uri, headers: _headers, body: body));
+
+  Future<http.Response> _patch(Uri uri, {Object? body}) =>
+      _send(() => http.patch(uri, headers: _headers, body: body));
+
   Never _throw(http.Response res) {
     String message = 'Request failed (${res.statusCode}).';
     try {
@@ -318,9 +346,8 @@ class ApiClient {
   /// Returns the signed-in landlord map and stores the token.
   /// [mobile] is the 10-digit landlord mobile number.
   Future<Map<String, dynamic>> login(String mobile, String password) async {
-    final res = await http.post(
+    final res = await _post(
       Uri.parse('$baseUrl/api/auth/login'),
-      headers: _headers,
       body: jsonEncode({'mobile': mobile, 'password': password}),
     );
     if (res.statusCode != 200) _throw(res);
@@ -336,9 +363,8 @@ class ApiClient {
     required String password,
     String? name,
   }) async {
-    final res = await http.post(
+    final res = await _post(
       Uri.parse('$baseUrl/api/auth/register'),
-      headers: _headers,
       body: jsonEncode({
         'mobile': mobile,
         'password': password,
@@ -358,6 +384,14 @@ class ApiClient {
   /// instead of the current cycle. The plain current-month list is cached
   /// on-device for offline-first startup.
   Future<List<Room>> rooms(
+          {String? search, String? status, String? paymentState, String? from, String? to}) async =>
+      (await roomsWithSummary(
+              search: search, status: status, paymentState: paymentState, from: from, to: to))
+          .rooms;
+
+  /// Same call as [rooms] but also returns the summary block, which carries the
+  /// cash figures the reports endpoint used to supply - one request per month.
+  Future<RoomsPage> roomsWithSummary(
       {String? search, String? status, String? paymentState, String? from, String? to}) async {
     final q = (search ?? '').trim();
     final params = <String, String>{};
@@ -368,7 +402,7 @@ class ApiClient {
     if (to != null && to.isNotEmpty) params['to'] = to;
     final uri =
         Uri.parse('$baseUrl/api/rooms').replace(queryParameters: params.isEmpty ? null : params);
-    final res = await http.get(uri, headers: _headers);
+    final res = await _get(uri);
     if (res.statusCode != 200) _throw(res);
     final body = jsonDecode(res.body) as Map<String, dynamic>;
     final list = (body['rooms'] as List? ?? []);
@@ -381,7 +415,17 @@ class ApiClient {
         // ignore cache write failures
       }
     }
-    return rooms;
+    final summary = (body['summary'] as Map? ?? {}).cast<String, dynamic>();
+    return RoomsPage(
+      rooms: rooms,
+      totals: ReportTotals.fromJson({
+        'totals': summary,
+        'filters': {
+          'from': '${summary['cashFrom'] ?? from ?? ''}',
+          'to': '${summary['cashTo'] ?? to ?? ''}',
+        },
+      }),
+    );
   }
 
   /// Only the default current-month list is cached: filtered or historical
@@ -406,7 +450,7 @@ class ApiClient {
     final uri = Uri.parse('$baseUrl/api/rooms/$id').replace(
       queryParameters: (from != null && to != null) ? {'from': from, 'to': to} : null,
     );
-    final detailRes = await http.get(uri, headers: _headers);
+    final detailRes = await _get(uri);
     if (detailRes.statusCode != 200) _throw(detailRes);
     final body = jsonDecode(detailRes.body) as Map<String, dynamic>;
     final roomJson = (body['room'] as Map).cast<String, dynamic>();
@@ -433,9 +477,8 @@ class ApiClient {
     required int capacity,
     required String status,
   }) async {
-    final res = await http.post(
+    final res = await _post(
       Uri.parse('$baseUrl/api/rooms'),
-      headers: _headers,
       body: jsonEncode({'roomNumber': roomNumber, 'capacity': capacity, 'status': status}),
     );
     if (res.statusCode != 201) _throw(res);
@@ -450,9 +493,8 @@ class ApiClient {
     required String status,
     String? notes,
   }) async {
-    final res = await http.patch(
+    final res = await _patch(
       Uri.parse('$baseUrl/api/rooms/$roomId'),
-      headers: _headers,
       body: jsonEncode({
         'roomNumber': roomNumber,
         'capacity': capacity,
@@ -466,9 +508,8 @@ class ApiClient {
 
   /// Add a member to a room (admin only). Throws [ApiException] when full.
   Future<Map<String, dynamic>> addMember(String roomId, Map<String, dynamic> data) async {
-    final res = await http.post(
+    final res = await _post(
       Uri.parse('$baseUrl/api/rooms/$roomId/members'),
-      headers: _headers,
       body: jsonEncode(data),
     );
     if (res.statusCode != 201) _throw(res);
@@ -477,9 +518,8 @@ class ApiClient {
 
   /// Update a member (name, mobile, rent, aadhaar, dates, notes).
   Future<Map<String, dynamic>> updateMember(String memberId, Map<String, dynamic> data) async {
-    final res = await http.patch(
+    final res = await _patch(
       Uri.parse('$baseUrl/api/members/$memberId'),
-      headers: _headers,
       body: jsonEncode(data),
     );
     if (res.statusCode != 200) _throw(res);
@@ -495,9 +535,8 @@ class ApiClient {
     String? reference,
     String? notes,
   }) async {
-    final res = await http.post(
+    final res = await _post(
       Uri.parse('$baseUrl/api/payments'),
-      headers: _headers,
       body: jsonEncode({
         'rentPeriodId': rentPeriodId,
         'amount': amount,
@@ -513,12 +552,14 @@ class ApiClient {
 
   /// Members holding overdue rent, with each overdue period.
   Future<OverdueReport> overdue() async {
-    final res = await http.get(Uri.parse('$baseUrl/api/overdue'), headers: _headers);
+    final res = await _get(Uri.parse('$baseUrl/api/overdue'));
     if (res.statusCode != 200) _throw(res);
     return OverdueReport.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
   }
 
-  /// Reporting totals for a date range (rooms summary cards).
+  /// Totals for a date range, including the per-room and per-member breakdown.
+  /// The home month tiles no longer need this - they read [roomsWithSummary]
+  /// instead - so this is only for a report screen.
   Future<ReportTotals> report({String? from, String? to, String? roomId}) async {
     final params = <String, String>{};
     if (from != null) params['from'] = from;
@@ -526,7 +567,7 @@ class ApiClient {
     if (roomId != null && roomId.isNotEmpty) params['roomId'] = roomId;
     final uri =
         Uri.parse('$baseUrl/api/reports').replace(queryParameters: params.isEmpty ? null : params);
-    final res = await http.get(uri, headers: _headers);
+    final res = await _get(uri);
     if (res.statusCode != 200) _throw(res);
     return ReportTotals.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
   }
@@ -547,14 +588,14 @@ class ApiClient {
     if (from != null && from.isNotEmpty) params['from'] = from;
     if (to != null && to.isNotEmpty) params['to'] = to;
     final uri = Uri.parse('$baseUrl/api/payments').replace(queryParameters: params);
-    final res = await http.get(uri, headers: _headers);
+    final res = await _get(uri);
     if (res.statusCode != 200) _throw(res);
     return PaymentsPage.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
   }
 
   /// A member's rent periods (for choosing which obligation is being paid).
   Future<List<MemberPeriod>> memberPeriods(String memberId) async {
-    final res = await http.get(Uri.parse('$baseUrl/api/members/$memberId'), headers: _headers);
+    final res = await _get(Uri.parse('$baseUrl/api/members/$memberId'));
     if (res.statusCode != 200) _throw(res);
     final body = jsonDecode(res.body) as Map<String, dynamic>;
     final list = (body['periods'] as List? ?? []);
@@ -563,7 +604,7 @@ class ApiClient {
 
   /// Full member profile (info + periods + totals) for the Member Details page.
   Future<MemberProfile> memberProfile(String memberId) async {
-    final res = await http.get(Uri.parse('$baseUrl/api/members/$memberId'), headers: _headers);
+    final res = await _get(Uri.parse('$baseUrl/api/members/$memberId'));
     if (res.statusCode != 200) _throw(res);
     return MemberProfile.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
   }
@@ -574,9 +615,8 @@ class ApiClient {
     required String newPassword,
     required String confirmPassword,
   }) async {
-    final res = await http.post(
+    final res = await _post(
       Uri.parse('$baseUrl/api/auth/change-password'),
-      headers: _headers,
       body: jsonEncode({
         'currentPassword': currentPassword,
         'newPassword': newPassword,
@@ -678,6 +718,14 @@ class OverdueReport {
 }
 
 /// Reporting totals backing the Rooms summary cards.
+/// Rooms plus the month totals the server returns alongside them.
+class RoomsPage {
+  RoomsPage({required this.rooms, required this.totals});
+
+  final List<Room> rooms;
+  final ReportTotals totals;
+}
+
 class ReportTotals {
   ReportTotals({
     required this.totalRent,
@@ -745,6 +793,7 @@ class PaymentRecord {
     this.createdAtIso = '',
     this.allocOverdue,
     this.allocCurrent,
+    this.allocations = const [],
   });
 
   final String id;
@@ -766,6 +815,11 @@ class PaymentRecord {
   /// payment predates allocation tracking.
   final double? allocOverdue;
   final double? allocCurrent;
+
+  /// Per-cycle credit ledger (empty on payments recorded before it existed).
+  /// A spanning payment lists each cycle it cleared, so the card can show the
+  /// exact overdue cycle the money went to.
+  final List<PaymentAllocation> allocations;
 
   factory PaymentRecord.fromJson(Map<String, dynamic> json) {
     double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
@@ -789,6 +843,34 @@ class PaymentRecord {
       createdAtIso: '${json['createdAt'] ?? ''}',
       allocOverdue: json['allocOverdue'] == null ? null : asDouble(json['allocOverdue']),
       allocCurrent: json['allocCurrent'] == null ? null : asDouble(json['allocCurrent']),
+      allocations: (json['allocations'] as List? ?? [])
+          .map((e) => PaymentAllocation.fromJson((e as Map).cast<String, dynamic>()))
+          .toList(),
+    );
+  }
+}
+
+/// One cycle credited by a [PaymentRecord].
+class PaymentAllocation {
+  PaymentAllocation({
+    required this.amount,
+    required this.overdue,
+    required this.periodStartIso,
+    required this.periodEndIso,
+  });
+
+  final double amount;
+  final bool overdue;
+  final String periodStartIso;
+  final String periodEndIso;
+
+  factory PaymentAllocation.fromJson(Map<String, dynamic> json) {
+    double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
+    return PaymentAllocation(
+      amount: asDouble(json['amount']),
+      overdue: json['overdue'] == true,
+      periodStartIso: '${json['periodStart'] ?? ''}',
+      periodEndIso: '${json['periodEnd'] ?? ''}',
     );
   }
 }

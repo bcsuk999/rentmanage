@@ -28,12 +28,17 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int _tab = 0;
+
+  /// +1 when the last switch moved to a higher tab index, -1 for lower. Drives
+  /// which way the page content slides in and out.
+  int _tabDirection = 1;
+
   List<Room>? _rooms;
   Object? _roomsError;
   bool _roomsLoading = true;
   ReportTotals? _summary;
   bool _summaryLoading = true;
-  int _summaryId = 0;
+  OverdueReport? _overdueCache;
   final _search = TextEditingController();
   Timer? _debounce;
   int _requestId = 0;
@@ -63,7 +68,6 @@ class _HomePageState extends State<HomePage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _refresh(silent: widget.initialRooms != null);
     });
-    _loadSummary();
   }
 
   @override
@@ -83,10 +87,11 @@ class _HomePageState extends State<HomePage> {
   Future<void> _runSearch(String value) => _refresh(keepList: true);
 
   /// Fetch rooms for the selected month; an expired/revoked token signs
-  /// out instead of error-looping.
-  Future<List<Room>> _loadRooms(String query) async {
+  /// out instead of error-looping. The same response carries the month totals,
+  /// so there is no second report request.
+  Future<RoomsPage> _loadRooms(String query) async {
     try {
-      return await widget.api.rooms(
+      return await widget.api.roomsWithSummary(
         search: query,
         status: _statusFilter,
         paymentState: _payFilter,
@@ -123,10 +128,12 @@ class _HomePageState extends State<HomePage> {
       });
     }
     try {
-      final rooms = await _loadRooms(_search.text);
+      final page = await _loadRooms(_search.text);
       if (!mounted || id != _requestId) return;
       setState(() {
-        _rooms = rooms;
+        _rooms = page.rooms;
+        _summary = page.totals;
+        _summaryLoading = false;
         _roomsError = null;
         _roomsLoading = false;
         _searching = false;
@@ -137,6 +144,9 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         _roomsLoading = false;
         _searching = false;
+        // Totals arrive with this response, so stop the skeleton here instead
+        // of spinning forever.
+        _summaryLoading = false;
       });
       if (silent) {
         // Cached list stays on screen; mention the stale data quietly.
@@ -152,43 +162,37 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  /// Loads the totals for the active month. Guarded by [_summaryId] so a slow
-  /// response for a previous month can't overwrite the current one.
-  Future<void> _loadSummary({bool clear = false}) async {
-    final id = ++_summaryId;
-    if (mounted) {
-      setState(() {
-        if (clear) _summary = null;
-        _summaryLoading = true;
-      });
-    }
-    try {
-      final totals = await widget.api.report(
-        from: monthStart(_period),
-        to: monthEnd(_period),
-      );
-      if (!mounted || id != _summaryId) return;
-      setState(() {
-        _summary = totals;
-        _summaryLoading = false;
-      });
-    } catch (_) {
-      if (!mounted || id != _summaryId) return;
-      setState(() => _summaryLoading = false);
-    }
+  /// Clears the stale totals the moment the month changes; the next
+  /// [RoomsPage] response fills them in.
+  void _clearSummary() {
+    if (!mounted) return;
+    setState(() {
+      _summary = null;
+      _summaryLoading = true;
+    });
   }
 
   void _movePeriod(int delta) {
     setState(() => _period = DateTime(_period.year, _period.month + delta));
+    _clearSummary();
     _refresh();
-    _loadSummary(clear: true);
+  }
+
+  /// Single entry point for tab changes so the slide direction always matches
+  /// the move (forward = push, back = pop).
+  void _goToTab(int next) {
+    if (next == _tab) return;
+    setState(() {
+      _tabDirection = next > _tab ? 1 : -1;
+      _tab = next;
+    });
   }
 
   void _goThisMonth() {
     final now = DateTime.now();
     setState(() => _period = DateTime(now.year, now.month));
+    _clearSummary();
     _refresh();
-    _loadSummary(clear: true);
   }
 
   void _applyChip(String? chip) {
@@ -275,7 +279,6 @@ class _HomePageState extends State<HomePage> {
     // cards behind never show stale occupancy or totals.
     if (mounted) {
       _refresh(keepList: true);
-      _loadSummary();
     }
   }
 
@@ -286,7 +289,6 @@ class _HomePageState extends State<HomePage> {
     );
     if (created == true) {
       _refresh(keepList: true);
-      _loadSummary();
     }
   }
 
@@ -313,49 +315,87 @@ class _HomePageState extends State<HomePage> {
           IconButton(
             tooltip: 'Overdue dues',
             icon: const Icon(Icons.notifications_outlined),
-            onPressed: () => setState(() => _tab = 1),
+            onPressed: () => _goToTab(1),
           ),
           const SizedBox(width: 4),
         ],
       ),
-      body: _tab == 0
-          ? _roomsTab(context)
-          : _tab == 1
-              ? OverduePage(api: widget.api, isAdmin: _isAdmin, onAuthExpired: _signOut)
-              : _accountTab(context),
-      floatingActionButton: (_tab == 0 && _isAdmin)
-          ? FloatingActionButton(
-              tooltip: 'Add room',
-              onPressed: _showAddRoom,
-              child: const Icon(Icons.add),
-            )
-          : null,
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab,
-        onDestinationSelected: (i) => setState(() => _tab = i),
-        destinations: const [
-          NavigationDestination(
-              icon: Icon(Icons.meeting_room_outlined),
-              selectedIcon: Icon(Icons.meeting_room),
-              label: 'Rooms'),
-          NavigationDestination(
-              icon: Icon(Icons.event_busy_outlined),
-              selectedIcon: Icon(Icons.event_busy),
-              label: 'Overdue'),
-          NavigationDestination(
-              icon: Icon(Icons.person_outline),
-              selectedIcon: Icon(Icons.person),
-              label: 'Account'),
-        ],
+      body: AnimatedSwitcher(
+        duration: MotionDuration.fast,
+        reverseDuration: MotionDuration.fast,
+        switchInCurve: MotionCurve.smoothOut,
+        switchOutCurve: MotionCurve.easeInOut,
+        layoutBuilder: (currentChild, previousChildren) => Stack(
+          fit: StackFit.expand,
+          children: [
+            ...previousChildren,
+            ?currentChild,
+          ],
+        ),
+        transitionBuilder: (child, animation) {
+          // Direction-aware slide: moving to a higher tab index pushes the old
+          // page out to the left while the new one enters from the right, and
+          // the reverse when stepping back.
+          final enter = _tabDirection >= 0 ? 1.0 : -1.0;
+          final curved =
+              CurvedAnimation(parent: animation, curve: MotionCurve.smoothOut);
+          return FadeTransition(
+            opacity: curved,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: Offset(enter * MotionDistance.pageSlide, 0),
+                end: Offset.zero,
+              ).animate(curved),
+              child: child,
+            ),
+          );
+        },
+        child: KeyedSubtree(key: ValueKey(_tab), child: _tabBody(context)),
+      ),
+      floatingActionButton: AnimatedSwitcher(
+        duration: MotionDuration.fast,
+        switchInCurve: MotionCurve.smoothOut,
+        switchOutCurve: MotionCurve.easeInOut,
+        transitionBuilder: (child, animation) => ScaleTransition(
+          scale: animation,
+          child: FadeTransition(opacity: animation, child: child),
+        ),
+        child: (_tab == 0 && _isAdmin)
+            ? FloatingActionButton(
+                key: const ValueKey('fab'),
+                tooltip: 'Add room',
+                onPressed: _showAddRoom,
+                child: const Icon(Icons.add),
+              )
+            : const SizedBox.shrink(key: ValueKey('no-fab')),
+      ),
+      bottomNavigationBar: _AnimatedBottomNavBar(
+        index: _tab,
+        onSelected: _goToTab,
       ),
     );
+  }
+
+  Widget _tabBody(BuildContext context) {
+    return switch (_tab) {
+      1 => OverduePage(
+          api: widget.api,
+          isAdmin: _isAdmin,
+          onAuthExpired: _signOut,
+          initialReport: _overdueCache,
+          onLoaded: (report) {
+            if (mounted) setState(() => _overdueCache = report);
+          },
+        ),
+      2 => _accountTab(context),
+      _ => _roomsTab(context),
+    };
   }
 
   Widget _roomsTab(BuildContext context) {
     return RefreshIndicator(
       onRefresh: () async {
         await _refresh(keepList: true);
-        await _loadSummary();
       },
       child: AnimatedSwitcher(
         duration: MotionDuration.slow,
@@ -934,41 +974,41 @@ class _RoomCard extends StatelessWidget {
     final theme = Theme.of(context);
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
         onTap: onOpen,
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [AppColors.primary, AppColors.primary.withValues(alpha: 0.7)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: const BorderRadius.only(
-                        topLeft: Radius.circular(20),
-                        bottomRight: Radius.circular(20),
-                      ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Ribbon sits flush against the card's top-left corner.
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [AppColors.primary, AppColors.primary.withValues(alpha: 0.7)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
                     ),
-                    child: Text(
-                      'Room ${room.roomNumber}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                      ),
+                    borderRadius: const BorderRadius.only(
+                      bottomRight: Radius.circular(20),
                     ),
                   ),
-                  Row(
+                  child: Text(
+                    'Room ${room.roomNumber}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                Padding(
+                  padding: const EdgeInsets.only(right: 14),
+                  child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
@@ -982,42 +1022,49 @@ Row(
                       StatusPill.room(room.status),
                     ],
                   ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              if (room.members.isEmpty)
-                Text('No active members.', style: theme.textTheme.bodySmall)
-              else
-                for (final m in room.members) ...[
-                  MemberRow(
-                    name: m.name,
-                    status: m.status,
-                    rent: m.rent,
-                    paid: m.paid,
-                    pending: m.pending,
-                    dueDate: m.dueDate,
-                  ),
-                  const SizedBox(height: 8),
-                ],
-              Row(
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: Text(
-                      room.paymentState.isEmpty || displayStatus(room.paymentState) == 'Due'
-                          ? 'Due ${inr(room.totalPending)}'
-                          : 'Due ${inr(room.totalPending)} · ${displayStatus(room.paymentState)}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w800, color: AppColors.danger),
-                    ),
+                  if (room.members.isEmpty)
+                    Text('No active members.', style: theme.textTheme.bodySmall)
+                  else
+                    for (final m in room.members) ...[
+                      MemberRow(
+                        name: m.name,
+                        status: m.status,
+                        rent: m.rent,
+                        paid: m.paid,
+                        pending: m.pending,
+                        dueDate: m.dueDate,
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          room.paymentState.isEmpty || displayStatus(room.paymentState) == 'Due'
+                              ? 'Due ${inr(room.totalPending)}'
+                              : 'Due ${inr(room.totalPending)} · ${displayStatus(room.paymentState)}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w800, color: AppColors.danger),
+                        ),
+                      ),
+                      const Icon(Icons.visibility_outlined,
+                          size: 20, color: AppColors.secondaryText),
+                    ],
                   ),
-                  const Icon(Icons.visibility_outlined,
-                      size: 20, color: AppColors.secondaryText),
                 ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -1138,6 +1185,137 @@ class _AddRoomDialogState extends State<_AddRoomDialog> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Bottom navigation with a sliding indicator pill and cross-fading icons,
+/// so switching tabs reads as one continuous motion.
+class _AnimatedBottomNavBar extends StatelessWidget {
+  const _AnimatedBottomNavBar({required this.index, required this.onSelected});
+
+  final int index;
+  final ValueChanged<int> onSelected;
+
+  static const _labels = <String>['Rooms', 'Overdue', 'Account'];
+  static const _icons = <(IconData, IconData)>[
+    (Icons.meeting_room_outlined, Icons.meeting_room),
+    (Icons.event_busy_outlined, Icons.event_busy),
+    (Icons.person_outline, Icons.person),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppColors.card,
+        border: Border(top: BorderSide(color: AppColors.border)),
+      ),
+      padding: EdgeInsets.only(top: 8, bottom: 8 + bottomInset),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          const pillWidth = 58.0;
+          const pillHeight = 30.0;
+          final slot = constraints.maxWidth / _labels.length;
+          return Stack(
+            alignment: Alignment.topCenter,
+            children: [
+              // Travels between slots instead of jumping, and lands exactly as
+              // the page content finishes sliding in.
+              AnimatedPositioned(
+                duration: MotionDuration.fast,
+                curve: MotionCurve.smoothOut,
+                top: 0,
+                left: slot * index + (slot - pillWidth) / 2,
+                width: pillWidth,
+                height: pillHeight,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+              ),
+              Row(
+                children: [
+                  for (var i = 0; i < _labels.length; i++)
+                    Expanded(
+                      child: _NavItem(
+                        icon: _icons[i].$1,
+                        selectedIcon: _icons[i].$2,
+                        label: _labels[i],
+                        selected: index == i,
+                        onTap: () => onSelected(i),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _NavItem extends StatelessWidget {
+  const _NavItem({
+    required this.icon,
+    required this.selectedIcon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final IconData selectedIcon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = selected ? AppColors.primary : AppColors.secondaryText;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            height: 30,
+            child: Center(
+              child: AnimatedSwitcher(
+                duration: MotionDuration.quick,
+                switchInCurve: MotionCurve.smoothOut,
+                switchOutCurve: MotionCurve.easeInOut,
+                transitionBuilder: (child, animation) => ScaleTransition(
+                  scale: animation,
+                  child: FadeTransition(opacity: animation, child: child),
+                ),
+                child: Icon(
+                  selected ? selectedIcon : icon,
+                  key: ValueKey(selected),
+                  size: 22,
+                  color: color,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 2),
+          AnimatedDefaultTextStyle(
+            duration: MotionDuration.quick,
+            curve: MotionCurve.smoothOut,
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+            ),
+            child: Text(label),
+          ),
+        ],
+      ),
     );
   }
 }
