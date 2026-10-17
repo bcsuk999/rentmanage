@@ -40,9 +40,8 @@ const memberSchema = new mongoose.Schema(
     vacatingDate: { type: Date },
     status: { type: String, enum: MEMBER_STATUSES, default: 'active' },
     notes: { type: String, trim: true, maxlength: 1000 },
-    createdAt: { type: Date, default: Date.now },
-    updatedAt: { type: Date, default: Date.now },
   },
+  // createdAt/updatedAt come from `timestamps` below.
   { timestamps: true }
 );
 

@@ -334,7 +334,6 @@ String _dateInput(DateTime d) =>
         memberName: _memberName(),
         roomNumber: _roomNumber,
         memberId: _memberId!,
-        date: _date,
         periodLabel: '${fmtDateIso(period.startIso)} – ${fmtDateIso(period.endIso)}',
         method: _method,
         reference: _reference.text.trim(),
@@ -691,7 +690,6 @@ class PaymentConfirmationData {
     required this.memberName,
     required this.roomNumber,
     required this.memberId,
-    required this.date,
     required this.periodLabel,
     required this.method,
     required this.reference,
@@ -701,7 +699,6 @@ class PaymentConfirmationData {
   final String memberName;
   final String roomNumber;
   final String memberId;
-  final DateTime date;
   final String periodLabel;
   final String method;
   final String reference;
@@ -749,8 +746,6 @@ class PaymentConfirmationScreen extends StatelessWidget {
                 child: Column(
                   children: [
                     _kv(context, 'Amount', inr(data.amount)),
-                    _kv(context, 'Date',
-                        '${data.date.day.toString().padLeft(2, '0')} ${_month(data.date.month)} ${data.date.year}'),
                     _kv(context, 'Member', data.memberName),
                     _kv(context, 'Room', data.roomNumber),
                     _kv(context, 'Rent Period', data.periodLabel),
@@ -784,9 +779,6 @@ class PaymentConfirmationScreen extends StatelessWidget {
       ),
     );
   }
-
-  static String _month(int m) =>
-      const ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m - 1];
 
   Widget _kv(BuildContext context, String label, String value) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 5),

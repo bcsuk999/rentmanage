@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
 import 'api.dart';
@@ -80,10 +78,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   bool _summaryLoading = true;
   OverdueReport? _overdueCache;
   final _search = TextEditingController();
-  Timer? _debounce;
 
   /// Separate guards for the two endpoints: changing the month must not
-  /// discard an in-flight room list, and typing must not discard the tiles.
+  /// discard an in-flight room list, and a new search must not discard the tiles.
   int _roomsRequestId = 0;
   int _summaryRequestId = 0;
 
@@ -92,14 +89,12 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   /// Month the summary tiles describe. The room list below is always the cycle
   /// running today, so this only steers the tiles.
   DateTime _period = DateTime(DateTime.now().year, DateTime.now().month);
-  String? _chip; // single-select chip; null = custom (from sheet) or none
-  String _statusFilter = 'All';
-  String _payFilter = 'All';
 
   /// Single-role system: every signed-in landlord has full access.
   bool get _isAdmin => true;
-  bool get _filtered =>
-      _search.text.trim().isNotEmpty || _statusFilter != 'All' || _payFilter != 'All';
+
+  /// True while the box holds a term, which is what narrows the list.
+  bool get _filtered => _search.text.trim().isNotEmpty;
 
   @override
   void initState() {
@@ -128,7 +123,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     _bandCurve.dispose();
     _tabBand.dispose();
     _search.dispose();
-    _debounce?.cancel();
     super.dispose();
   }
 
@@ -140,13 +134,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     setState(() => _prevTab = _tab);
   }
 
-  void _onSearchChanged(String value) {
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 400), () => _runSearch(value));
-  }
-
   /// Search fetch that keeps the current content on screen with an inline
-  /// loader, and ignores responses that a newer keystroke has superseded.
+  /// loader, and ignores responses that a newer search has superseded.
   /// Searching never touches the month tiles, so only the body is re-fetched.
   Future<void> _runSearch(String value) => _refreshList(keepList: true);
 
@@ -337,51 +326,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     setState(() => _period = DateTime(now.year, now.month));
     _clearSummary();
     _refreshSummary();
-  }
-
-  void _applyChip(String? chip) {
-    setState(() {
-      _chip = chip;
-      _statusFilter = 'All';
-      _payFilter = 'All';
-      switch (chip) {
-        case 'Occupied':
-          _statusFilter = 'Occupied';
-        case 'Vacant':
-          _statusFilter = 'Empty';
-        case 'Partial':
-          _payFilter = 'Partial';
-        case 'Overdue':
-          _payFilter = 'Overdue';
-        case 'Paid':
-          _payFilter = 'Fully Paid';
-        case 'Due':
-          _payFilter = 'Pending';
-      }
-    });
-    _runSearch(_search.text);
-  }
-
-  Future<void> _openFilters() async {
-    final result = await showModalBottomSheet<_RoomFilters>(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => _FilterSheet(
-        status: _statusFilter,
-        payment: _payFilter,
-      ),
-    );
-    if (result != null && mounted) {
-      setState(() {
-        _statusFilter = result.status;
-        _payFilter = result.payment;
-        _chip = result.chip;
-      });
-      _runSearch(_search.text);
-    }
   }
 
   Future<void> _useCached() async {
@@ -619,10 +563,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               _summaryGrid(context),
               const SizedBox(height: 12),
               _searchRow(context),
-              const SizedBox(height: 8),
-              _chipRow(context),
               if (_searching) ...[
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
                 const LinearProgressIndicator(),
               ],
               const SizedBox(height: 12),
@@ -683,14 +625,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                   onPressed: () => _movePeriod(1),
                 ),
               ],
-            ),
-            // The stepper only steers the tiles. The room cards below are always
-            // the cycle running today, so say that rather than leave the month
-            // label looking like it also filters the list.
-            Text(
-              'Totals for ${monthLabel(_period)} · cards show the current cycle',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall?.copyWith(color: AppColors.secondaryText),
             ),
           ],
         ),
@@ -780,9 +714,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         Expanded(
           child: TextField(
             controller: _search,
-            onChanged: _onSearchChanged,
             textInputAction: TextInputAction.search,
-            onSubmitted: (_) => _refresh(keepList: true),
+            // No request while typing: the magnifier button (or the keyboard's
+            // search key) is the trigger, so keystrokes no longer cost a round
+            // trip.
+            onSubmitted: (_) => _submitSearch(),
             decoration: InputDecoration(
               hintText: 'Search rooms or members...',
               prefixIcon: const Icon(Icons.search),
@@ -799,51 +735,17 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             ),
           ),
         ),
-        const SizedBox(width: 8),
-        IconButton(
-          tooltip: 'Filters',
-          icon: Badge(
-            isLabelVisible: _statusFilter != 'All' || _payFilter != 'All',
-            child: const Icon(Icons.tune_outlined),
-          ),
-          style: IconButton.styleFrom(
-            side: const BorderSide(color: AppColors.border),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-          onPressed: _openFilters,
-        ),
+        const SizedBox(width: 6),
+        _SearchButton(busy: _searching, onPressed: _submitSearch),
       ],
     );
   }
 
-  Widget _chipRow(BuildContext context) {
-    const chips = ['All', 'Occupied', 'Vacant', 'Partial', 'Overdue', 'Paid', 'Due'];
-    final selected = _chip ?? 'All';
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          for (final c in chips)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: FilterChip(
-                label: Text(c),
-                selected: selected == c,
-                onSelected: (_) => _applyChip(c == 'All' ? null : c),
-                selectedColor: AppColors.primary.withValues(alpha: 0.15),
-                checkmarkColor: AppColors.primary,
-                labelStyle: TextStyle(
-                  color: selected == c ? AppColors.primary : AppColors.secondaryText,
-                  fontWeight: selected == c ? FontWeight.w700 : FontWeight.w500,
-                ),
-                side: BorderSide(
-                  color: selected == c ? AppColors.primary : AppColors.border,
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
+  /// Fires the search for whatever is in the box right now. Nothing is sent
+  /// while typing - this (or the keyboard's search key) is the trigger.
+  void _submitSearch() {
+    FocusScope.of(context).unfocus();
+    _runSearch(_search.text);
   }
 
   /// Search results as one flat list, in the order the server sends them:
@@ -1090,128 +992,35 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   }
 }
 
-class _RoomFilters {
-  _RoomFilters({required this.status, required this.payment, required this.chip});
+/// Filled magnifier button to the right of the search box. The request runs
+/// when it is tapped, so typing alone never hits the network.
+class _SearchButton extends StatelessWidget {
+  const _SearchButton({required this.busy, required this.onPressed});
 
-  final String status;
-  final String payment;
-  final String? chip;
-}
-
-class _FilterSheet extends StatefulWidget {
-  const _FilterSheet({required this.status, required this.payment});
-
-  final String status;
-  final String payment;
-
-  @override
-  State<_FilterSheet> createState() => _FilterSheetState();
-}
-
-class _FilterSheetState extends State<_FilterSheet> {
-  late String _status;
-  late String _payment;
-
-  @override
-  void initState() {
-    super.initState();
-    _status = widget.status;
-    _payment = widget.payment;
-  }
+  final bool busy;
+  final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppColors.border,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: Text('Filters',
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w800)),
-                ),
-                TextButton(
-                  onPressed: () => setState(() {
-                    _status = 'All';
-                    _payment = 'All';
-                  }),
-                  child: const Text('Clear'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text('Room status',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleSmall
-                    ?.copyWith(fontWeight: FontWeight.w700)),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: [
-                for (final s in ['All', 'Occupied', 'Empty', 'Maintenance'])
-                  FilterChip(
-                    label: Text(s == 'Empty' ? 'Vacant' : s),
-                    selected: _status == s,
-                    onSelected: (_) => setState(() => _status = s),
+    return Material(
+      color: AppColors.primary,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: busy ? null : onPressed,
+        child: SizedBox(
+          height: 48,
+          width: 48,
+          child: busy
+              ? const Center(
+                  child: SizedBox(
+                    height: 18,
+                    width: 18,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white),
                   ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text('Payment status',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleSmall
-                    ?.copyWith(fontWeight: FontWeight.w700)),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: [
-                for (final entry in const [
-                  {'label': 'All', 'value': 'All'},
-                  {'label': 'Fully Paid', 'value': 'Fully Paid'},
-                  {'label': 'Partial', 'value': 'Partial'},
-                  {'label': 'Due', 'value': 'Pending'},
-                  {'label': 'Overdue', 'value': 'Overdue'},
-                ])
-                  FilterChip(
-                    label: Text(entry['label']!),
-                    selected: _payment == entry['value'],
-                    onSelected: (_) => setState(() => _payment = entry['value']!),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: () => Navigator.of(context).pop(_RoomFilters(
-                  status: _status,
-                  payment: _payment,
-                  chip: null,
-                )),
-                child: const Text('Apply'),
-              ),
-            ),
-          ],
+                )
+              : const Icon(Icons.search, color: Colors.white, size: 22),
         ),
       ),
     );

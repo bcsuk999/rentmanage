@@ -34,9 +34,8 @@ const roomSchema = new mongoose.Schema(
     },
     status: { type: String, enum: ROOM_STATUSES, default: 'Empty' },
     notes: { type: String, trim: true, maxlength: 1000 },
-    createdAt: { type: Date, default: Date.now },
-    updatedAt: { type: Date, default: Date.now },
   },
+  // createdAt/updatedAt come from `timestamps` below.
   { timestamps: true }
 );
 

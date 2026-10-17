@@ -55,9 +55,9 @@ const paymentSchema = new mongoose.Schema(
     },
     reference: { type: String, trim: true, maxlength: 120 },
     notes: { type: String, trim: true, maxlength: 500 },
-    createdAt: { type: Date, default: Date.now },
-    updatedAt: { type: Date, default: Date.now },
   },
+  // createdAt/updatedAt come from `timestamps` below. Declaring them by hand as
+  // well fought the plugin, so they are left to it.
   { timestamps: true }
 );
 

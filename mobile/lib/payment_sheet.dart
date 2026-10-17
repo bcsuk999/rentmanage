@@ -11,8 +11,6 @@ import 'widgets.dart';
 String _dateInput(DateTime d) =>
     '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
-String _pretty(DateTime d) => '${d.day}/${d.month}/${d.year}';
-
 /// Bottom sheet to record a payment against one rent period.
 /// Returns true when a payment was recorded.
 class PaymentSheet extends StatefulWidget {
@@ -184,12 +182,6 @@ class _PaymentSheetState extends State<PaymentSheet> {
             if (_amount.text.trim().isNotEmpty && _outstandingTotal > 0)
               _allocationPreview(context, theme),
             const SizedBox(height: 12),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Payment date'),
-              subtitle: Text(_pretty(_date)),
-              leading: const Icon(Icons.event_available_outlined),
-            ),
             DropdownButtonFormField<String>(
               initialValue: _method,
               decoration: const InputDecoration(labelText: 'Method'),

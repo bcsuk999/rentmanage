@@ -30,9 +30,8 @@ const rentPeriodSchema = new mongoose.Schema(
     status: { type: String, enum: RENT_STATUSES, default: 'Pending' },
     isClosed: { type: Boolean, default: false },
     closedAt: { type: Date },
-    createdAt: { type: Date, default: Date.now },
-    updatedAt: { type: Date, default: Date.now },
   },
+  // createdAt/updatedAt come from `timestamps` below.
   { timestamps: true }
 );
 
