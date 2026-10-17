@@ -29,21 +29,6 @@ router.get(
   })
 );
 
-router.get(
-  '/:id',
-  wrap(async (req, res) => {
-    try {
-      const detail = await memberService.memberDetail(req.params.id, req.user._id);
-      return res.json({
-        ...detail,
-        paymentsByPeriod: Object.fromEntries(detail.paymentsByPeriod || new Map()),
-      });
-    } catch (err) {
-      return sendApiError(res, err);
-    }
-  })
-);
-
 router.patch(
   '/:id',
   wrap(async (req, res) => {

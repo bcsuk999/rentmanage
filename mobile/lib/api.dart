@@ -494,7 +494,7 @@ class ApiClient {
 
   /// Full room details. Pass [from]/[to] ('YYYY-MM-DD') to view another month.
   Future<RoomDetail> roomDetail(String id, {String? from, String? to}) async {
-    final uri = Uri.parse('$baseUrl/api/rooms/$id').replace(
+    final uri = Uri.parse('$baseUrl/api/landlord/room/$id').replace(
       queryParameters: (from != null && to != null) ? {'from': from, 'to': to} : null,
     );
     final detailRes = await _get(uri);
@@ -627,7 +627,7 @@ class ApiClient {
 
   /// A member's rent periods (for choosing which obligation is being paid).
   Future<List<MemberPeriod>> memberPeriods(String memberId) async {
-    final res = await _get(Uri.parse('$baseUrl/api/members/$memberId'));
+    final res = await _get(Uri.parse('$baseUrl/api/landlord/member/$memberId'));
     if (res.statusCode != 200) _throw(res);
     final body = jsonDecode(res.body) as Map<String, dynamic>;
     final list = (body['periods'] as List? ?? []);
@@ -636,7 +636,7 @@ class ApiClient {
 
   /// Full member profile (info + periods + totals) for the Member Details page.
   Future<MemberProfile> memberProfile(String memberId) async {
-    final res = await _get(Uri.parse('$baseUrl/api/members/$memberId'));
+    final res = await _get(Uri.parse('$baseUrl/api/landlord/member/$memberId'));
     if (res.statusCode != 200) _throw(res);
     return MemberProfile.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
   }
