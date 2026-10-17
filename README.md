@@ -152,8 +152,8 @@ blocks compound text indexes). No `name: 'text'` remains.
 server.js                  Express app, session, routes, role guards, error handling
 src/config/db.js           Mongoose connection + index sync
 src/models/                Room, Member, RentPeriod, Payment, Admin (+ indexes)
-src/services/              rentService, roomService, memberService, paymentService, reportService, adminService
-src/routes/                auth, public, rooms, members, rentPeriods, payments, reports, settings
+src/services/              rentService, roomService, memberService, paymentService, dashboardService, adminService
+src/routes/                auth, public, landlord, rooms, members, rentPeriods, payments, settings
 src/middleware/auth.js     session guards, role guards, password rules
 src/utils/                 dates, money formatting, validation, Aadhaar masking
 src/views/                 EJS views (layout, partials, one folder per module)

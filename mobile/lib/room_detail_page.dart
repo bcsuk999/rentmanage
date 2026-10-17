@@ -30,18 +30,55 @@ class RoomDetailPage extends StatefulWidget {
 }
 
 class _RoomDetailPageState extends State<RoomDetailPage> {
-  late Future<RoomDetail> _future;
+  /// Last known detail. Held here instead of in a FutureBuilder so a refresh
+  /// swaps the data in place instead of throwing the page back to a skeleton.
+  RoomDetail? _detail;
+  bool _loading = true;
+  String? _error;
+  bool _inFlight = false;
 
   @override
   void initState() {
     super.initState();
-    _future = widget.api.roomDetail(widget.roomId);
+    _load();
   }
 
-  Future<void> _refresh() async {
-    final detail = await widget.api.roomDetail(widget.roomId);
-    if (mounted) setState(() => _future = Future.value(detail));
+  /// [soft] keeps the current detail on screen: no skeleton, no spinner, the
+  /// new numbers simply replace the old ones when they arrive.
+  Future<void> _load({bool soft = false}) async {
+    if (_inFlight) return;
+    _inFlight = true;
+    if (!soft && mounted) {
+      setState(() => _loading = true);
+    }
+    try {
+      final detail = await widget.api.roomDetail(widget.roomId);
+      if (!mounted) return;
+      setState(() {
+        _detail = detail;
+        _loading = false;
+        _error = null;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        if (_detail == null) _error = e.message;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        if (_detail == null) {
+          _error = 'Unable to load the latest data. Check your internet connection and try again.';
+        }
+      });
+    } finally {
+      _inFlight = false;
+    }
   }
+
+  Future<void> _refresh() => _load(soft: _detail != null);
 
   Future<void> _openAddMember() async {
     final created = await Navigator.of(context).push<bool>(
@@ -203,39 +240,35 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
         ),
       ),
     );
-    if (mounted) setState(() => _future = widget.api.roomDetail(widget.roomId));
+    await _refresh();
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<RoomDetail>(
-      future: _future,
-      builder: (context, snapshot) {
-        final detail = snapshot.data;
-        return Scaffold(
-          appBar: AppBar(
-            leading: const BackButton(),
-            centerTitle: true,
-            title: const Text('Room Details'),
-            actions: [
-              if (detail != null)
-                IconButton(
-                  tooltip: 'Edit room',
-                  icon: const Icon(Icons.edit_outlined),
-                  onPressed: () => _showEditRoomDialog(detail),
-                ),
-              const SizedBox(width: 4),
-            ],
-          ),
-          body: _body(context, snapshot),
-          bottomNavigationBar: detail == null ? null : _bottomActions(context, detail),
-        );
-      },
+    final detail = _detail;
+    return Scaffold(
+      appBar: AppBar(
+        leading: const BackButton(),
+        centerTitle: true,
+        title: const Text('Room Details'),
+        actions: [
+          if (detail != null)
+            IconButton(
+              tooltip: 'Edit room',
+              icon: const Icon(Icons.edit_outlined),
+              onPressed: () => _showEditRoomDialog(detail),
+            ),
+          const SizedBox(width: 4),
+        ],
+      ),
+      body: _body(context),
+      bottomNavigationBar: detail == null ? null : _bottomActions(context, detail),
     );
   }
 
-  Widget _body(BuildContext context, AsyncSnapshot<RoomDetail> snapshot) {
-    if (snapshot.connectionState == ConnectionState.waiting) {
+  Widget _body(BuildContext context) {
+    // Skeleton only while there is nothing to show yet.
+    if (_loading && _detail == null) {
       return ListView(
         padding: const EdgeInsets.all(16),
         children: const [
@@ -247,15 +280,13 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
         ],
       );
     }
-    if (snapshot.hasError) {
-      final message = snapshot.error is ApiException
-          ? (snapshot.error as ApiException).message
-          : 'Unable to load the latest data. Check your internet connection and try again.';
+    final error = _error;
+    if (error != null && _detail == null) {
       return ListView(
-        children: [ErrorPanel(message: message, onRetry: _refresh)],
+        children: [ErrorPanel(message: error, onRetry: () => _load())],
       );
     }
-    final detail = snapshot.data!;
+    final detail = _detail!;
     return RefreshIndicator(
       onRefresh: _refresh,
       child: ListView(

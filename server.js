@@ -12,7 +12,7 @@ const roomRoutes = require('./src/routes/rooms');
 const memberRoutes = require('./src/routes/members');
 const rentRoutes = require('./src/routes/rentPeriods');
 const paymentRoutes = require('./src/routes/payments');
-const reportRoutes = require('./src/routes/reports');
+const landlordRoutes = require('./src/routes/landlord');
 const overdueRoutes = require('./src/routes/overdue');
 const settingsRoutes = require('./src/routes/settings');
 const { ensureAdminFromEnv, ensureLandlordFromEnv } = require('./src/services/landlordService');
@@ -45,11 +45,11 @@ app.get('/health', (req, res) => {
 });
 
 app.use('/api/auth', authRoutes);
+app.use('/api/landlord', requireAuth, landlordRoutes);
 app.use('/api/rooms', requireAuth, roomRoutes);
 app.use('/api/members', requireAuth, memberRoutes);
 app.use('/api/rent-periods', requireAuth, rentRoutes);
 app.use('/api/payments', requireAuth, paymentRoutes);
-app.use('/api/reports', requireAuth, reportRoutes);
 app.use('/api/overdue', requireAuth, overdueRoutes);
 app.use('/api/settings', requireAuth, settingsRoutes);
 

@@ -55,9 +55,6 @@ class MotionDistance {
   static const base = 8.0;
   static const medium = 12.0;
   static const large = 30.0;
-
-  /// Fraction of the viewport width a tab/page slides sideways.
-  static const pageSlide = 0.28;
 }
 
 class MotionScale {

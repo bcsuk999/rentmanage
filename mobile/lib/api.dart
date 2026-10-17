@@ -26,7 +26,24 @@ class ApiException implements Exception {
   String toString() => message;
 }
 
-/// One member's current-cycle rent snapshot inside a room card.
+/// Unpaid rent carried over from cycles that have already ended.
+class MemberOverdue {
+  MemberOverdue({required this.period, required this.amount});
+
+  /// Human label for the lapsed span, e.g. '12 Sep to 11 Oct'.
+  final String period;
+  final double amount;
+
+  factory MemberOverdue.fromJson(Map<String, dynamic> json) {
+    double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
+    return MemberOverdue(period: '${json['period']}', amount: asDouble(json['amt']));
+  }
+
+  Map<String, dynamic> toJson() => {'period': period, 'amt': amount};
+}
+
+/// A member of a room, with their own details and the rent snapshot for the
+/// cycle running today.
 class RoomMember {
   RoomMember({
     required this.id,
@@ -35,6 +52,12 @@ class RoomMember {
     required this.paid,
     required this.pending,
     required this.status,
+    required this.mobile,
+    this.aadhaarNumber = '',
+    this.monthlyRent = 0,
+    this.rentStartDate,
+    this.joiningDate,
+    this.overdue,
     this.dueDate,
   });
 
@@ -45,6 +68,16 @@ class RoomMember {
   final double pending;
   final String status;
 
+  final String mobile;
+  final String aadhaarNumber;
+  final double monthlyRent;
+  final DateTime? rentStartDate;
+  final DateTime? joiningDate;
+
+  /// Rent still unpaid from cycles that already ended, or null when there is
+  /// none. Separate from [pending], which is only the running cycle.
+  final MemberOverdue? overdue;
+
   /// End of the member's current rent cycle (null when the backend predates it).
   final DateTime? dueDate;
 
@@ -53,6 +86,7 @@ class RoomMember {
 
   factory RoomMember.fromJson(Map<String, dynamic> json) {
     double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
+    final rawOverdue = json['overdue'];
     return RoomMember(
       id: '${json['id']}',
       name: '${json['name']}',
@@ -60,6 +94,16 @@ class RoomMember {
       paid: asDouble(json['paid']),
       pending: asDouble(json['pending']),
       status: '${json['status']}',
+      mobile: '${json['mobile'] ?? ''}',
+      aadhaarNumber: '${json['aadhaarNumber'] ?? ''}',
+      monthlyRent: asDouble(json['monthlyRent']),
+      rentStartDate:
+          json['rentStartDate'] == null ? null : DateTime.tryParse('${json['rentStartDate']}'),
+      joiningDate:
+          json['joiningDate'] == null ? null : DateTime.tryParse('${json['joiningDate']}'),
+      overdue: rawOverdue is Map
+          ? MemberOverdue.fromJson(rawOverdue.cast<String, dynamic>())
+          : null,
       dueDate: json['dueDate'] == null ? null : DateTime.tryParse('${json['dueDate']}'),
     );
   }
@@ -71,6 +115,12 @@ class RoomMember {
         'paid': paid,
         'pending': pending,
         'status': status,
+        'mobile': mobile,
+        'aadhaarNumber': aadhaarNumber,
+        'monthlyRent': monthlyRent,
+        if (rentStartDate != null) 'rentStartDate': rentStartDate!.toIso8601String(),
+        if (joiningDate != null) 'joiningDate': joiningDate!.toIso8601String(),
+        if (overdue != null) 'overdue': overdue!.toJson(),
         if (dueDate != null) 'dueDate': dueDate!.toIso8601String(),
       };
 }
@@ -377,37 +427,26 @@ class ApiClient {
     return (body['user'] as Map).cast<String, dynamic>();
   }
 
-  /// Room list. [search] matches room numbers and member name/mobile;
-  /// [status] is a room status (Occupied/Empty/Maintenance), [paymentState]
-  /// is Fully Paid/Partial/Pending/Overdue. 'All'/empty means no filter.
-  /// [from]/[to] ('YYYY-MM-DD') scope every snapshot to that rental range
-  /// instead of the current cycle. The plain current-month list is cached
-  /// on-device for offline-first startup.
-  Future<List<Room>> rooms(
-          {String? search, String? status, String? paymentState, String? from, String? to}) async =>
-      (await roomsWithSummary(
-              search: search, status: status, paymentState: paymentState, from: from, to: to))
-          .rooms;
-
-  /// Same call as [rooms] but also returns the summary block, which carries the
-  /// cash figures the reports endpoint used to supply - one request per month.
-  Future<RoomsPage> roomsWithSummary(
-      {String? search, String? status, String? paymentState, String? from, String? to}) async {
-    final q = (search ?? '').trim();
+  /// Every room with its members, on the rent cycle running today. [status] is a
+  /// room status (Occupied/Empty/Maintenance), [paymentState] is
+  /// Fully Paid/Partial/Pending/Overdue. 'All'/empty means no filter.
+  ///
+  /// There is no text filter here: finding a room or member by name or number is
+  /// [search]'s job, and historical figures come from [landlordSummary].
+  ///
+  /// The unfiltered list is cached on-device for offline-first startup.
+  Future<List<Room>> rooms({String? status, String? paymentState}) async {
     final params = <String, String>{};
-    if (q.isNotEmpty) params['search'] = q;
     if (status != null && status != 'All') params['status'] = status;
     if (paymentState != null && paymentState != 'All') params['paymentState'] = paymentState;
-    if (from != null && from.isNotEmpty) params['from'] = from;
-    if (to != null && to.isNotEmpty) params['to'] = to;
-    final uri =
-        Uri.parse('$baseUrl/api/rooms').replace(queryParameters: params.isEmpty ? null : params);
+    final uri = Uri.parse('$baseUrl/api/landlord/rooms')
+        .replace(queryParameters: params.isEmpty ? null : params);
     final res = await _get(uri);
     if (res.statusCode != 200) _throw(res);
     final body = jsonDecode(res.body) as Map<String, dynamic>;
     final list = (body['rooms'] as List? ?? []);
     final rooms = list.map((e) => Room.fromJson((e as Map).cast<String, dynamic>())).toList();
-    if (_isCacheable(search: q, status: status, paymentState: paymentState, from: from, to: to)) {
+    if (_isCacheable(status: status, paymentState: paymentState)) {
       // Best-effort cache; never fail the request because of storage.
       try {
         await SessionCache.saveRooms(rooms);
@@ -415,34 +454,42 @@ class ApiClient {
         // ignore cache write failures
       }
     }
-    final summary = (body['summary'] as Map? ?? {}).cast<String, dynamic>();
-    return RoomsPage(
-      rooms: rooms,
-      totals: ReportTotals.fromJson({
-        'totals': summary,
-        'filters': {
-          'from': '${summary['cashFrom'] ?? from ?? ''}',
-          'to': '${summary['cashTo'] ?? to ?? ''}',
-        },
-      }),
-    );
+    return rooms;
   }
 
-  /// Only the default current-month list is cached: filtered or historical
-  /// months always come fresh from the server.
-  bool _isCacheable(
-      {required String search, String? status, String? paymentState, String? from, String? to}) {
-    if (search.isNotEmpty) return false;
+  /// Portfolio totals for one period. Pass [from]/[to] ('YYYY-MM-DD'); both or
+  /// neither, and with neither the server reports the current calendar month.
+  Future<LandlordSummary> landlordSummary({String? from, String? to}) async {
+    final params = <String, String>{};
+    if (from != null && from.isNotEmpty) params['from'] = from;
+    if (to != null && to.isNotEmpty) params['to'] = to;
+    final uri = Uri.parse('$baseUrl/api/landlord/summary')
+        .replace(queryParameters: params.isEmpty ? null : params);
+    final res = await _get(uri);
+    if (res.statusCode != 200) _throw(res);
+    return LandlordSummary.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+  }
+
+  /// Find rooms and members by one term, with no period: every hit carries
+  /// whatever is current today. Matches room number (prefix), room notes, and
+  /// member name / mobile / aadhaar. Rooms come first in the list, then members.
+  /// [limit] caps each kind and sets [SearchResults.truncated] when hits drop.
+  Future<SearchResults> search(String term, {int? limit}) async {
+    final q = term.trim();
+    final params = <String, String>{'search': q};
+    if (limit != null) params['limit'] = '$limit';
+    final uri = Uri.parse('$baseUrl/api/landlord/search').replace(queryParameters: params);
+    final res = await _get(uri);
+    if (res.statusCode != 200) _throw(res);
+    return SearchResults.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+  }
+
+  /// Only the unfiltered list is cached: a filtered list always comes fresh
+  /// from the server.
+  bool _isCacheable({String? status, String? paymentState}) {
     if (status != null && status != 'All') return false;
     if (paymentState != null && paymentState != 'All') return false;
-    if ((from == null) != (to == null)) return false;
-    if (from == null) return true;
-    final now = DateTime.now();
-    final first = DateTime(now.year, now.month, 1);
-    final last = DateTime(now.year, now.month + 1, 0);
-    String day(DateTime d) =>
-        '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-    return from == day(first) && to == day(last);
+    return true;
   }
 
   /// Full room details. Pass [from]/[to] ('YYYY-MM-DD') to view another month.
@@ -555,21 +602,6 @@ class ApiClient {
     final res = await _get(Uri.parse('$baseUrl/api/overdue'));
     if (res.statusCode != 200) _throw(res);
     return OverdueReport.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
-  }
-
-  /// Totals for a date range, including the per-room and per-member breakdown.
-  /// The home month tiles no longer need this - they read [roomsWithSummary]
-  /// instead - so this is only for a report screen.
-  Future<ReportTotals> report({String? from, String? to, String? roomId}) async {
-    final params = <String, String>{};
-    if (from != null) params['from'] = from;
-    if (to != null) params['to'] = to;
-    if (roomId != null && roomId.isNotEmpty) params['roomId'] = roomId;
-    final uri =
-        Uri.parse('$baseUrl/api/reports').replace(queryParameters: params.isEmpty ? null : params);
-    final res = await _get(uri);
-    if (res.statusCode != 200) _throw(res);
-    return ReportTotals.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
   }
 
   /// Paged payment history. Filters mirror the backend query params.
@@ -717,61 +749,285 @@ class OverdueReport {
   }
 }
 
-/// Reporting totals backing the Rooms summary cards.
-/// Rooms plus the month totals the server returns alongside them.
-class RoomsPage {
-  RoomsPage({required this.rooms, required this.totals});
+/// One search hit. Rooms and members arrive in the same list, so [type] is
+/// what tells them apart; [matchedOn] names the field that matched.
+sealed class SearchHit {
+  const SearchHit({required this.matchedOn});
 
-  final List<Room> rooms;
-  final ReportTotals totals;
+  /// 'roomNumber', 'notes', 'name', 'mobile' or 'aadhaarNumber'.
+  final String matchedOn;
 }
 
-class ReportTotals {
-  ReportTotals({
-    required this.totalRent,
-    required this.totalPaid,
-    required this.totalPending,
-    required this.overduePending,
-    required this.receivedInRange,
-    required this.totalRooms,
-    required this.totalMembers,
-    required this.from,
-    required this.to,
+/// A room whose number or notes matched.
+class SearchRoomHit extends SearchHit {
+  const SearchRoomHit({
+    required super.matchedOn,
+    required this.id,
+    required this.roomNumber,
+    required this.status,
+    required this.capacity,
+    required this.memberCount,
+    required this.members,
+    this.notes,
   });
 
-  final double totalRent;
-  final double totalPaid;
-  final double totalPending;
-  final double overduePending;
-  final double receivedInRange;
-  final int totalRooms;
-  final int totalMembers;
+  final String id;
+  final String roomNumber;
+  final String status;
+  final int capacity;
+  final String? notes;
+  final int memberCount;
+
+  /// Just enough to recognise who is in there; a room hit carries no rent
+  /// figures, so open the room for those.
+  final List<SearchRoomMember> members;
+
+  factory SearchRoomHit.fromJson(Map<String, dynamic> json) {
+    int asInt(dynamic v) => v is int ? v : int.tryParse('$v') ?? 0;
+    final members = (json['members'] as List? ?? [])
+        .map((e) => SearchRoomMember.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+    return SearchRoomHit(
+      matchedOn: '${json['matchedOn'] ?? ''}',
+      id: '${json['_id']}',
+      roomNumber: '${json['roomNumber']}',
+      status: '${json['status']}',
+      capacity: asInt(json['capacity']),
+      memberCount: asInt(json['memberCount']),
+      notes: json['notes'] == null ? null : '${json['notes']}',
+      members: members,
+    );
+  }
+}
+
+/// Who lives in a room hit.
+class SearchRoomMember {
+  SearchRoomMember({
+    required this.id,
+    required this.name,
+    required this.mobile,
+    required this.status,
+  });
+
+  final String id;
+  final String name;
+  final String mobile;
+
+  /// 'active' or 'inactive'.
+  final String status;
+
+  factory SearchRoomMember.fromJson(Map<String, dynamic> json) => SearchRoomMember(
+        id: '${json['id']}',
+        name: '${json['name']}',
+        mobile: '${json['mobile'] ?? ''}',
+        status: '${json['status'] ?? 'active'}',
+      );
+}
+
+/// A member whose name, mobile or aadhaar matched.
+class SearchMemberHit extends SearchHit {
+  const SearchMemberHit({
+    required super.matchedOn,
+    required this.id,
+    required this.name,
+    required this.mobile,
+    required this.aadhaarNumber,
+    required this.monthlyRent,
+    required this.status,
+    this.roomId,
+    this.roomNumber,
+    this.roomStatus,
+    this.rent = 0,
+    this.paid = 0,
+    this.pending = 0,
+    this.cycleStatus = 'No period',
+    this.dueDate,
+    this.vacatingDate,
+    this.overdue,
+  });
+
+  final String id;
+  final String name;
+  final String mobile;
+  final String aadhaarNumber;
+  final double monthlyRent;
+
+  /// 'active' or 'inactive'. Vacated members are still searchable.
+  final String status;
+
+  /// Null only if the member's room was deleted out from under them.
+  final String? roomId;
+  final String? roomNumber;
+  final String? roomStatus;
+
+  /// Rent snapshot for the cycle running today. A vacated member has none, so
+  /// these stay 0 and [cycleStatus] reads 'No period'.
+  final double rent;
+  final double paid;
+  final double pending;
+  final String cycleStatus;
+  final DateTime? dueDate;
+
+  /// When they vacated, so the caller can label an inactive hit.
+  final DateTime? vacatingDate;
+
+  /// Unpaid rent from cycles that already ended.
+  final MemberOverdue? overdue;
+
+  /// True for someone who has left, whose figures are history not dues.
+  bool get isVacated => status == 'inactive';
+
+  /// 0..1 fraction of rent collected. Safe when rent is 0.
+  double get progress => rent <= 0 ? 0 : (paid / rent).clamp(0.0, 1.0);
+
+  factory SearchMemberHit.fromJson(Map<String, dynamic> json) {
+    double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
+    final cycle = (json['currentCycle'] as Map?)?.cast<String, dynamic>();
+    final room = (json['room'] as Map?)?.cast<String, dynamic>();
+    final overdue = (json['overdue'] as Map?)?.cast<String, dynamic>();
+    return SearchMemberHit(
+      matchedOn: '${json['matchedOn'] ?? ''}',
+      id: '${json['id']}',
+      name: '${json['name']}',
+      mobile: '${json['mobile'] ?? ''}',
+      aadhaarNumber: '${json['aadhaarNumber'] ?? ''}',
+      monthlyRent: asDouble(json['monthlyRent']),
+      status: '${json['status'] ?? 'active'}',
+      roomId: room == null ? null : '${room['_id']}',
+      roomNumber: room == null ? null : '${room['roomNumber']}',
+      roomStatus: room == null ? null : '${room['status']}',
+      rent: asDouble(cycle?['rent']),
+      paid: asDouble(cycle?['paid']),
+      pending: asDouble(cycle?['pending']),
+      cycleStatus: cycle == null ? 'No period' : '${cycle['status']}',
+      dueDate: cycle == null || cycle['dueDate'] == null
+          ? null
+          : DateTime.tryParse('${cycle['dueDate']}'),
+      vacatingDate: json['vacatingDate'] == null
+          ? null
+          : DateTime.tryParse('${json['vacatingDate']}'),
+      overdue: overdue == null ? null : MemberOverdue.fromJson(overdue),
+    );
+  }
+}
+
+/// The response of /api/landlord/search: one flat list of hits, rooms first.
+class SearchResults {
+  SearchResults({
+    required this.query,
+    required this.results,
+    required this.roomCount,
+    required this.memberCount,
+    required this.truncated,
+  });
+
+  final String query;
+  final List<SearchHit> results;
+
+  /// True totals, so they stay right even when [results] was capped.
+  final int roomCount;
+  final int memberCount;
+
+  /// True when hits were dropped by the limit, so the caller can say so.
+  final bool truncated;
+
+  int get total => roomCount + memberCount;
+
+  factory SearchResults.fromJson(Map<String, dynamic> json) {
+    int asInt(dynamic v) => v is int ? v : int.tryParse('$v') ?? 0;
+    final hits = (json['results'] as List? ?? []).map((e) {
+      final map = (e as Map).cast<String, dynamic>();
+      return switch ('${map['type']}') {
+        'room' => SearchRoomHit.fromJson(map),
+        _ => SearchMemberHit.fromJson(map),
+      };
+    }).toList();
+    return SearchResults(
+      query: '${json['query'] ?? ''}',
+      results: hits,
+      roomCount: asInt(json['roomCount']),
+      memberCount: asInt(json['memberCount']),
+      truncated: json['truncated'] == true,
+    );
+  }
+}
+
+/// Portfolio totals for one period, as returned by /api/landlord/summary.
+///
+/// Rent figures cover one cycle per member - the one running in the reported
+/// period - so a member whose cycle straddles the month boundary is counted
+/// once. Outstanding money is split by whether the cycle has started, so a
+/// cycle that has not begun yet (next month's rent) is never counted as due.
+class LandlordSummary {
+  LandlordSummary({
+    required this.from,
+    required this.to,
+    required this.totalRent,
+    required this.collected,
+    required this.due,
+    required this.overdue,
+    required this.expense,
+    required this.totalRooms,
+    required this.totalMembers,
+    required this.notYetDue,
+    required this.receivedInRange,
+    required this.paymentCount,
+  });
+
+  /// The period these figures describe, as 'YYYY-MM-DD'.
   final String from;
   final String to;
 
-  /// Outstanding rent that is not yet past its due date (current cycle).
-  double get duePending {
-    final due = totalPending - overduePending;
-    return due < 0 ? 0 : due;
-  }
+  /// Rent owed for this period.
+  final double totalRent;
 
-  factory ReportTotals.fromJson(Map<String, dynamic> json) {
+  /// Rent of this period that has been paid.
+  final double collected;
+
+  /// Unpaid rent on a cycle that has already started - owed now.
+  final double due;
+
+  /// Unpaid rent from cycles that already ended, carried over from earlier
+  /// months. Separate from [due] because it is not this period's rent.
+  final double overdue;
+
+  /// Expenses booked in this period. Always 0 until expense tracking exists.
+  final double expense;
+
+  final int totalRooms;
+  final int totalMembers;
+
+  /// Unpaid rent on a cycle that has not started yet. Reported so [totalRent]
+  /// reconciles; deliberately not part of [due].
+  final double notYetDue;
+
+  /// Cash received during the period, which is not the same as [collected]
+  /// when someone pays an older cycle this month.
+  final double receivedInRange;
+  final int paymentCount;
+
+  /// Everything still outstanding for this period: due plus rent not yet owed.
+  double get outstanding => due + notYetDue;
+
+  /// Collection progress for this period, 0..1. Safe when rent is 0.
+  double get collectedFraction => totalRent <= 0 ? 0 : (collected / totalRent).clamp(0.0, 1.0);
+
+  factory LandlordSummary.fromJson(Map<String, dynamic> json) {
     double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
     int asInt(dynamic v) => v is int ? v : int.tryParse('$v') ?? 0;
-    // Route wraps buildReport() as { report: { totals, ... }, filters }.
-    final report = (json['report'] as Map? ?? json).cast<String, dynamic>();
-    final totals = (report['totals'] as Map? ?? {}).cast<String, dynamic>();
-    final filters = (json['filters'] as Map? ?? {}).cast<String, dynamic>();
-    return ReportTotals(
-      totalRent: asDouble(totals['totalRent']),
-      totalPaid: asDouble(totals['totalPaid']),
-      totalPending: asDouble(totals['totalPending']),
-      overduePending: asDouble(totals['overduePending']),
-      receivedInRange: asDouble(totals['receivedInRange']),
-      totalRooms: asInt(totals['totalRooms']),
-      totalMembers: asInt(totals['totalMembers']),
-      from: '${filters['from'] ?? ''}',
-      to: '${filters['to'] ?? ''}',
+    return LandlordSummary(
+      from: '${json['from'] ?? ''}',
+      to: '${json['to'] ?? ''}',
+      totalRent: asDouble(json['totalRent']),
+      collected: asDouble(json['collected']),
+      due: asDouble(json['due']),
+      overdue: asDouble(json['overdue']),
+      expense: asDouble(json['expense']),
+      totalRooms: asInt(json['totalRooms']),
+      totalMembers: asInt(json['totalMembers']),
+      notYetDue: asDouble(json['notYetDue']),
+      receivedInRange: asDouble(json['receivedInRange']),
+      paymentCount: asInt(json['paymentCount']),
     );
   }
 }
@@ -914,6 +1170,7 @@ class MemberPeriod {
     required this.paid,
     required this.pending,
     required this.status,
+    this.isClosed = false,
   });
 
   final String id;
@@ -923,6 +1180,10 @@ class MemberPeriod {
   final double paid;
   final double pending;
   final String status;
+
+  /// A closed cycle cannot accept payments, so it never appears in the
+  /// allocation waterfall.
+  final bool isClosed;
 
   factory MemberPeriod.fromJson(Map<String, dynamic> json) {
     double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
@@ -934,6 +1195,7 @@ class MemberPeriod {
       paid: asDouble(json['paidAmount']),
       pending: asDouble(json['pendingAmount']),
       status: '${json['status']}',
+      isClosed: json['isClosed'] == true,
     );
   }
 }

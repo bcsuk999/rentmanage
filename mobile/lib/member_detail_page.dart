@@ -4,6 +4,7 @@ import 'api.dart';
 import 'app_theme.dart';
 import 'member_form_page.dart';
 import 'motion.dart';
+import 'payment_allocation.dart';
 import 'payment_history_page.dart';
 import 'payment_sheet.dart';
 import 'status_colors.dart';
@@ -29,17 +30,57 @@ class MemberDetailPage extends StatefulWidget {
 }
 
 class _MemberDetailPageState extends State<MemberDetailPage> {
-  late Future<MemberProfile> _future;
+  /// Last known profile, kept out of a FutureBuilder so a reload swaps the data
+  /// in place instead of flashing the skeleton over content we already have.
+  MemberProfile? _profile;
+  bool _loading = true;
+  String? _error;
+  bool _inFlight = false;
 
   @override
   void initState() {
     super.initState();
-    _future = widget.api.memberProfile(widget.memberId);
+    _load();
   }
 
-  void _reload() {
-    setState(() => _future = widget.api.memberProfile(widget.memberId));
+  /// [soft] keeps the current profile on screen: no skeleton, just a quiet
+  /// background refresh that replaces the numbers when it lands.
+  Future<void> _load({bool soft = false}) async {
+    if (_inFlight) return;
+    _inFlight = true;
+    if (!soft && mounted) {
+      setState(() => _loading = true);
+    }
+    try {
+      final profile = await widget.api.memberProfile(widget.memberId);
+      if (!mounted) return;
+      setState(() {
+        _profile = profile;
+        _loading = false;
+        _error = null;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        if (_profile == null) _error = e.message;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        if (_profile == null) {
+          _error = 'Unable to load the latest data. Check your internet connection and try again.';
+        }
+      });
+    } finally {
+      _inFlight = false;
+    }
   }
+
+  void _reload() => _load(soft: _profile != null);
+
+  Future<void> _refresh() => _load(soft: _profile != null);
 
   Future<void> _edit(MemberProfile profile) async {
     final updated = await Navigator.of(context).push<bool>(
@@ -70,16 +111,18 @@ class _MemberDetailPageState extends State<MemberDetailPage> {
       );
       return;
     }
-    final totalOverdue = profile.overdue;
-    final totalCurrentDue = profile.outstanding - profile.overdue;
+    // Same waterfall the Overdue screen shows, so both entry points into the
+    // sheet preview the allocation the same way.
+    final cycles = buildAllocationOrder(profile.periods, period.id);
     final recorded = await showPaymentSheet(
       context,
       api: widget.api,
       rentPeriodId: period.id,
       memberName: profile.name,
       pending: period.pending,
-      totalOverdue: totalOverdue,
-      totalCurrentDue: totalCurrentDue,
+      totalOverdue: overdueTotal(cycles),
+      totalCurrentDue: currentTotal(cycles),
+      cycles: cycles,
       periodStart: DateTime.tryParse(period.startIso),
       periodEnd: DateTime.tryParse(period.endIso),
     );
@@ -94,62 +137,60 @@ class _MemberDetailPageState extends State<MemberDetailPage> {
         centerTitle: true,
         title: const Text('Member Details'),
       ),
-      body: FutureBuilder<MemberProfile>(
-        future: _future,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return ListView(
-              padding: const EdgeInsets.all(16),
-              children: const [
-                SkeletonBlock(height: 90),
-                SizedBox(height: 12),
-                SkeletonBlock(height: 220),
-                SizedBox(height: 12),
-                SkeletonBlock(height: 150),
-              ],
-            );
-          }
-          if (snapshot.hasError) {
-            final message = snapshot.error is ApiException
-                ? (snapshot.error as ApiException).message
-                : 'Unable to load the latest data. Check your internet connection and try again.';
-            return ListView(children: [ErrorPanel(message: message, onRetry: _reload)]);
-          }
-          final profile = snapshot.data!;
-          return RefreshIndicator(
-            onRefresh: () async => _reload(),
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-              children: [
-                Reveal(child: _profileCard(profile)),
-                const SizedBox(height: 12),
-                Reveal(
-                  delay: MotionDuration.stagger,
-                  child: _infoCard(context, profile),
-                ),
-                const SizedBox(height: 12),
-                Reveal(
-                  delay: MotionDuration.stagger * 2,
-                  child: _actions(context, profile),
-                ),
-                const SizedBox(height: 18),
-                Text('Payment records',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleSmall
-                        ?.copyWith(fontWeight: FontWeight.w800)),
-                const SizedBox(height: 8),
-                PaymentHistoryList(
-                  api: widget.api,
-                  isAdmin: true,
-                  memberId: widget.memberId,
-                  memberName: profile.name,
-                  embedded: true,
-                ),
-              ],
-            ),
-          );
-        },
+      body: _body(context),
+    );
+  }
+
+  Widget _body(BuildContext context) {
+    // Skeleton only while there is nothing to show yet.
+    if (_loading && _profile == null) {
+      return ListView(
+        padding: const EdgeInsets.all(16),
+        children: const [
+          SkeletonBlock(height: 90),
+          SizedBox(height: 12),
+          SkeletonBlock(height: 220),
+          SizedBox(height: 12),
+          SkeletonBlock(height: 150),
+        ],
+      );
+    }
+    final error = _error;
+    if (error != null && _profile == null) {
+      return ListView(children: [ErrorPanel(message: error, onRetry: () => _load())]);
+    }
+    final profile = _profile!;
+    return RefreshIndicator(
+      onRefresh: _refresh,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+        children: [
+          Reveal(child: _profileCard(profile)),
+          const SizedBox(height: 12),
+          Reveal(
+            delay: MotionDuration.stagger,
+            child: _infoCard(context, profile),
+          ),
+          const SizedBox(height: 12),
+          Reveal(
+            delay: MotionDuration.stagger * 2,
+            child: _actions(context, profile),
+          ),
+          const SizedBox(height: 18),
+          Text('Payment records',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 8),
+          PaymentHistoryList(
+            api: widget.api,
+            isAdmin: true,
+            memberId: widget.memberId,
+            memberName: profile.name,
+            embedded: true,
+          ),
+        ],
       ),
     );
   }

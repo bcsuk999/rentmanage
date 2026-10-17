@@ -6,6 +6,7 @@ import 'api.dart';
 import 'app_theme.dart';
 import 'app_update_page.dart';
 import 'change_password_page.dart';
+import 'member_detail_page.dart';
 import 'motion.dart';
 import 'overdue_page.dart';
 import 'payment_history_page.dart';
@@ -26,23 +27,70 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin {
   int _tab = 0;
 
-  /// +1 when the last switch moved to a higher tab index, -1 for lower. Drives
-  /// which way the page content slides in and out.
-  int _tabDirection = 1;
+  /// Tab being animated away; equals [_tab] once the band has settled.
+  int _prevTab = 0;
+
+  /// Drives the horizontal band: outgoing page travels left, incoming travels
+  /// in from the right, both on the same curve so they read as one strip.
+  /// Rests fully settled (value 1.0) so the current tab paints at rest.
+  late final AnimationController _tabBand = AnimationController(
+    vsync: this,
+    duration: MotionDuration.fast,
+  );
+
+  /// Curve for the whole band. Created exactly once and reused: a
+  /// [CurvedAnimation] registers a status listener on its parent in the
+  /// constructor and only removes it in `dispose()`, so building one inside
+  /// `build` leaks a listener on [_tabBand] on every rebuild and every frame.
+  late final CurvedAnimation _bandCurve =
+      CurvedAnimation(parent: _tabBand, curve: MotionCurve.smoothOut);
+
+  /// Incoming tab: parked a full width to the right, slides home.
+  late final Animation<Offset> _inSlide = Tween<Offset>(
+    begin: const Offset(1, 0),
+    end: Offset.zero,
+  ).animate(_bandCurve);
+
+  /// Outgoing tab: rides the band off to the left.
+  late final Animation<Offset> _outSlide = Tween<Offset>(
+    begin: Offset.zero,
+    end: const Offset(-1, 0),
+  ).animate(_bandCurve);
+
+  /// Parked tab: holds at the centre (hidden by [Offstage] in the slot).
+  static final Animation<Offset> _parked =
+      AlwaysStoppedAnimation<Offset>(Offset.zero);
+
+  /// Lets the shell ask a parked tab to refresh itself in the background.
+  final _overdueKey = GlobalKey<OverduePageState>();
 
   List<Room>? _rooms;
   Object? _roomsError;
   bool _roomsLoading = true;
-  ReportTotals? _summary;
+
+  /// Search hits while the search box has a term; null means "not searching",
+  /// which is when the room cards below are shown instead.
+  List<SearchHit>? _hits;
+  String? _hitsFor;
+
+  LandlordSummary? _summary;
   bool _summaryLoading = true;
   OverdueReport? _overdueCache;
   final _search = TextEditingController();
   Timer? _debounce;
-  int _requestId = 0;
+
+  /// Separate guards for the two endpoints: changing the month must not
+  /// discard an in-flight room list, and typing must not discard the tiles.
+  int _roomsRequestId = 0;
+  int _summaryRequestId = 0;
+
   bool _searching = false;
+
+  /// Month the summary tiles describe. The room list below is always the cycle
+  /// running today, so this only steers the tiles.
   DateTime _period = DateTime(DateTime.now().year, DateTime.now().month);
   String? _chip; // single-select chip; null = custom (from sheet) or none
   String _statusFilter = 'All';
@@ -56,6 +104,10 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    // The band rests settled: at 0.0 the incoming slot would sit a full
+    // viewport width off-screen and the home body would look frozen.
+    _tabBand.value = 1.0;
+    _tabBand.addStatusListener(_onBandStatus);
     // Rebuild so the clear (X) button tracks the typed text.
     _search.addListener(() {
       if (mounted) setState(() {});
@@ -72,9 +124,20 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
+    _tabBand.removeStatusListener(_onBandStatus);
+    _bandCurve.dispose();
+    _tabBand.dispose();
     _search.dispose();
     _debounce?.cancel();
     super.dispose();
+  }
+
+  /// Collapse the outgoing slot once the band settles. Without this
+  /// [_prevTab] latches onto a stale tab, so its slot keeps rendering (and
+  /// re-fetching) long after the switch that created it.
+  void _onBandStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed || !mounted || _prevTab == _tab) return;
+    setState(() => _prevTab = _tab);
   }
 
   void _onSearchChanged(String value) {
@@ -82,19 +145,45 @@ class _HomePageState extends State<HomePage> {
     _debounce = Timer(const Duration(milliseconds: 400), () => _runSearch(value));
   }
 
-  /// Search fetch that keeps the current list on screen with an inline loader,
-  /// and ignores responses that a newer keystroke has superseded.
-  Future<void> _runSearch(String value) => _refresh(keepList: true);
+  /// Search fetch that keeps the current content on screen with an inline
+  /// loader, and ignores responses that a newer keystroke has superseded.
+  /// Searching never touches the month tiles, so only the body is re-fetched.
+  Future<void> _runSearch(String value) => _refreshList(keepList: true);
 
-  /// Fetch rooms for the selected month; an expired/revoked token signs
-  /// out instead of error-looping. The same response carries the month totals,
-  /// so there is no second report request.
-  Future<RoomsPage> _loadRooms(String query) async {
+  /// The current search term, or '' when the box is empty.
+  String get _term => _search.text.trim();
+
+  /// Room list for the filters currently applied. No date and no search term is
+  /// sent: the list is always the rent cycle running today. An expired or
+  /// revoked token signs out instead of error-looping.
+  Future<List<Room>> _loadRooms() async {
     try {
-      return await widget.api.roomsWithSummary(
-        search: query,
+      return await widget.api.rooms(
         status: _statusFilter,
         paymentState: _payFilter,
+      );
+    } on ApiException catch (e) {
+      if (e.statusCode == 401 && mounted) _signOut();
+      rethrow;
+    }
+  }
+
+  /// Search hits for the current term. Separate from the room list because the
+  /// room list cannot filter by text any more.
+  Future<SearchResults> _loadSearch(String term) async {
+    try {
+      return await widget.api.search(term);
+    } on ApiException catch (e) {
+      if (e.statusCode == 401 && mounted) _signOut();
+      rethrow;
+    }
+  }
+
+  /// Totals for the selected month. Separate from the room list because the
+  /// list does not depend on the month while the tiles do.
+  Future<LandlordSummary> _loadSummary() async {
+    try {
+      return await widget.api.landlordSummary(
         from: monthStart(_period),
         to: monthEnd(_period),
       );
@@ -104,18 +193,31 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  /// Loads rooms for the active month/filter.
+  /// Loads the room list and the month tiles together, for the cases that want
+  /// both: first paint, pull-to-refresh and returning to the tab.
+  Future<void> _refresh({bool silent = false, bool keepList = false, bool quiet = false}) async {
+    await Future.wait([
+      _refreshList(silent: silent, keepList: keepList, quiet: quiet),
+      _refreshSummary(),
+    ]);
+  }
+
+  /// Loads the room list, or search hits when the search box has a term.
   ///
-  /// [keepList] keeps the current cards on screen with an inline loader (used
-  /// while typing/filtering). Otherwise the previous month's data is cleared
-  /// first, so stale rooms never linger behind a newly selected month.
+  /// [keepList] keeps the current content on screen with an inline loader (used
+  /// while typing/filtering). Otherwise the previous list is cleared first, so
+  /// stale rooms never linger behind a newly selected filter.
   /// [silent] keeps a cached list on screen and reports offline failures with
   /// a snackbar instead of an error panel.
+  /// [quiet] is [silent] for a background refresh nobody asked for (returning to
+  /// the tab), so a failure stays invisible instead of popping a snackbar.
   ///
-  /// Every call bumps [_requestId]; responses from superseded requests are
-  /// dropped, so rapid month switching can't race or overwrite newer data.
-  Future<void> _refresh({bool silent = false, bool keepList = false}) async {
-    final id = ++_requestId;
+  /// Every call bumps [_roomsRequestId]; responses from superseded requests are
+  /// dropped, so rapid typing can't race or overwrite newer data.
+  Future<void> _refreshList(
+      {bool silent = false, bool keepList = false, bool quiet = false}) async {
+    final id = ++_roomsRequestId;
+    final term = _term;
     if (mounted) {
       setState(() {
         if (keepList || silent) {
@@ -128,42 +230,68 @@ class _HomePageState extends State<HomePage> {
       });
     }
     try {
-      final page = await _loadRooms(_search.text);
-      if (!mounted || id != _requestId) return;
+      // One term drives two different endpoints: an empty box lists every room,
+      // a non-empty one searches. [_rooms] is deliberately left intact while
+      // searching so clearing the box again does not need another round trip.
+      final results = term.isEmpty ? null : await _loadSearch(term);
+      if (!mounted || id != _roomsRequestId) return;
+      final rooms = term.isEmpty ? await _loadRooms() : null;
+      if (!mounted || id != _roomsRequestId) return;
       setState(() {
-        _rooms = page.rooms;
-        _summary = page.totals;
-        _summaryLoading = false;
+        if (rooms != null) _rooms = rooms;
+        _hits = results?.results;
+        _hitsFor = term;
         _roomsError = null;
         _roomsLoading = false;
         _searching = false;
       });
     } catch (e) {
-      if (!mounted || id != _requestId) return;
+      if (!mounted || id != _roomsRequestId) return;
       if (e is ApiException && e.statusCode == 401) return; // signed out above
       setState(() {
         _roomsLoading = false;
         _searching = false;
-        // Totals arrive with this response, so stop the skeleton here instead
-        // of spinning forever.
-        _summaryLoading = false;
       });
-      if (silent) {
+      if (silent && !quiet) {
         // Cached list stays on screen; mention the stale data quietly.
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Offline — showing saved rooms.')),
         );
-      } else {
+      } else if (!silent) {
         setState(() {
           _roomsError = e;
           _rooms = null;
+          _hits = null;
+          _hitsFor = null;
         });
       }
     }
   }
 
-  /// Clears the stale totals the moment the month changes; the next
-  /// [RoomsPage] response fills them in.
+  /// Loads the month tiles. A failure here never blocks the room list: the grid
+  /// just stays empty rather than showing an error panel over the whole screen.
+  Future<void> _refreshSummary() async {
+    final id = ++_summaryRequestId;
+    if (mounted) setState(() => _summaryLoading = true);
+    try {
+      final summary = await _loadSummary();
+      if (!mounted || id != _summaryRequestId) return;
+      setState(() {
+        _summary = summary;
+        _summaryLoading = false;
+      });
+    } catch (e) {
+      if (!mounted || id != _summaryRequestId) return;
+      if (e is ApiException && e.statusCode == 401) return; // signed out above
+      setState(() {
+        _summary = null;
+        _summaryLoading = false;
+      });
+    }
+  }
+
+  /// Clears the stale totals the moment the month changes; the next summary
+  /// response fills them in.
   void _clearSummary() {
     if (!mounted) return;
     setState(() {
@@ -172,19 +300,35 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
+  /// The month only steers the tiles. The room list is always the cycle running
+  /// today, so switching months leaves the cards untouched on purpose.
   void _movePeriod(int delta) {
     setState(() => _period = DateTime(_period.year, _period.month + delta));
     _clearSummary();
-    _refresh();
+    _refreshSummary();
   }
 
-  /// Single entry point for tab changes so the slide direction always matches
-  /// the move (forward = push, back = pop).
+  /// Single entry point for tab changes. The band always runs the same way -
+  /// whatever the index, the new page enters from the right and the old one
+  /// leaves to the left - so every switch looks identical to the thumb.
   void _goToTab(int next) {
     if (next == _tab) return;
     setState(() {
-      _tabDirection = next > _tab ? 1 : -1;
+      _prevTab = _tab;
       _tab = next;
+    });
+    _tabBand.forward(from: 0);
+    // Refresh after the band settles so the fetch overlaps the slide instead of
+    // competing with it. Parked data is already on screen, so it is invisible.
+    Future<void>.delayed(MotionDuration.fast, () {
+      if (!mounted) return;
+      if (next == 1) {
+        _overdueKey.currentState?.refreshSilently();
+      } else if (next == 0) {
+        // Same idea for the rooms list: keepList leaves the cards and the month
+        // tiles on screen while the numbers refresh underneath.
+        _refresh(keepList: true, silent: true, quiet: true);
+      }
     });
   }
 
@@ -192,7 +336,7 @@ class _HomePageState extends State<HomePage> {
     final now = DateTime.now();
     setState(() => _period = DateTime(now.year, now.month));
     _clearSummary();
-    _refresh();
+    _refreshSummary();
   }
 
   void _applyChip(String? chip) {
@@ -264,13 +408,17 @@ class _HomePageState extends State<HomePage> {
     widget.onSignOut();
   }
 
-  void _openDetails(Room room) async {
+  void _openDetails(Room room) => _openRoom(room.id, room.roomNumber);
+
+  /// Rooms are identified by id and number only, so a search hit can open the
+  /// same page without a full [Room] to hand.
+  void _openRoom(String roomId, String roomNumber) async {
     await Navigator.of(context).push(
       smoothRoute(
         RoomDetailPage(
           api: widget.api,
-          roomId: room.id,
-          roomNumber: room.roomNumber,
+          roomId: roomId,
+          roomNumber: roomNumber,
           isAdmin: _isAdmin,
         ),
       ),
@@ -278,8 +426,25 @@ class _HomePageState extends State<HomePage> {
     // Members/payments may have changed inside details — reload so the
     // cards behind never show stale occupancy or totals.
     if (mounted) {
-      _refresh(keepList: true);
+      _refreshList(keepList: true);
     }
+  }
+
+  /// Open a member straight from a search hit. Skipped when the hit has no
+  /// room, since the member page needs one to scope its payments.
+  Future<void> _openMember(SearchMemberHit hit) async {
+    if (hit.roomId == null) return;
+    await Navigator.of(context).push(
+      smoothRoute(
+        MemberDetailPage(
+          api: widget.api,
+          memberId: hit.id,
+          roomId: hit.roomId!,
+          roomNumber: hit.roomNumber ?? '',
+        ),
+      ),
+    );
+    if (mounted) _refreshList(keepList: true);
   }
 
   Future<void> _showAddRoom() async {
@@ -287,7 +452,7 @@ class _HomePageState extends State<HomePage> {
       context: context,
       builder: (_) => _AddRoomDialog(api: widget.api),
     );
-    if (created == true) {
+    if (created == true && mounted) {
       _refresh(keepList: true);
     }
   }
@@ -320,37 +485,13 @@ class _HomePageState extends State<HomePage> {
           const SizedBox(width: 4),
         ],
       ),
-      body: AnimatedSwitcher(
-        duration: MotionDuration.fast,
-        reverseDuration: MotionDuration.fast,
-        switchInCurve: MotionCurve.smoothOut,
-        switchOutCurve: MotionCurve.easeInOut,
-        layoutBuilder: (currentChild, previousChildren) => Stack(
-          fit: StackFit.expand,
-          children: [
-            ...previousChildren,
-            ?currentChild,
-          ],
-        ),
-        transitionBuilder: (child, animation) {
-          // Direction-aware slide: moving to a higher tab index pushes the old
-          // page out to the left while the new one enters from the right, and
-          // the reverse when stepping back.
-          final enter = _tabDirection >= 0 ? 1.0 : -1.0;
-          final curved =
-              CurvedAnimation(parent: animation, curve: MotionCurve.smoothOut);
-          return FadeTransition(
-            opacity: curved,
-            child: SlideTransition(
-              position: Tween<Offset>(
-                begin: Offset(enter * MotionDistance.pageSlide, 0),
-                end: Offset.zero,
-              ).animate(curved),
-              child: child,
-            ),
-          );
-        },
-        child: KeyedSubtree(key: ValueKey(_tab), child: _tabBody(context)),
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          _bandSlot(0),
+          _bandSlot(1),
+          _bandSlot(2),
+        ],
       ),
       floatingActionButton: AnimatedSwitcher(
         duration: MotionDuration.fast,
@@ -376,9 +517,40 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _tabBody(BuildContext context) {
-    return switch (_tab) {
+  /// Slot for one tab. Every tab keeps a permanent slot so its state - and any
+  /// data it already fetched - survives a switch; only the two involved in the
+  /// switch are visible and translated.
+  ///
+  /// The shape is `Offstage > AnimatedBuilder > body` for all three slots, so
+  /// the element at each index keeps its runtime types across a switch. Varying
+  /// the wrapper type instead would make the framework deactivate and reinflate
+  /// the slot, throwing away the parked tab's State and refetching it.
+  Widget _bandSlot(int tab) {
+    final outgoing = tab == _prevTab && _prevTab != _tab;
+    final Animation<Offset> position = tab == _tab
+        ? _inSlide
+        : outgoing
+            ? _outSlide
+            : _parked;
+    return Offstage(
+      offstage: tab != _tab && !outgoing,
+      child: AnimatedBuilder(
+        animation: position,
+        // Passed as `child` so the tab subtree is built once per home-page
+        // build instead of once per animation frame.
+        child: _tabBody(context, tab),
+        builder: (context, child) => FractionalTranslation(
+          translation: position.value,
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  Widget _tabBody(BuildContext context, int tab) {
+    return switch (tab) {
       1 => OverduePage(
+          key: _overdueKey,
           api: widget.api,
           isAdmin: _isAdmin,
           onAuthExpired: _signOut,
@@ -427,10 +599,13 @@ class _HomePageState extends State<HomePage> {
       );
     }
     final rooms = _rooms ?? const <Room>[];
+    // [_hitsFor] records which term the hits belong to, so the previous term's
+    // results never sit under a newly typed one while the request is in flight.
+    final hits = _hitsFor == _term && _term.isNotEmpty ? _hits ?? const <SearchHit>[] : null;
     // Mobile viewport everywhere: one centered phone-width column, even on
     // desktop.
     return SingleChildScrollView(
-      key: const ValueKey('rooms-content'),
+      key: ValueKey(hits == null ? 'rooms-content' : 'hits-content'),
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
       child: Center(
@@ -451,7 +626,9 @@ class _HomePageState extends State<HomePage> {
                 const LinearProgressIndicator(),
               ],
               const SizedBox(height: 12),
-              if (rooms.isEmpty)
+              if (hits != null)
+                _searchResults(context, hits)
+              else if (rooms.isEmpty)
                 _emptyState(context)
               else
                 for (var i = 0; i < rooms.length; i++) ...[
@@ -478,30 +655,42 @@ class _HomePageState extends State<HomePage> {
         _period.year == DateTime.now().year && _period.month == DateTime.now().month;
     return Card(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        child: Row(
+        padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+        child: Column(
           children: [
-            IconButton(
-              tooltip: 'Previous month',
-              icon: const Icon(Icons.chevron_left),
-              onPressed: () => _movePeriod(-1),
+            Row(
+              children: [
+                IconButton(
+                  tooltip: 'Previous month',
+                  icon: const Icon(Icons.chevron_left),
+                  onPressed: () => _movePeriod(-1),
+                ),
+                Expanded(
+                  child: Text(monthLabel(_period),
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+                ),
+                if (!isCurrent)
+                  TextButton(onPressed: _goThisMonth, child: const Text('This month'))
+                else
+                  TextButton(
+                      onPressed: null,
+                      child: Text('This month',
+                          style: TextStyle(color: AppColors.secondaryText.withValues(alpha: 0.5)))),
+                IconButton(
+                  tooltip: 'Next month',
+                  icon: const Icon(Icons.chevron_right),
+                  onPressed: () => _movePeriod(1),
+                ),
+              ],
             ),
-            Expanded(
-              child: Text(monthLabel(_period),
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
-            ),
-            if (!isCurrent)
-              TextButton(onPressed: _goThisMonth, child: const Text('This month'))
-            else
-              TextButton(
-                  onPressed: null,
-                  child: Text('This month',
-                      style: TextStyle(color: AppColors.secondaryText.withValues(alpha: 0.5)))),
-            IconButton(
-              tooltip: 'Next month',
-              icon: const Icon(Icons.chevron_right),
-              onPressed: () => _movePeriod(1),
+            // The stepper only steers the tiles. The room cards below are always
+            // the cycle running today, so say that rather than leave the month
+            // label looking like it also filters the list.
+            Text(
+              'Totals for ${monthLabel(_period)} · cards show the current cycle',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall?.copyWith(color: AppColors.secondaryText),
             ),
           ],
         ),
@@ -547,25 +736,25 @@ class _HomePageState extends State<HomePage> {
       children: [
         SummaryMetric(
           icon: Icons.wallet_outlined,
-          value: inr(s.receivedInRange),
+          value: inr(s.collected),
           label: 'Collected',
           color: AppColors.success,
         ),
         SummaryMetric(
           icon: Icons.schedule_outlined,
-          value: inr(s.duePending),
+          value: inr(s.due),
           label: 'Due',
           color: AppColors.warning,
         ),
         SummaryMetric(
           icon: Icons.error_outline,
-          value: inr(s.overduePending),
+          value: inr(s.overdue),
           label: 'Overdue',
           color: AppColors.danger,
         ),
         SummaryMetric(
           icon: Icons.receipt_long_outlined,
-          value: inr(0),
+          value: inr(s.expense),
           label: 'Expenses',
           color: AppColors.secondaryText,
         ),
@@ -656,6 +845,72 @@ class _HomePageState extends State<HomePage> {
       ),
     );
   }
+
+  /// Search results as one flat list, in the order the server sends them:
+  /// rooms first, then members. Every card names the field that matched, so it
+  /// is obvious why a row is on screen rather than a neighbouring one.
+  Widget _searchResults(BuildContext context, List<SearchHit> hits) {
+    final theme = Theme.of(context);
+    if (hits.isEmpty) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
+          child: Column(
+            children: [
+              Icon(Icons.search_off, size: 34, color: AppColors.secondaryText),
+              const SizedBox(height: 10),
+              Text('No matches for "$_term"',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.titleSmall),
+              const SizedBox(height: 6),
+              Text('Try a room number, a name, or part of a mobile number.',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodySmall?.copyWith(color: AppColors.secondaryText)),
+            ],
+          ),
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 10),
+          child: Text('${hits.length} result${hits.length == 1 ? '' : 's'} for "$_term"',
+              style: theme.textTheme.bodySmall?.copyWith(color: AppColors.secondaryText)),
+        ),
+        for (var i = 0; i < hits.length; i++) ...[
+          Reveal(
+            key: ValueKey('hit-${hits[i].runtimeType}-$i'),
+            delay: MotionDuration.stagger * (i % 8),
+            child: switch (hits[i]) {
+              final SearchRoomHit r => _RoomHitCard(
+                hit: r,
+                matchedLabel: _matchedLabel(r.matchedOn),
+                onOpen: () => _openRoom(r.id, r.roomNumber),
+              ),
+              final SearchMemberHit m => _MemberHitCard(
+                hit: m,
+                matchedLabel: _matchedLabel(m.matchedOn),
+                onOpen: m.roomId == null ? null : () => _openMember(m),
+              ),
+            },
+          ),
+          const SizedBox(height: 10),
+        ],
+      ],
+    );
+  }
+
+  /// 'roomNumber' -> 'room number', for display.
+  static String _matchedLabel(String field) => switch (field) {
+        'roomNumber' => 'room number',
+        'aadhaarNumber' => 'aadhaar number',
+        'notes' => 'room notes',
+        'mobile' => 'mobile',
+        'name' => 'name',
+        _ => field,
+      };
 
   Widget _emptyState(BuildContext context) {
     if (_filtered) {
@@ -1071,6 +1326,199 @@ class _RoomCard extends StatelessWidget {
   }
 }
 
+/// A room that matched. A room hit carries no rent figures by design, so this
+/// shows who lives there instead of money: the money needs the room's own page.
+class _RoomHitCard extends StatelessWidget {
+  const _RoomHitCard({required this.hit, required this.matchedLabel, required this.onOpen});
+
+  final SearchRoomHit hit;
+  final String matchedLabel;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onOpen,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.meeting_room_outlined, size: 18, color: AppColors.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text('Room ${hit.roomNumber}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
+                  ),
+                  Text('${hit.memberCount}/${hit.capacity}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w700, color: AppColors.secondaryText)),
+                  const SizedBox(width: 8),
+                  StatusPill.room(hit.status),
+                ],
+              ),
+              if (hit.notes != null && hit.notes!.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(hit.notes!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(color: AppColors.secondaryText)),
+              ],
+              if (hit.members.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                // Names inline so a member who matched inside this room is
+                // visible without opening it. Vacated ones are marked so a
+                // former tenant is never read as a current one.
+                Text(
+                  hit.members
+                      .map((m) => m.status == 'active' ? m.name : '${m.name} (vacated)')
+                      .join('  ·  '),
+                  style: theme.textTheme.bodySmall?.copyWith(color: AppColors.secondaryText),
+                ),
+              ],
+              const SizedBox(height: 8),
+              Text('Matched on $matchedLabel',
+                  style: theme.textTheme.bodySmall?.copyWith(color: AppColors.secondaryText)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A member who matched, with what they owe right now. A vacated member is shown
+/// in neutral grey and labelled, because their figures are history rather than
+/// money the landlord is still owed.
+class _MemberHitCard extends StatelessWidget {
+  const _MemberHitCard({required this.hit, required this.matchedLabel, required this.onOpen});
+
+  final SearchMemberHit hit;
+  final String matchedLabel;
+  final VoidCallback? onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final vacated = hit.isVacated;
+    final color = vacated ? AppColors.secondaryText : memberStatusColor(hit.cycleStatus);
+    final overdue = hit.overdue;
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onOpen,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 17,
+                    backgroundColor: vacated ? AppColors.neutralChip : memberStatusSoft(hit.cycleStatus),
+                    child: Text(hit.name.isEmpty ? '?' : hit.name[0].toUpperCase(),
+                        style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 14)),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(hit.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+                        Text(
+                          [
+                            hit.roomNumber == null ? null : 'Room ${hit.roomNumber}',
+                            hit.mobile,
+                          ].whereType<String>().join(' · '),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall
+                              ?.copyWith(color: AppColors.secondaryText),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  vacated
+                      ? const StatusPill(
+                          text: 'Vacated',
+                          color: AppColors.secondaryText,
+                          soft: AppColors.neutralChip,
+                        )
+                      : StatusPill.member(hit.cycleStatus),
+                ],
+              ),
+              const SizedBox(height: 10),
+              if (vacated)
+                Text(
+                  hit.vacatingDate == null
+                      ? 'No live rent cycle.'
+                      : 'Left on ${fmtDateShort(hit.vacatingDate!)} · no live rent cycle.',
+                  style: theme.textTheme.bodySmall?.copyWith(color: AppColors.secondaryText),
+                )
+              else if (hit.rent <= 0)
+                Text('No rent cycle running today.',
+                    style: theme.textTheme.bodySmall?.copyWith(color: AppColors.secondaryText))
+              else ...[
+                ThinProgress(value: hit.progress, color: color),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text('${inr(hit.paid)} of ${inr(hit.rent)} paid',
+                          style: theme.textTheme.bodySmall
+                              ?.copyWith(color: AppColors.secondaryText)),
+                    ),
+                    if (hit.dueDate != null)
+                      Text('Due ${fmtDateShort(hit.dueDate!)} · ',
+                          style: theme.textTheme.bodySmall
+                              ?.copyWith(color: AppColors.secondaryText)),
+                    Text('${inr(hit.pending)} due',
+                        style: theme.textTheme.bodySmall
+                            ?.copyWith(color: color, fontWeight: FontWeight.w700)),
+                  ],
+                ),
+              ],
+              if (overdue != null) ...[
+                const SizedBox(height: 8),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: AppColors.dangerSoft,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text('Overdue ${inr(overdue.amount)} · ${overdue.period}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: AppColors.danger,
+                        fontWeight: FontWeight.w600,
+                      )),
+                ),
+              ],
+              const SizedBox(height: 8),
+              Text('Matched on $matchedLabel',
+                  style: theme.textTheme.bodySmall?.copyWith(color: AppColors.secondaryText)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _AddRoomDialog extends StatefulWidget {
   const _AddRoomDialog({required this.api});
 
@@ -1086,6 +1534,10 @@ class _AddRoomDialogState extends State<_AddRoomDialog> {
   String _status = 'Empty';
   bool _busy = false;
   String? _error;
+
+  /// Set once the dialog is being popped, so the [finally] block does not
+  /// rebuild a dialog that is on its way out.
+  bool _popping = false;
 
   @override
   void dispose() {
@@ -1111,14 +1563,15 @@ class _AddRoomDialogState extends State<_AddRoomDialog> {
         status: _status,
       );
       if (!mounted) return;
+      _popping = true;
       toastOk(context, 'Room ${_number.text.trim()} added.');
       Navigator.of(context).pop(true);
     } on ApiException catch (e) {
-      setState(() => _error = e.message);
+      if (mounted) setState(() => _error = e.message);
     } catch (_) {
-      setState(() => _error = 'Could not reach the server.');
+      if (mounted) setState(() => _error = 'Could not reach the server.');
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted && !_popping) setState(() => _busy = false);
     }
   }
 

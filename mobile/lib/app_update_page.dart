@@ -48,6 +48,7 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
   String? _installed;
   _Release? _latest;
   bool _checking = true;
+  bool _inFlight = false;
   String? _error;
   bool _downloading = false;
   double _progress = 0;
@@ -139,9 +140,13 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
   }
 
   Future<void> _check() async {
+    if (_inFlight) return;
+    _inFlight = true;
     setState(() {
       _checking = true;
-      _error = null;
+      // Keep the release we already know about on screen while re-checking, so
+      // a manual check does not blank the page back to a spinner.
+      if (_latest != null) _error = null;
     });
     try {
       final info = await PackageInfo.fromPlatform();
@@ -157,8 +162,13 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
       if (!mounted) return;
       setState(() {
         _checking = false;
-        _error = 'Could not reach GitHub. Check your internet connection and try again.';
+        // Same rule for failures: only surface them when there is nothing to show.
+        if (_latest == null) {
+          _error = 'Could not reach GitHub. Check your internet connection and try again.';
+        }
       });
+    } finally {
+      _inFlight = false;
     }
   }
 
@@ -306,7 +316,7 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                if (_checking)
+                if (_checking && latest == null)
                   const Card(
                     child: Padding(
                       padding: EdgeInsets.all(20),

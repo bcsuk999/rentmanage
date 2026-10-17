@@ -4,50 +4,9 @@ const express = require('express');
 const roomService = require('../services/roomService');
 const memberService = require('../services/memberService');
 const { sendApiError, wrap } = require('../utils/http');
-const { parseDateInput, startOfDay, toDateInput } = require('../utils/dates');
+const { parseDateInput, startOfDay } = require('../utils/dates');
 
 const router = express.Router();
-
-/** Room list. Current cycle by default; ?from=&to= (YYYY-MM-DD) scopes
- *  every room and member snapshot to that rental range instead. The summary
- *  block also carries the cash figures the reports endpoint returns, so a
- *  month view needs one call instead of /api/rooms + /api/reports. */
-router.get(
-  '/',
-  wrap(async (req, res) => {
-    try {
-      const search = String(req.query.search || '').trim();
-      const status = String(req.query.status || 'All');
-      const paymentState = String(req.query.paymentState || 'All');
-      const fromInput = String(req.query.from || '').trim();
-      const toInput = String(req.query.to || '').trim();
-      const { rooms, cash, totals } = await roomService.listRoomsWithSummary({
-        search,
-        status,
-        paymentState,
-        from: fromInput || null,
-        to: toInput || null,
-        ownerId: req.user._id,
-      });
-      return res.json({
-        rooms,
-        summary: {
-          // Portfolio-wide on purpose: the month tiles must not shrink when the
-          // list is filtered, so these come from every room, not from `rooms`.
-          ...totals,
-          overduePending: cash.overduePending,
-          receivedInRange: cash.receivedInRange,
-          paymentCount: cash.paymentCount,
-          methodTotals: cash.methodTotals,
-          cashFrom: toDateInput(cash.cashFrom),
-          cashTo: toDateInput(cash.cashTo),
-        },
-      });
-    } catch (err) {
-      return sendApiError(res, err);
-    }
-  })
-);
 
 router.post(
   '/',

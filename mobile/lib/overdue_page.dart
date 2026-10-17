@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'app_theme.dart';
+import 'payment_allocation.dart';
 import 'payment_sheet.dart';
 import 'status_colors.dart';
 import 'widgets.dart';
@@ -30,14 +31,25 @@ class OverduePage extends StatefulWidget {
   final ValueChanged<OverdueReport>? onLoaded;
 
   @override
-  State<OverduePage> createState() => _OverduePageState();
+  State<OverduePage> createState() => OverduePageState();
 }
 
-class _OverduePageState extends State<OverduePage> {
+class OverduePageState extends State<OverduePage> {
   OverdueReport? _report;
   Object? _error;
   bool _loading = false;
   String _bucket = 'All';
+
+  /// Guards against overlapping fetches (silent refresh on top of a pull).
+  bool _inFlight = false;
+
+  /// Re-fetches in the background when the tab is revisited. Silent by design:
+  /// the report already on screen stays visible and is swapped in place, so the
+  /// skeleton never comes back. The first load is left to initState.
+  Future<void> refreshSilently() async {
+    if (_report == null) return;
+    await _load();
+  }
 
   @override
   void initState() {
@@ -60,6 +72,8 @@ class _OverduePageState extends State<OverduePage> {
   /// Fetches fresh data. When a report is already on screen this is silent:
   /// no skeleton, no spinner, just an in-place swap once the data arrives.
   Future<void> _load() async {
+    if (_inFlight) return;
+    _inFlight = true;
     try {
       final report = await _fetch();
       if (!mounted) return;
@@ -81,6 +95,8 @@ class _OverduePageState extends State<OverduePage> {
           const SnackBar(content: Text('Offline — showing saved overdue data.')),
         );
       }
+    } finally {
+      _inFlight = false;
     }
   }
 
@@ -121,21 +137,19 @@ class _OverduePageState extends State<OverduePage> {
   }
 
   Future<void> _record(OverdueMember m, OverduePeriod p) async {
-    // Fetch member's periods to calculate current due (non-overdue periods)
+    // Full period list for the member, so the sheet can show exactly which
+    // cycle each rupee lands on. Without it the sheet falls back to a flat
+    // overdue/current split.
+    var cycles = const <PaymentCycle>[];
     double totalCurrentDue = 0;
     try {
       final periods = await widget.api.memberPeriods(m.memberId);
       if (!mounted) return;
-      final now = DateTime.now();
-      for (final period in periods) {
-        if (period.pending <= 0) continue;
-        final periodEnd = DateTime.tryParse(period.endIso);
-        if (periodEnd != null && !periodEnd.isBefore(now)) {
-          totalCurrentDue += period.pending;
-        }
-      }
+      cycles = buildAllocationOrder(periods, p.id);
+      totalCurrentDue = currentTotal(cycles);
     } catch (_) {
-      // If fetch fails, default to 0
+      // Offline or the member moved on: the two scalar totals still come from
+      // the report we are rendering.
     }
     if (!mounted) return;
 
@@ -147,6 +161,7 @@ class _OverduePageState extends State<OverduePage> {
       pending: p.pending,
       totalOverdue: m.totalOverdue,
       totalCurrentDue: totalCurrentDue,
+      cycles: cycles,
       periodStart: p.start,
       periodEnd: p.end,
     );

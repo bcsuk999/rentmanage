@@ -50,6 +50,8 @@ class _RecordPaymentPageState extends State<RecordPaymentPage> {
 
   List<Room> _rooms = [];
   bool _roomsLoading = false;
+  bool _roomsInFlight = false;
+  bool _periodsInFlight = false;
   String? _roomId;
   late String _roomNumber;
   late List<Map<String, dynamic>> _members;
@@ -94,31 +96,51 @@ class _RecordPaymentPageState extends State<RecordPaymentPage> {
     return '';
   }
 
-  Future<void> _loadRooms() async {
-    setState(() {
-      _roomsLoading = true;
-      _error = null;
-    });
+  /// [soft] keeps the current room list on screen so a background refresh never
+  /// collapses the dropdown back into a skeleton.
+  Future<void> _loadRooms({bool soft = false}) async {
+    if (_roomsInFlight) return;
+    _roomsInFlight = true;
+    if (!soft || _rooms.isEmpty) {
+      setState(() {
+        _roomsLoading = true;
+        _error = null;
+      });
+    }
     try {
       final rooms = await widget.api.rooms();
       if (!mounted) return;
       setState(() {
         _rooms = rooms;
         _roomsLoading = false;
+        _error = null;
       });
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
         _roomsLoading = false;
-        _error = e.message;
+        if (_rooms.isEmpty) _error = e.message;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _roomsLoading = false;
-        _error = 'Could not reach the server.';
+        if (_rooms.isEmpty) _error = 'Could not reach the server.';
       });
+    } finally {
+      _roomsInFlight = false;
     }
+  }
+
+  /// Silent re-read of the selected room's members and their periods, used when
+  /// the page is shown again: keeps the form filled in while the dues refresh.
+  Future<void> refreshSilently() async {
+    final memberId = _memberId;
+    if (memberId == null) {
+      if (_rooms.isEmpty) await _loadRooms();
+      return;
+    }
+    await _loadPeriods(soft: true);
   }
 
   /// Room chosen inside this page: pull its active members, then auto-select
@@ -182,13 +204,20 @@ class _RecordPaymentPageState extends State<RecordPaymentPage> {
     }
   }
 
-  Future<void> _loadPeriods() async {
+  /// [soft] keeps the already loaded periods on screen (silent refresh) instead
+  /// of emptying the dropdown and flashing its skeleton.
+  Future<void> _loadPeriods({bool soft = false}) async {
     final id = _memberId;
     if (id == null) return;
+    if (_periodsInFlight) return;
+    _periodsInFlight = true;
+    final memberChanged = !soft;
     setState(() {
       _periodsLoading = true;
-      _periods = [];
-      _periodId = null;
+      if (memberChanged) {
+        _periods = [];
+        _periodId = null;
+      }
     });
     try {
       final periods = await widget.api.memberPeriods(id);
@@ -202,23 +231,31 @@ class _RecordPaymentPageState extends State<RecordPaymentPage> {
       setState(() {
         _periods = periods;
         _periodsLoading = false;
-        _periodId = (firstOwed ?? periods.firstOrNull)?.id;
+        _error = null;
+        // A soft refresh keeps the user's chosen period if it still exists.
+        final keepSoft =
+            soft && _periodId != null && periods.any((p) => p.id == _periodId);
+        _periodId = keepSoft
+            ? _periodId
+            : (firstOwed ?? periods.firstOrNull)?.id;
         _calculateDues();
         _ensureDateValid();
-        if (_periodId != null) _applyFullAmount();
+        if (!keepSoft && _periodId != null) _applyFullAmount();
       });
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
         _periodsLoading = false;
-        _error = e.message;
+        if (_periods.isEmpty) _error = e.message;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _periodsLoading = false;
-        _error = 'Could not reach the server.';
+        if (_periods.isEmpty) _error = 'Could not reach the server.';
       });
+    } finally {
+      _periodsInFlight = false;
     }
   }
 
