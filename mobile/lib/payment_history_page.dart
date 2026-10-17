@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'api.dart';
 import 'app_theme.dart';
 import 'motion.dart';
+import 'payment_allocation.dart';
 import 'record_payment_page.dart';
 import 'status_colors.dart';
 import 'widgets.dart';
@@ -867,29 +868,72 @@ class _PaymentCardState extends State<_PaymentCard> {
                     if (record.memberMobile.isNotEmpty)
                       detail('Phone', record.memberMobile),
                     detail('Rent period', rentPeriod),
+                    detail('Method', record.method),
+                    if (record.notes.isNotEmpty) detail('Note', record.notes),
                     if (record.allocations.isNotEmpty) ...[
-                      for (final a in record.allocations.where((a) => a.overdue))
-                        detail(
-                            'Overdue · ${fmtDateShortIso(a.periodStartIso)} – ${fmtDateShortIso(a.periodEndIso)}',
-                            inr(a.amount)),
-                      if (record.allocations.any((a) => !a.overdue))
-                        detail(
-                            'Due',
-                            inr(record.allocations
-                                .where((a) => !a.overdue)
-                                .fold<double>(0, (s, a) => s + a.amount))),
-                    ] else if (record.allocOverdue != null)
+                      const SizedBox(height: 4),
+                      _allocationBreakdown(context, theme),
+                    ] else if (record.allocOverdue != null) ...[
+                      const SizedBox(height: 8),
                       detail(
                           'Allocation',
                           'Overdue ${inr(record.allocOverdue!)} · Current ${inr(record.allocCurrent ?? 0)}'),
-                    detail('Method', record.method),
-                    if (record.notes.isNotEmpty) detail('Note', record.notes),
-                  ],
+                    ],
+],
                 ],
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Per-cycle split of what this payment actually paid for - the same view the
+  /// record-payment drawer shows before saving. Rows come back from the server
+  /// in allocation order (oldest overdue cycle first), so they are shown as-is.
+  Widget _allocationBreakdown(BuildContext context, ThemeData theme) {
+    final allocations = record.allocations;
+    final overdueCount = allocations.where((a) => a.overdue).length;
+    final toOverdue = allocations
+        .where((a) => a.overdue)
+        .fold<double>(0, (s, a) => s + a.amount);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+      decoration: BoxDecoration(
+        color: AppColors.successSoft,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text('Allocation',
+                    style: theme.textTheme.titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w700)),
+              ),
+              Text(
+                overdueCount == 0
+                    ? 'Current only'
+                    : overdueCount == allocations.length
+                        ? 'All overdue'
+                        : '${inr(toOverdue)} overdue',
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: AppColors.secondaryText),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          for (final a in allocations)
+            AllocationPeriodRow(
+              label: cycleRangeLabel(a.periodStartIso, a.periodEndIso),
+              amount: a.amount,
+              overdue: a.overdue,
+            ),
+        ],
       ),
     );
   }

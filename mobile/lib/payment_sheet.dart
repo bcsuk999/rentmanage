@@ -57,22 +57,27 @@ class _PaymentSheetState extends State<PaymentSheet> {
   bool _popping = false;
   String? _error;
 
+  /// Payments are always stamped with today - there is no picker, same as
+  /// [RecordPaymentPage]. The date decides which rental month the cash counts
+  /// into on the dashboard, so it is still sent, but the landlord never has to
+  /// choose it. The server rejects a date before the cycle starts, which only
+  /// happens for an advance cycle; clamp that one case.
+  DateTime _stampDate() {
+    final now = DateTime.now();
+    final start = widget.periodStart;
+    final end = widget.periodEnd;
+    if (start != null && now.isBefore(start)) return start;
+    if (end != null && now.isAfter(end)) return end;
+    return now;
+  }
+
   @override
   void initState() {
     super.initState();
     _amount = TextEditingController(
       text: widget.pending > 0 ? widget.pending.toStringAsFixed(0) : '',
     );
-    final now = DateTime.now();
-    final start = widget.periodStart;
-    final end = widget.periodEnd;
-    if (start != null && now.isBefore(start)) {
-      _date = start;
-    } else if (end != null && now.isAfter(end)) {
-      _date = end;
-    } else {
-      _date = now;
-    }
+    _date = _stampDate();
   }
 
   @override
@@ -98,16 +103,6 @@ class _PaymentSheetState extends State<PaymentSheet> {
       if (c.selected) return c;
     }
     return null;
-  }
-
-  Future<void> _pickDate() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _date,
-      firstDate: widget.periodStart ?? DateTime(2000),
-      lastDate: widget.periodEnd ?? DateTime.now().add(const Duration(days: 365)),
-    );
-    if (picked != null) setState(() => _date = picked);
   }
 
   Future<void> _submit() async {
@@ -193,8 +188,7 @@ class _PaymentSheetState extends State<PaymentSheet> {
               contentPadding: EdgeInsets.zero,
               title: const Text('Payment date'),
               subtitle: Text(_pretty(_date)),
-              trailing: const Icon(Icons.calendar_month_outlined),
-              onTap: _pickDate,
+              leading: const Icon(Icons.event_available_outlined),
             ),
             DropdownButtonFormField<String>(
               initialValue: _method,
@@ -353,51 +347,16 @@ class _PaymentSheetState extends State<PaymentSheet> {
 
   /// One period line: the date range on the left, what it gets on the right.
   Widget _allocationRow(BuildContext context, ThemeData theme, AllocationLine line) {
-    final overdue = line.cycle.overdue;
-    final color = overdue ? AppColors.danger : AppColors.primary;
-    final tag = overdue
+    final tag = line.cycle.overdue
         ? 'Overdue period'
         : line.cycle.advance
             ? 'Advance period'
             : 'Current period';
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Icon(
-            overdue ? Icons.error_outline : Icons.schedule_outlined,
-            size: 16,
-            color: color,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(line.cycle.label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w700, color: color)),
-                Text(
-                  line.clears
-                      ? '$tag · cleared'
-                      : '$tag · ${inr(line.left)} left',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: AppColors.secondaryText),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(inr(line.applied),
-              style: theme.textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w800, color: color)),
-        ],
-      ),
+    return AllocationPeriodRow(
+      label: line.cycle.label,
+      amount: line.applied,
+      overdue: line.cycle.overdue,
+      caption: line.clears ? '$tag · cleared' : '$tag · ${inr(line.left)} left',
     );
   }
 

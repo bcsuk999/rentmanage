@@ -1,6 +1,9 @@
 import 'dart:math' as math;
 
+import 'package:flutter/material.dart';
+
 import 'api.dart';
+import 'app_theme.dart';
 import 'status_colors.dart';
 
 /// One cycle in the payment waterfall, ordered exactly the way the backend
@@ -106,13 +109,89 @@ List<PaymentCycle> buildAllocationOrder(
 }
 
 /// '12 Aug - 12 Sep', or just one end when the backend sent a partial range.
-String _label(MemberPeriod p) {
-  final start = DateTime.tryParse(p.startIso);
-  final end = DateTime.tryParse(p.endIso);
+String _label(MemberPeriod p) => cycleRangeLabel(p.startIso, p.endIso);
+
+/// '12 Aug - 12 Sep', or just one end when the backend sent a partial range.
+String cycleRangeLabel(String startIso, String endIso) {
+  final start = DateTime.tryParse(startIso);
+  final end = DateTime.tryParse(endIso);
   if (start == null && end == null) return 'Rent period';
   if (start == null) return fmtDateShort(end!);
   if (end == null) return fmtDateShort(start);
   return '${fmtDateShort(start)} - ${fmtDateShort(end)}';
+}
+
+/// One period line in an allocation breakdown: the rent cycle on the left, the
+/// money that landed on it on the right. Shared by the record-payment preview
+/// and the payment-records card so both read exactly the same way.
+class AllocationPeriodRow extends StatelessWidget {
+  const AllocationPeriodRow({
+    super.key,
+    required this.label,
+    required this.amount,
+    required this.overdue,
+    this.caption,
+  });
+
+  /// '12 Aug - 12 Sep'
+  final String label;
+
+  /// Money applied to this cycle.
+  final double amount;
+
+  /// A lapsed cycle (red) as opposed to a current or advance one (violet).
+  final bool overdue;
+
+  /// Optional second line, e.g. 'Overdue period · ₹500 left'.
+  final String? caption;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = overdue ? AppColors.danger : AppColors.primary;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Icon(
+            overdue ? Icons.error_outline : Icons.schedule_outlined,
+            size: 16,
+            color: color,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium
+                      ?.copyWith(fontWeight: FontWeight.w700, color: color),
+                ),
+                if (caption != null)
+                  Text(
+                    caption!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: AppColors.secondaryText),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            inr(amount),
+            style: theme.textTheme.bodyMedium
+                ?.copyWith(fontWeight: FontWeight.w800, color: color),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// One line of the preview: how much of [amount] lands on [cycle].
