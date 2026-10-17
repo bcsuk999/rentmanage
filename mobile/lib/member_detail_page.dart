@@ -308,11 +308,16 @@ class _MemberDetailPageState extends State<MemberDetailPage> {
                     ? '—'
                     : fmtDateIso(profile.joiningDate!.toIso8601String())),
             row('Rent amount', '${inr(profile.monthlyRent)} / month'),
-            row('Due amount', inr(profile.outstanding),
-                valueColor:
-                    profile.outstanding > 0 ? AppColors.danger : AppColors.success),
-            row('Overdue amount', inr(profile.overdue),
+            // Exactly three money figures, and they never double count:
+            // due and overdue are disjoint cycles, and the total is their sum.
+            // A cycle whose due date is still in the future is in none of them.
+            row('Due amt', inr(profile.due),
+                valueColor: profile.due > 0 ? AppColors.warning : AppColors.success),
+            row('Overdue amt', inr(profile.overdue),
                 valueColor: profile.overdue > 0 ? AppColors.danger : AppColors.success),
+            row('Total due amt', inr(profile.totalDue),
+                valueColor:
+                    profile.totalDue > 0 ? AppColors.danger : AppColors.success),
           ],
         ),
       ),

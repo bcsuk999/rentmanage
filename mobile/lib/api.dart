@@ -1171,6 +1171,7 @@ class MemberPeriod {
     required this.pending,
     required this.status,
     this.isClosed = false,
+    this.started = true,
   });
 
   final String id;
@@ -1185,6 +1186,13 @@ class MemberPeriod {
   /// allocation waterfall.
   final bool isClosed;
 
+  /// False for a cycle that has not begun yet. Its rent is not owed, which is
+  /// why the server reports it as 'Upcoming' rather than 'Pending'.
+  final bool started;
+
+  /// True when this cycle's rent is not owed yet.
+  bool get isUpcoming => !started;
+
   factory MemberPeriod.fromJson(Map<String, dynamic> json) {
     double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
     return MemberPeriod(
@@ -1196,6 +1204,8 @@ class MemberPeriod {
       pending: asDouble(json['pendingAmount']),
       status: '${json['status']}',
       isClosed: json['isClosed'] == true,
+      // Absent on older responses, where every period was treated as started.
+      started: json['started'] != false,
     );
   }
 }
@@ -1207,17 +1217,37 @@ class MemberProfile {
     required this.member,
     required this.periods,
     required this.outstanding,
+    required this.due,
+    required this.overdue,
+    required this.notYetDue,
     required this.paidTotal,
-    required this.futurePending,
     required this.roomNumber,
   });
 
   final Map<String, dynamic> member;
   final List<MemberPeriod> periods;
+
+  /// Everything owed on cycles that have begun: [due] + [overdue].
   final double outstanding;
+
+  /// Rent owed right now, on the cycle running today.
+  final double due;
+
+  /// Unpaid rent from cycles that already ended. Disjoint from [due], so the
+  /// two are never added together.
+  final double overdue;
+
+  /// Rent for a cycle that has not started yet. Not owed, so kept out of
+  /// [due] and [overdue] and shown separately.
+  final double notYetDue;
+
   final double paidTotal;
-  final double futurePending;
   final String roomNumber;
+
+  /// Everything owed right now: [due] + [overdue]. Derived rather than read, so
+  /// it can never drift from the two rows above it. A cycle whose due date is
+  /// still in the future is in neither, and so not in here.
+  double get totalDue => due + overdue;
 
   String get id => '${member['_id']}';
   String get name => '${member['name']}';
@@ -1236,7 +1266,8 @@ class MemberProfile {
 
   static DateTime? _asDate(dynamic v) => v == null ? null : DateTime.tryParse('$v');
 
-  /// The period covering today, else the latest started one, else the newest.
+  /// The period covering today, else the latest started one. Never a cycle
+  /// that has not begun, which would report next month's rent as current.
   MemberPeriod? get current {
     final now = DateTime.now();
     final day = DateTime(now.year, now.month, now.day);
@@ -1254,20 +1285,7 @@ class MemberProfile {
       return s != null && !DateTime(s.year, s.month, s.day).isAfter(day);
     }).toList();
     if (started.isNotEmpty) return started.first;
-    return periods.isNotEmpty ? periods.first : null;
-  }
-
-  /// Pending rent on periods whose end date already passed.
-  double get overdue {
-    final now = DateTime.now();
-    double sum = 0;
-    for (final p in periods) {
-      final e = DateTime.tryParse(p.endIso);
-      if (e == null) continue;
-      final endOfDay = DateTime(e.year, e.month, e.day, 23, 59, 59);
-      if (endOfDay.isBefore(now) && p.pending > 0) sum += p.pending;
-    }
-    return sum;
+    return null;
   }
 
   factory MemberProfile.fromJson(Map<String, dynamic> json) {
@@ -1277,12 +1295,23 @@ class MemberProfile {
         .map((e) => MemberPeriod.fromJson(e.cast<String, dynamic>()))
         .toList();
     final room = (json['room'] as Map?)?.cast<String, dynamic>();
+    // Before the server sent the split, it sent only outstanding and
+    // futurePending. Fall back to those so an older response still reads right.
+    final notYetDue = asDouble(
+      json['notYetDue'] ?? json['futurePending'],
+    );
+    final due = asDouble(json['due']);
+    final overdue = asDouble(json['overdue']);
+    final outstanding =
+        asDouble(json['outstanding']) > 0 ? asDouble(json['outstanding']) : due + overdue;
     return MemberProfile(
       member: member,
       periods: periods,
-      outstanding: asDouble(json['outstanding']),
+      outstanding: outstanding,
+      due: due,
+      overdue: overdue,
+      notYetDue: notYetDue,
       paidTotal: asDouble(json['paidTotal']),
-      futurePending: asDouble(json['futurePending']),
       roomNumber: '${room?['roomNumber'] ?? ''}',
     );
   }

@@ -12,6 +12,7 @@ Color memberStatusColor(String status) {
     case 'partial':
       return AppColors.warning;
     case 'no period':
+    case 'upcoming':
       return AppColors.secondaryText;
     case 'overdue':
     case 'pending':
@@ -36,6 +37,7 @@ Color memberStatusSoft(String status) {
     case 'partial':
       return AppColors.warningSoft;
     case 'no period':
+    case 'upcoming':
       return AppColors.neutralChip;
     case 'overdue':
     case 'pending':

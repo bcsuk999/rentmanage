@@ -232,28 +232,44 @@ async function memberDetail(id, ownerId) {
     if (!paymentsByPeriod.has(key)) paymentsByPeriod.set(key, []);
     paymentsByPeriod.get(key).push(p);
   }
-  // Due = only periods that have started (startDate <= today).
-  // Future advance cycles (e.g. 1 Nov created while today is 1 Oct) must not
-  // inflate the due/outstanding total.
-  const duePeriods = periods.filter((p) => startOfDay(p.startDate) <= reference);
-  const outstanding = duePeriods.reduce((sum, p) => sum + (p.pendingAmount || 0), 0);
-  const paidTotal = periods.reduce((sum, p) => sum + (p.paidAmount || 0), 0);
-  const futurePending = Math.round(
-    periods
-      .filter((p) => startOfDay(p.startDate) > reference)
-      .reduce((sum, p) => sum + (p.pendingAmount || 0), 0) * 100
-  ) / 100;
+  // Split the money by where the cycle sits relative to today, so a cycle that
+  // has not begun yet is never reported as money owed now:
+  //   notStarted - starts after today, e.g. a 1 Nov cycle created on 17 Oct
+  //   lapsed     - ended before today, unpaid carry-over
+  //   running    - covers today, this is the rent owed right now
+  // Invariant: outstanding = due + overdue, and notYetDue is outside both.
+  const started = periods.filter((p) => startOfDay(p.startDate) <= reference);
+  const notStarted = periods.filter((p) => startOfDay(p.startDate) > reference);
+  const lapsed = started.filter((p) => startOfDay(p.endDate) < reference);
+  const running = started.filter((p) => startOfDay(p.endDate) >= reference);
+  const money = (list) =>
+    Math.round(list.reduce((sum, p) => sum + (p.pendingAmount || 0), 0) * 100) / 100;
+
+  // Serialise a not-yet-started cycle as 'Upcoming' rather than its stored
+  // 'Pending'. Clients render 'Pending' as "Due", which would put next month's
+  // rent on screen as money the landlord is owed today.
+  const decorated = periods.map((p) => {
+    const isStarted = startOfDay(p.startDate) <= reference;
+    return { ...p, started: isStarted, status: isStarted ? p.status : 'Upcoming' };
+  });
 
   return {
     member,
     room,
-    periods,
+    periods: decorated,
     current,
     payments,
     paymentsByPeriod,
-    outstanding: Math.round(outstanding * 100) / 100,
-    paidTotal: Math.round(paidTotal * 100) / 100,
-    futurePending,
+    // Everything owed on cycles that have begun: due + overdue.
+    outstanding: money(started),
+    // Rent owed right now, on the cycle running today.
+    due: money(running),
+    // Unpaid rent from cycles that already ended, carried into today.
+    overdue: money(lapsed),
+    // Rent for a cycle that has not started. Reported so nothing is hidden,
+    // and deliberately excluded from due and overdue.
+    notYetDue: money(notStarted),
+    paidTotal: Math.round(periods.reduce((sum, p) => sum + (p.paidAmount || 0), 0) * 100) / 100,
   };
 }
 
