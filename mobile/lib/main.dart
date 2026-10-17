@@ -22,7 +22,15 @@ class _RentManageAppState extends State<RentManageApp> {
   final ApiClient _api = ApiClient(apiBaseUrl);
   Map<String, dynamic>? _user;
   List<Room>? _initialRooms;
-  bool _ready = false;
+
+  /// True until the cached session has been read. Nothing can be built yet, so
+  /// the splash is all the user sees.
+  bool _restoring = true;
+
+  /// True once the real screen has painted its first frame. The splash stays on
+  /// top until then, which is why it is a sibling of the page rather than a
+  /// replacement for it.
+  bool _pagePainted = false;
 
   @override
   void initState() {
@@ -40,15 +48,19 @@ class _RentManageAppState extends State<RentManageApp> {
       _api.token = session.token;
       cachedRooms = await SessionCache.loadRooms();
     }
-    // Brief branded moment; never an indefinite splash.
-    await Future<void>.delayed(const Duration(milliseconds: 700));
     if (mounted) {
       setState(() {
         _user = session.user;
         _initialRooms = cachedRooms;
-        _ready = true;
+        _restoring = false;
       });
     }
+  }
+
+  /// The real screen has painted. Take the splash away.
+  void _onPagePainted() {
+    if (!mounted || _pagePainted) return;
+    setState(() => _pagePainted = true);
   }
 
   Future<void> _handleSignedIn(Map<String, dynamic> user) async {
@@ -85,26 +97,40 @@ class _RentManageAppState extends State<RentManageApp> {
 
   @override
   Widget build(BuildContext context) {
-    final signedIn = _user != null;
+    // The page is built as soon as the session is known; the splash is drawn
+    // over it until it reports its first frame. Nothing waits on the network,
+    // so a cold backend delays the data, never the splash.
+    final Widget page;
+    if (_restoring) {
+      page = const SizedBox.shrink();
+    } else if (_user != null) {
+      page = HomePage(
+        api: _api,
+        user: _user!,
+        initialRooms: _initialRooms,
+        onSignOut: _handleSignOut,
+        onFirstFrame: _onPagePainted,
+      );
+    } else {
+      page = LoginPage(
+        api: _api,
+        onSignedIn: _handleSignedIn,
+        onFirstFrame: _onPagePainted,
+      );
+    }
+
     return MaterialApp(
       title: 'Rent Manager',
       debugShowCheckedModeBanner: false,
       theme: buildLightTheme(),
       // The reference design is light-only.
       themeMode: ThemeMode.light,
-      home: !_ready
-          ? const SplashScreen()
-          : signedIn
-              ? HomePage(
-                  api: _api,
-                  user: _user!,
-                  initialRooms: _initialRooms,
-                  onSignOut: _handleSignOut,
-                )
-              : LoginPage(
-                  api: _api,
-                  onSignedIn: _handleSignedIn,
-                ),
+      home: _pagePainted
+          ? page
+          : Stack(
+              fit: StackFit.expand,
+              children: [page, const SplashScreen()],
+            ),
     );
   }
 }
@@ -225,12 +251,6 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
                       textAlign: TextAlign.center,
                       style: theme.textTheme.bodyMedium
                           ?.copyWith(color: AppColors.secondaryText)),
-                ),
-                const SizedBox(height: 28),
-                const SizedBox(
-                  width: 28,
-                  height: 28,
-                  child: CircularProgressIndicator(strokeWidth: 3),
                 ),
               ],
             ),

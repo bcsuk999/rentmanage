@@ -6,10 +6,19 @@ import 'app_theme.dart';
 import 'motion.dart';
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key, required this.api, required this.onSignedIn});
+  const LoginPage({
+    super.key,
+    required this.api,
+    required this.onSignedIn,
+    this.onFirstFrame,
+  });
 
   final ApiClient api;
   final void Function(Map<String, dynamic> user) onSignedIn;
+
+  /// Fired once this page has painted its first frame, so the shell can drop
+  /// the splash it is holding over the top of it.
+  final VoidCallback? onFirstFrame;
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -39,6 +48,10 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
       begin: const Offset(0, 0.06),
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _enter, curve: Curves.easeOutCubic));
+    final first = widget.onFirstFrame;
+    if (first != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => first());
+    }
   }
 
   @override

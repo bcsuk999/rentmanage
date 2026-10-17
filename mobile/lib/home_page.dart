@@ -14,12 +14,23 @@ import 'status_colors.dart';
 import 'widgets.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key, required this.api, required this.user, this.initialRooms, required this.onSignOut});
+  const HomePage({
+    super.key,
+    required this.api,
+    required this.user,
+    this.initialRooms,
+    required this.onSignOut,
+    this.onFirstFrame,
+  });
 
   final ApiClient api;
   final Map<String, dynamic> user;
   final List<Room>? initialRooms;
   final VoidCallback onSignOut;
+
+  /// Fired once the dashboard has painted its first frame - UI only, before any
+  /// data has arrived - so the shell can drop the splash covering it.
+  final VoidCallback? onFirstFrame;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -115,6 +126,12 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _refresh(silent: widget.initialRooms != null);
     });
+    // The dashboard is on screen from this frame, whatever the network is
+    // doing, so the shell can take the splash away now.
+    final first = widget.onFirstFrame;
+    if (first != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => first());
+    }
   }
 
   @override
@@ -142,15 +159,12 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   /// The current search term, or '' when the box is empty.
   String get _term => _search.text.trim();
 
-  /// Room list for the filters currently applied. No date and no search term is
-  /// sent: the list is always the rent cycle running today. An expired or
-  /// revoked token signs out instead of error-looping.
+  /// Every room, unfiltered. No date and no search term is sent: the list is
+  /// always the rent cycle running today. An expired or revoked token signs out
+  /// instead of error-looping.
   Future<List<Room>> _loadRooms() async {
     try {
-      return await widget.api.rooms(
-        status: _statusFilter,
-        paymentState: _payFilter,
-      );
+      return await widget.api.rooms();
     } on ApiException catch (e) {
       if (e.statusCode == 401 && mounted) _signOut();
       rethrow;
@@ -819,15 +833,10 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       return EmptyPanel(
         icon: Icons.search_off_outlined,
         title: 'No matches',
-        body: 'Try a different search or clear the filters.',
-        actionLabel: 'Clear filters',
+        body: 'Try a different search term.',
+        actionLabel: 'Clear search',
         onAction: () {
           _search.clear();
-          setState(() {
-            _statusFilter = 'All';
-            _payFilter = 'All';
-            _chip = null;
-          });
           _runSearch('');
         },
       );
