@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'app_theme.dart';
 import 'motion.dart';
 import 'widgets.dart';
 
@@ -125,9 +126,17 @@ class _MemberFormPageState extends State<MemberFormPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('${widget.isEdit ? 'Edit' : 'Add'} member · Room ${widget.roomNumber}')),
+      appBar: AppBar(
+        elevation: 8,
+        scrolledUnderElevation: 8,
+        shadowColor: AppColors.mainText.withValues(alpha: 0.16),
+        surfaceTintColor: Colors.transparent,
+        title: Text(widget.isEdit
+            ? 'Edit member · Room ${widget.roomNumber}'
+            : 'Add member to Room ${widget.roomNumber}'),
+      ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -153,7 +162,21 @@ class _MemberFormPageState extends State<MemberFormPage> {
             const SizedBox(height: 12),
             TextField(
               controller: _mobile,
-              decoration: const InputDecoration(labelText: 'Mobile (10 digits) *', hintText: '9810010001'),
+              decoration: const InputDecoration(
+                labelText: 'Mobile (10 digits) *',
+                prefixIcon: Padding(
+                  padding: EdgeInsets.only(left: 12, right: 10),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _IndiaFlag(),
+                      SizedBox(width: 6),
+                      Text('+91'),
+                    ],
+                  ),
+                ),
+                prefixIconConstraints: BoxConstraints(minWidth: 0, minHeight: 0),
+              ),
               keyboardType: TextInputType.number,
               maxLength: 10,
               textInputAction: TextInputAction.next,
@@ -161,7 +184,7 @@ class _MemberFormPageState extends State<MemberFormPage> {
             const SizedBox(height: 12),
             TextField(
               controller: _rent,
-              decoration: const InputDecoration(labelText: 'Monthly rent (₹) *', hintText: '8000'),
+              decoration: const InputDecoration(labelText: 'Monthly rent (₹) *'),
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               textInputAction: TextInputAction.next,
             ),
@@ -174,27 +197,89 @@ class _MemberFormPageState extends State<MemberFormPage> {
             ),
             const SizedBox(height: 12),
             ListTile(
-              contentPadding: EdgeInsets.zero,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+                side: const BorderSide(color: AppColors.border),
+              ),
               title: const Text('Rent start date'),
               subtitle: Text(_dateInput(_start)),
               trailing: const Icon(Icons.calendar_month_outlined),
               onTap: _pickDate,
             ),
-            const SizedBox(height: 20),
-            FilledButton(
-              onPressed: _busy ? null : _submit,
-              child: AnimatedSwitcher(
-                duration: MotionDuration.quick,
-                child: _busy
-                    ? const SizedBox(
-                        key: ValueKey('busy'),
-                        height: 18,
-                        width: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2))
-                    : Text(widget.isEdit ? 'Save changes' : 'Add member',
-                        key: const ValueKey('idle')),
+          ],
+        ),
+      ),
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.mainText.withValues(alpha: 0.16),
+              blurRadius: 12,
+              offset: const Offset(0, -3),
+            ),
+          ],
+        ),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+            child: SizedBox(
+              height: 50,
+              child: FilledButton(
+                style: FilledButton.styleFrom(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: _busy ? null : _submit,
+                child: AnimatedSwitcher(
+                  duration: MotionDuration.quick,
+                  child: _busy
+                      ? const SizedBox(
+                          key: ValueKey('busy'),
+                          height: 18,
+                          width: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : Text(widget.isEdit ? 'Save changes' : 'Add member',
+                          key: const ValueKey('idle')),
+                ),
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Tiny Indian-flag mark shown ahead of the +91 prefix in the mobile field.
+class _IndiaFlag extends StatelessWidget {
+  const _IndiaFlag();
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(2),
+      child: Container(
+        width: 20,
+        height: 14,
+        decoration: const BoxDecoration(color: Colors.white),
+        child: Column(
+          children: [
+            Expanded(child: Container(color: const Color(0xFFFF9933))),
+            Expanded(
+              child: Center(
+                child: Container(
+                  width: 4,
+                  height: 4,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF000080),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+            ),
+            Expanded(child: Container(color: const Color(0xFF138808))),
           ],
         ),
       ),

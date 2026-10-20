@@ -59,9 +59,18 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Change Password')),
+      appBar: AppBar(
+        elevation: 8,
+        scrolledUnderElevation: 8,
+        shadowColor: AppColors.mainText.withValues(alpha: 0.16),
+        surfaceTintColor: Colors.transparent,
+        leading: const BackButton(),
+        centerTitle: true,
+        title: const Text('Change Password',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+      ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 480),
@@ -104,15 +113,38 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
                   textInputAction: TextInputAction.done,
                   onSubmitted: (_) => _submit(),
                 ),
-                const SizedBox(height: 20),
-                FilledButton(
-                  onPressed: _busy ? null : _submit,
-                  child: _busy
-                      ? const SizedBox(
-                          height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Text('Update Password'),
-                ),
               ],
+            ),
+          ),
+        ),
+      ),
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.mainText.withValues(alpha: 0.16),
+              blurRadius: 12,
+              offset: const Offset(0, -3),
+            ),
+          ],
+        ),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+            child: SizedBox(
+              height: 50,
+              child: FilledButton(
+                style: FilledButton.styleFrom(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: _busy ? null : _submit,
+                child: _busy
+                    ? const SizedBox(
+                        height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Text('Update Password'),
+              ),
             ),
           ),
         ),

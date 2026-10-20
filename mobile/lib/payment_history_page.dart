@@ -2,9 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'app_theme.dart';
-import 'motion.dart';
 import 'payment_allocation.dart';
-import 'record_payment_page.dart';
 import 'status_colors.dart';
 import 'widgets.dart';
 
@@ -34,26 +32,6 @@ class PaymentHistoryPage extends StatefulWidget {
 
 class _PaymentHistoryPageState extends State<PaymentHistoryPage> {
   final _listKey = GlobalKey<PaymentHistoryListState>();
-  bool _recording = false;
-
-  Future<void> _openRecordFlow() async {
-    if (_recording) return;
-    setState(() => _recording = true);
-    try {
-      await Navigator.of(context).push(
-        smoothRoute(
-          RecordPaymentPage(
-            api: widget.api,
-            roomId: widget.roomId,
-            roomNumber: widget.roomNumber,
-          ),
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _recording = false);
-    }
-    if (mounted) await _listKey.currentState?.reload();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -63,16 +41,16 @@ class _PaymentHistoryPageState extends State<PaymentHistoryPage> {
     ].join(' · ');
     return Scaffold(
       appBar: AppBar(
+        elevation: 8,
+        scrolledUnderElevation: 8,
+        shadowColor: AppColors.mainText.withValues(alpha: 0.16),
+        surfaceTintColor: Colors.transparent,
         leading: const BackButton(),
         centerTitle: true,
         title: const Text(
           'Payment Records',
           style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
         ),
-        actions: [
-          _RecordActionButton(busy: _recording, onPressed: _openRecordFlow),
-          const SizedBox(width: 10),
-        ],
       ),
       body: PaymentHistoryList(
         key: _listKey,
@@ -83,63 +61,6 @@ class _PaymentHistoryPageState extends State<PaymentHistoryPage> {
         roomId: widget.roomId,
         roomNumber: widget.roomNumber,
         scopeLabel: scope,
-      ),
-    );
-  }
-}
-
-/// Header action: raised "Record" pill, shadowed so it reads as tappable.
-class _RecordActionButton extends StatelessWidget {
-  const _RecordActionButton({required this.busy, required this.onPressed});
-
-  final bool busy;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.primary,
-        borderRadius: BorderRadius.circular(10),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withValues(alpha: 0.38),
-            blurRadius: 8,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(10),
-          onTap: busy ? null : onPressed,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (busy)
-                  const SizedBox(
-                    height: 11,
-                    width: 11,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                  )
-                else
-                  const Icon(Icons.add_rounded, size: 13, color: Colors.white),
-                const SizedBox(width: 3),
-                Text(
-                  'Record',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 11,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
       ),
     );
   }
@@ -158,6 +79,7 @@ class PaymentHistoryList extends StatefulWidget {
     this.roomNumber,
     this.scopeLabel,
     this.embedded = false,
+    this.showFilters = true,
   });
 
   final ApiClient api;
@@ -170,6 +92,10 @@ class PaymentHistoryList extends StatefulWidget {
 
   /// When true: shrink-wrapped, no pull-to-refresh (parent scrolls).
   final bool embedded;
+
+  /// Hides the search/method/date filters. Used where the list is a read-only
+  /// ledger inside another page and the filters would only add noise.
+  final bool showFilters;
 
   @override
   State<PaymentHistoryList> createState() => PaymentHistoryListState();
@@ -398,19 +324,19 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
 
   @override
   Widget build(BuildContext context) {
+    final filters = widget.showFilters ? _filterBar(context) : null;
     if (widget.embedded) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _filterBar(context),
-          const SizedBox(height: 8),
+          if (filters != null) ...[filters, const SizedBox(height: 8)],
           _body(context),
         ],
       );
     }
     return Column(
       children: [
-        _filterBar(context),
+        ?filters,
         Expanded(child: _body(context)),
       ],
     );
@@ -428,54 +354,37 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Card 1: search input with the search button on its right.
+          // Same search row as the dashboard: plain field plus its trigger.
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Card(
-              child: Padding(
-                padding: const EdgeInsets.all(6),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _searchController,
-                        focusNode: _searchFocus,
-                        textInputAction: TextInputAction.search,
-                        onChanged: (_) => setState(() {}),
-                        onSubmitted: _runSearch,
-                        decoration: InputDecoration(
-                          hintText: 'Search name, phone, reference...',
-                          hintMaxLines: 1,
-                          prefixIcon: const Icon(Icons.search, size: 18),
-                          prefixIconConstraints:
-                              const BoxConstraints(minWidth: 34, minHeight: 34),
-                          suffixIcon: _searchController.text.isEmpty
-                              ? null
-                              : IconButton(
-                                  tooltip: 'Clear',
-                                  icon: const Icon(Icons.clear, size: 18),
-                                  onPressed: () {
-                                    _searchController.clear();
-                                    _runSearch('');
-                                  },
-                                ),
-                          isDense: true,
-                          contentPadding:
-                              const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: BorderSide.none,
-                          ),
-                          filled: true,
-                          fillColor: AppColors.primary.withValues(alpha: 0.05),
-                        ),
-                      ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    focusNode: _searchFocus,
+                    textInputAction: TextInputAction.search,
+                    onChanged: (_) => setState(() {}),
+                    onSubmitted: _runSearch,
+                    decoration: InputDecoration(
+                      hintText: 'Search name, phone, reference...',
+                      prefixIcon: const Icon(Icons.search),
+                      suffixIcon: _searchController.text.isEmpty
+                          ? null
+                          : IconButton(
+                              tooltip: 'Clear',
+                              icon: const Icon(Icons.clear),
+                              onPressed: () {
+                                _searchController.clear();
+                                _runSearch('');
+                              },
+                            ),
                     ),
-                    const SizedBox(width: 6),
-                    _SearchButton(onPressed: _runSearch),
-                  ],
+                  ),
                 ),
-              ),
+                const SizedBox(width: 6),
+                _SearchButton(onPressed: _runSearch),
+              ],
             ),
           ),
           if (scope.isNotEmpty)
@@ -598,14 +507,20 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
                 ],
               ),
               const SizedBox(height: 2),
-              Text(
-                value,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 13,
-                  color: active ? AppColors.primary : AppColors.mainText,
+              // The chosen value reads as the card's headline, so it sits in
+              // the middle of the card rather than hugging the left edge.
+              Align(
+                alignment: Alignment.center,
+                child: Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                    color: active ? AppColors.primary : AppColors.mainText,
+                  ),
                 ),
               ),
             ],

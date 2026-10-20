@@ -27,6 +27,12 @@ class MotionDuration {
 
   /// Emphasis moments, badge appear, text reveal, success check.
   static const verySlow = Duration(milliseconds: 500);
+
+  /// Push: the incoming page travels the full viewport width.
+  static const page = Duration(milliseconds: 320);
+
+  /// Pop: the reverse is a touch quicker so back feels immediate.
+  static const pageReverse = Duration(milliseconds: 280);
 }
 
 class MotionCurve {
@@ -49,6 +55,7 @@ class MotionCurve {
   static const checkBob = Cubic(0.34, 1.35, 0.64, 1);
 }
 
+/// Spacing/travel distances used by the transitions below.
 class MotionDistance {
   static const micro = 4.0;
   static const small = 6.0;
@@ -57,34 +64,74 @@ class MotionDistance {
   static const large = 30.0;
 }
 
-class MotionScale {
-  static const large = 0.96;
-  static const medium = 0.97;
-  static const small = 0.98;
-  static const tiny = 0.99;
+/// The app's page transition: a full-width side-by-side slide taken from the
+/// reference app. The incoming page enters from the right while the page below
+/// it is pushed left on the same curve, so the two read as one continuous
+/// strip - exactly like the dashboard's tab band. Reduced-motion users get the
+/// plain child with no travel.
+class MotionPageTransitionsBuilder extends PageTransitionsBuilder {
+  const MotionPageTransitionsBuilder();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) =>
+      _buildMotionPageTransition(context, animation, secondaryAnimation, child);
 }
 
-/// Smooth page slide + fade, using the page side-by-side tokens.
-/// Forward navigation rises slightly; the reverse mirrors it.
-Route<T> smoothRoute<T>(Widget page) {
+Widget _buildMotionPageTransition(
+  BuildContext context,
+  Animation<double> animation,
+  Animation<double> secondaryAnimation,
+  Widget child,
+) {
+  if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) return child;
+
+  // Curves are chained onto the tweens instead of wrapping the routes'
+  // animations in a CurvedAnimation: the transitions builder runs every frame,
+  // and a CurvedAnimation registers a status listener on its parent in its
+  // constructor and only removes it in dispose(), so wrapping here would leak
+  // one listener per frame for the life of the route.
+  final curve = CurveTween(curve: MotionCurve.smoothOut);
+  final outgoingSlide = Tween<Offset>(
+    begin: Offset.zero,
+    end: const Offset(-1, 0),
+  ).chain(curve).animate(secondaryAnimation);
+  final incomingSlide = Tween<Offset>(
+    begin: const Offset(1, 0),
+    end: Offset.zero,
+  ).chain(curve).animate(animation);
+
+  return SlideTransition(
+    // The page being covered rides out to the left.
+    position: outgoingSlide,
+    child: SlideTransition(
+      // The page being revealed enters from the right.
+      position: incomingSlide,
+      child: child,
+    ),
+  );
+}
+
+/// Explicit route using the same motion as [MotionPageTransitionsBuilder].
+/// Push and pop get their own durations so going back never feels sluggish.
+Route<T> smoothRoute<T>(Widget page, {RouteSettings? settings}) {
   return PageRouteBuilder<T>(
-    transitionDuration: MotionDuration.fast,
-    reverseTransitionDuration: MotionDuration.quick,
+    settings: settings,
+    transitionDuration: MotionDuration.page,
+    reverseTransitionDuration: MotionDuration.pageReverse,
     pageBuilder: (_, _, _) => page,
-    transitionsBuilder: (context, animation, secondaryAnimation, child) {
-      final curved =
-          CurvedAnimation(parent: animation, curve: MotionCurve.smoothOut);
-      return FadeTransition(
-        opacity: curved,
-        child: SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(0, MotionDistance.base / 100),
-            end: Offset.zero,
-          ).animate(curved),
-          child: child,
-        ),
-      );
-    },
+    transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+        _buildMotionPageTransition(
+      context,
+      animation,
+      secondaryAnimation,
+      child,
+    ),
   );
 }
 
@@ -222,8 +269,9 @@ class _ShakeOnErrorState extends State<ShakeOnError>
   }
 }
 
-/// Number pop-in: re-enters the value with a blurred slide whenever it changes.
-class PopInValue extends StatelessWidget {
+/// Number pop-in: the old value disappears at once and the new one scales in
+/// from 80% to full size whenever it changes.
+class PopInValue extends StatefulWidget {
   const PopInValue({
     super.key,
     required this.value,
@@ -238,32 +286,53 @@ class PopInValue extends StatelessWidget {
   final int maxLines;
 
   @override
+  State<PopInValue> createState() => _PopInValueState();
+}
+
+class _PopInValueState extends State<PopInValue>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: MotionDuration.verySlow,
+  );
+
+  late final Animation<double> _scale = Tween<double>(begin: 0.8, end: 1.0)
+      .animate(CurvedAnimation(parent: _c, curve: MotionCurve.smoothOut));
+
+  late final Animation<double> _opacity =
+      CurvedAnimation(parent: _c, curve: MotionCurve.easeOut);
+
+  @override
+  void initState() {
+    super.initState();
+    _c.forward();
+  }
+
+  @override
+  void didUpdateWidget(covariant PopInValue oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.value != widget.value) _c.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return AnimatedSwitcher(
-      duration: MotionDuration.verySlow,
-      switchInCurve: MotionCurve.digit,
-      switchOutCurve: MotionCurve.smoothOut,
-      transitionBuilder: (child, animation) {
-        final curved =
-            CurvedAnimation(parent: animation, curve: MotionCurve.digit);
-        return FadeTransition(
-          opacity: animation,
-          child: SlideTransition(
-            position: Tween<Offset>(
-              begin: const Offset(0, MotionDistance.base / 100),
-              end: Offset.zero,
-            ).animate(curved),
-            child: child,
-          ),
-        );
-      },
-      child: Text(
-        value,
-        key: ValueKey(value),
-        style: style,
-        textAlign: textAlign,
-        maxLines: maxLines,
-        overflow: TextOverflow.ellipsis,
+    return ScaleTransition(
+      scale: _scale,
+      child: FadeTransition(
+        opacity: _opacity,
+        child: Text(
+          widget.value,
+          style: widget.style,
+          textAlign: widget.textAlign,
+          maxLines: widget.maxLines,
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
     );
   }

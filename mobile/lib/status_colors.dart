@@ -110,6 +110,13 @@ String fmtDateShortIso(String iso) {
 /// DateTime -> '01 Oct'.
 String fmtDateShort(DateTime d) => '${d.day.toString().padLeft(2, '0')} ${_months[d.month - 1]}';
 
+/// DateTime -> '01-10-2026', for labels that spell out what the date is.
+String fmtDateNumeric(DateTime d) =>
+    '${d.day.toString().padLeft(2, '0')}-${d.month.toString().padLeft(2, '0')}-${d.year}';
+
+/// DateTime -> '1 Oct 2026', the reading form used for due dates.
+String fmtDateMedium(DateTime d) => '${d.day} ${_months[d.month - 1]} ${d.year}';
+
 /// ISO datetime -> '10:13:22 PM'. Empty string when absent/unparseable.
 String fmtTimeIso(String iso) {
   if (iso.isEmpty) return '';
@@ -122,15 +129,6 @@ String fmtTimeIso(String iso) {
     return '$h:$m:$s ${h24 < 12 ? 'AM' : 'PM'}';
   } catch (_) {
     return '';
-  }
-}
-
-/// ISO datetime -> 'YYYY-MM-DD' for API query params.
-String toDateOnlyIso(String iso) {
-  try {
-    return DateTime.parse(iso).toUtc().toIso8601String().substring(0, 10);
-  } catch (_) {
-    return iso.length >= 10 ? iso.substring(0, 10) : iso;
   }
 }
 

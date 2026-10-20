@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'app_theme.dart';
-import 'payment_allocation.dart';
-import 'payment_sheet.dart';
+import 'payment_drawer.dart';
 import 'status_colors.dart';
 import 'widgets.dart';
 
@@ -137,33 +136,13 @@ class OverduePageState extends State<OverduePage> {
   }
 
   Future<void> _record(OverdueMember m, OverduePeriod p) async {
-    // Full period list for the member, so the sheet can show exactly which
-    // cycle each rupee lands on. Without it the sheet falls back to a flat
-    // overdue/current split.
-    var cycles = const <PaymentCycle>[];
-    double totalCurrentDue = 0;
-    try {
-      final periods = await widget.api.memberPeriods(m.memberId);
-      if (!mounted) return;
-      cycles = buildAllocationOrder(periods, p.id);
-      totalCurrentDue = currentTotal(cycles);
-    } catch (_) {
-      // Offline or the member moved on: the two scalar totals still come from
-      // the report we are rendering.
-    }
-    if (!mounted) return;
-
-    final recorded = await showPaymentSheet(
+    final recorded = await showPaymentDrawer(
       context,
       api: widget.api,
-      rentPeriodId: p.id,
+      roomNumber: m.roomNumber,
+      memberId: m.memberId,
       memberName: m.name,
-      pending: p.pending,
-      totalOverdue: m.totalOverdue,
-      totalCurrentDue: totalCurrentDue,
-      cycles: cycles,
-      periodStart: p.start,
-      periodEnd: p.end,
+      periodId: p.id,
     );
     if (recorded && mounted) _load();
   }

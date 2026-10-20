@@ -201,6 +201,7 @@ class RoomDetailRow {
     required this.paid,
     required this.pending,
     required this.status,
+    this.overdue = 0,
     this.periodId,
     this.periodStart,
     this.periodEnd,
@@ -214,9 +215,15 @@ class RoomDetailRow {
   final double paid;
   final double pending;
   final String status;
+
+  /// Unpaid rent carried over from cycles that have already ended.
+  final double overdue;
   final String? periodId;
   final DateTime? periodStart;
   final DateTime? periodEnd;
+
+  /// Everything this member owes right now: this cycle plus carry-over.
+  double get totalDue => pending + overdue;
 
   double get progress => rent <= 0 ? 0 : (paid / rent).clamp(0.0, 1.0);
 
@@ -225,6 +232,7 @@ class RoomDetailRow {
     DateTime? asDate(dynamic v) => v == null ? null : DateTime.tryParse('$v');
     final member = (json['member'] as Map? ?? {}).cast<String, dynamic>();
     final period = (json['period'] as Map?)?.cast<String, dynamic>();
+    final overdue = (json['overdue'] as Map?)?.cast<String, dynamic>();
     return RoomDetailRow(
       memberId: '${member['_id']}',
       name: '${member['name']}',
@@ -233,26 +241,11 @@ class RoomDetailRow {
       rent: period == null ? 0 : asDouble(period['rentAmount']),
       paid: period == null ? 0 : asDouble(period['paidAmount']),
       pending: period == null ? 0 : asDouble(period['pendingAmount']),
+      overdue: overdue == null ? 0 : asDouble(overdue['amt']),
       status: '${json['status'] ?? 'No period'}',
       periodId: period == null ? null : '${period['_id']}',
       periodStart: period == null ? null : asDate(period['startDate']),
       periodEnd: period == null ? null : asDate(period['endDate']),
-    );
-  }
-}
-
-class VacatedEntry {
-  VacatedEntry({required this.name, required this.mobile, required this.vacatedOn});
-
-  final String name;
-  final String mobile;
-  final String vacatedOn;
-
-  factory VacatedEntry.fromJson(Map<String, dynamic> json) {
-    return VacatedEntry(
-      name: '${json['name']}',
-      mobile: '${json['mobile'] ?? '-'}',
-      vacatedOn: '${json['vacatingDate'] ?? '-'}',
     );
   }
 }
@@ -264,14 +257,11 @@ class RoomDetail {
     required this.totalRent,
     required this.totalPaid,
     required this.totalPending,
+    required this.totalOverdue,
     required this.paymentState,
     required this.capacity,
     required this.isFull,
     required this.memberCount,
-    required this.historical,
-    required this.rangeStartIso,
-    required this.rangeEndIso,
-    required this.ranges,
   });
 
   final Room room;
@@ -279,56 +269,38 @@ class RoomDetail {
   final double totalRent;
   final double totalPaid;
   final double totalPending;
+
+  /// Carry-over from cycles that have already ended.
+  final double totalOverdue;
   final String paymentState;
   final int capacity;
   final bool isFull;
   final int memberCount;
-  final List<VacatedEntry> historical;
 
-  /// Active date range, ISO strings; null when the room has no periods yet.
-  final String? rangeStartIso;
-  final String? rangeEndIso;
-
-  /// All known ranges (newest first) for the month switcher.
-  final List<DateRange> ranges;
+  /// Everything the room still owes: this cycle plus carry-over.
+  double get totalDue => totalPending + totalOverdue;
 
   factory RoomDetail.fromJson(Map<String, dynamic> json, Room room) {
     double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
     int asInt(dynamic v) => v is int ? v : int.tryParse('$v') ?? 0;
     final summary = (json['summary'] as Map? ?? {}).cast<String, dynamic>();
     final rows = ((json['members'] as List? ?? []).cast<Map>()).map((e) => RoomDetailRow.fromJson(e.cast<String, dynamic>())).toList();
-    final historical = ((json['historical'] as List? ?? []).cast<Map>()).map((e) => VacatedEntry.fromJson(e.cast<String, dynamic>())).toList();
-    final range = (json['range'] as Map?)?.cast<String, dynamic>();
-    final ranges = ((json['ranges'] as List? ?? []).cast<Map>())
-        .map((e) => DateRange.fromJson(e.cast<String, dynamic>()))
-        .toList();
     return RoomDetail(
       room: room,
       rows: rows,
       totalRent: asDouble(summary['totalRent']),
       totalPaid: asDouble(summary['totalPaid']),
       totalPending: asDouble(summary['totalPending']),
+      // Older servers omit totalOverdue; derive it from the rows so the tile
+      // still reports the full balance.
+      totalOverdue: summary['totalOverdue'] != null
+          ? asDouble(summary['totalOverdue'])
+          : rows.fold<double>(0, (sum, row) => sum + row.overdue),
       paymentState: '${summary['paymentState'] ?? ''}',
       capacity: asInt(json['capacity']),
       isFull: json['isFull'] == true,
       memberCount: asInt(summary['memberCount']),
-      historical: historical,
-      rangeStartIso: range == null ? null : '${range['start']}',
-      rangeEndIso: range == null ? null : '${range['end']}',
-      ranges: ranges,
     );
-  }
-}
-
-/// One selectable rental month on the details screen.
-class DateRange {
-  DateRange({required this.startIso, required this.endIso});
-
-  final String startIso;
-  final String endIso;
-
-  factory DateRange.fromJson(Map<String, dynamic> json) {
-    return DateRange(startIso: '${json['start']}', endIso: '${json['end']}');
   }
 }
 
@@ -429,36 +401,29 @@ class ApiClient {
 
   /// Every room with its members, on the rent cycle running today. [status] is a
   /// room status (Occupied/Empty/Maintenance), [paymentState] is
-  /// Fully Paid/Partial/Pending/Overdue. 'All'/empty means no filter.
-  ///
-  /// There is no text filter here: finding a room or member by name or number is
-  /// [search]'s job, and historical figures come from [landlordSummary].
-  ///
-  /// The unfiltered list is cached on-device for offline-first startup.
-  Future<List<Room>> rooms({String? status, String? paymentState}) async {
-    final params = <String, String>{};
-    if (status != null && status != 'All') params['status'] = status;
-    if (paymentState != null && paymentState != 'All') params['paymentState'] = paymentState;
-    final uri = Uri.parse('$baseUrl/api/landlord/rooms')
-        .replace(queryParameters: params.isEmpty ? null : params);
+  /// Every room, unfiltered, on the rent cycle running today. Finding a room or
+  /// member by name or number is [search]'s job, and historical figures come
+  /// from [landlordSummary]. The list is cached on-device for offline-first
+  /// startup.
+  Future<List<Room>> rooms() async {
+    final uri = Uri.parse('$baseUrl/api/landlord/rooms');
     final res = await _get(uri);
     if (res.statusCode != 200) _throw(res);
     final body = jsonDecode(res.body) as Map<String, dynamic>;
     final list = (body['rooms'] as List? ?? []);
     final rooms = list.map((e) => Room.fromJson((e as Map).cast<String, dynamic>())).toList();
-    if (_isCacheable(status: status, paymentState: paymentState)) {
-      // Best-effort cache; never fail the request because of storage.
-      try {
-        await SessionCache.saveRooms(rooms);
-      } catch (_) {
-        // ignore cache write failures
-      }
+    // Best-effort cache; never fail the request because of storage.
+    try {
+      await SessionCache.saveRooms(rooms);
+    } catch (_) {
+      // ignore cache write failures
     }
     return rooms;
   }
 
-  /// Portfolio totals for one period. Pass [from]/[to] ('YYYY-MM-DD'); both or
-  /// neither, and with neither the server reports the current calendar month.
+  /// Portfolio totals. Pass [from]/[to] ('YYYY-MM-DD') for one closed period;
+  /// both or neither. With neither the server reports a running total up to
+  /// today, which is what the dashboard tiles show.
   Future<LandlordSummary> landlordSummary({String? from, String? to}) async {
     final params = <String, String>{};
     if (from != null && from.isNotEmpty) params['from'] = from;
@@ -484,19 +449,9 @@ class ApiClient {
     return SearchResults.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
   }
 
-  /// Only the unfiltered list is cached: a filtered list always comes fresh
-  /// from the server.
-  bool _isCacheable({String? status, String? paymentState}) {
-    if (status != null && status != 'All') return false;
-    if (paymentState != null && paymentState != 'All') return false;
-    return true;
-  }
-
-  /// Full room details. Pass [from]/[to] ('YYYY-MM-DD') to view another month.
-  Future<RoomDetail> roomDetail(String id, {String? from, String? to}) async {
-    final uri = Uri.parse('$baseUrl/api/landlord/room/$id').replace(
-      queryParameters: (from != null && to != null) ? {'from': from, 'to': to} : null,
-    );
+  /// Full room details for the rent cycle running today.
+  Future<RoomDetail> roomDetail(String id) async {
+    final uri = Uri.parse('$baseUrl/api/landlord/room/$id');
     final detailRes = await _get(uri);
     if (detailRes.statusCode != 200) _throw(detailRes);
     final body = jsonDecode(detailRes.body) as Map<String, dynamic>;
@@ -952,12 +907,12 @@ class SearchResults {
   }
 }
 
-/// Portfolio totals for one period, as returned by /api/landlord/summary.
+/// Portfolio totals, as returned by /api/landlord/summary.
 ///
-/// Rent figures cover one cycle per member - the one running in the reported
-/// period - so a member whose cycle straddles the month boundary is counted
-/// once. Outstanding money is split by whether the cycle has started, so a
-/// cycle that has not begun yet (next month's rent) is never counted as due.
+/// Either one closed period, or - when the request has no range - a running
+/// total up to today: rent billed and collected on every cycle that has
+/// started, the unpaid part of cycles still running ([due]) and the unpaid part
+/// of cycles that already ended ([overdue]).
 class LandlordSummary {
   LandlordSummary({
     required this.from,
@@ -974,14 +929,15 @@ class LandlordSummary {
     required this.paymentCount,
   });
 
-  /// The period these figures describe, as 'YYYY-MM-DD'.
+  /// The range these figures describe, as 'YYYY-MM-DD'. For a till-date
+  /// summary [from] is the first cycle's start and [to] is today.
   final String from;
   final String to;
 
-  /// Rent owed for this period.
+  /// Rent billed over the range (all started cycles, for a till-date summary).
   final double totalRent;
 
-  /// Rent of this period that has been paid.
+  /// Rent paid against that billed rent.
   final double collected;
 
   /// Unpaid rent on a cycle that has already started - owed now.

@@ -5,7 +5,7 @@ import 'app_theme.dart';
 import 'member_detail_page.dart';
 import 'member_form_page.dart';
 import 'motion.dart';
-import 'record_payment_page.dart';
+import 'payment_drawer.dart';
 import 'status_colors.dart';
 import 'widgets.dart';
 
@@ -114,20 +114,13 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
       );
       return;
     }
-    await Navigator.of(context).push(
-      smoothRoute(
-        RecordPaymentPage(
-          api: widget.api,
-          roomId: widget.roomId,
-          roomNumber: widget.roomNumber,
-          members: [
-            for (final r in detail.rows)
-              {'memberId': r.memberId, 'name': r.name, 'pending': r.pending},
-          ],
-        ),
-      ),
+    final recorded = await showPaymentDrawer(
+      context,
+      api: widget.api,
+      roomId: widget.roomId,
+      roomNumber: detail.room.roomNumber,
     );
-    if (mounted) _refresh();
+    if (recorded && mounted) _refresh();
   }
 
   Future<void> _showEditRoomDialog(RoomDetail detail) async {
@@ -166,7 +159,7 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
                 ],
                 TextField(
                   controller: roomNumber,
-                  decoration: const InputDecoration(labelText: 'Room number'),
+                  decoration: const InputDecoration(labelText: 'Room name'),
                   textInputAction: TextInputAction.next,
                 ),
                 const SizedBox(height: 12),
@@ -206,7 +199,7 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
                       final cap = int.tryParse(capacity.text.trim()) ?? 0;
                       if (roomNumber.text.trim().isEmpty || cap < 1) {
                         setState(() =>
-                            error = 'Enter a room number and a capacity of at least 1.');
+                            error = 'Enter a room name and a capacity of at least 1.');
                         return;
                       }
                       setState(() {
@@ -246,11 +239,51 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
   @override
   Widget build(BuildContext context) {
     final detail = _detail;
+    final roomNumber = detail?.room.roomNumber ?? widget.roomNumber;
     return Scaffold(
       appBar: AppBar(
+        // Same shadowed header as the dashboard: the list scrolls beneath it.
+        elevation: 8,
+        scrolledUnderElevation: 8,
+        shadowColor: AppColors.mainText.withValues(alpha: 0.16),
+        surfaceTintColor: Colors.transparent,
         leading: const BackButton(),
         centerTitle: true,
-        title: const Text('Room Details'),
+        title: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Room $roomNumber',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+            if (detail != null) ...[
+              const SizedBox(height: 1),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 6,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color: roomStatusColor(detail.room.status),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    '${_statusLabel(detail.room.status)} · ${detail.memberCount}/${detail.capacity}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      height: 1.1,
+                      fontWeight: FontWeight.w600,
+                      color: roomStatusColor(detail.room.status),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
         actions: [
           if (detail != null)
             IconButton(
@@ -265,6 +298,10 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
       bottomNavigationBar: detail == null ? null : _bottomActions(context, detail),
     );
   }
+
+  /// 'occupied' reads better as 'Occupied' in the header.
+  String _statusLabel(String status) =>
+      status.isEmpty ? status : status[0].toUpperCase() + status.substring(1);
 
   Widget _body(BuildContext context) {
     // Skeleton only while there is nothing to show yet.
@@ -292,8 +329,6 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
         children: [
-          _OverviewCard(detail: detail),
-          const SizedBox(height: 12),
           _MoneyCards(detail: detail),
           const SizedBox(height: 16),
           Row(
@@ -318,99 +353,78 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
                 child: Padding(
                     padding: EdgeInsets.all(16), child: Text('No active members.')))
           else
-            for (var i = 0; i < detail.rows.length; i++) ...[
-              Reveal(
-                key: ValueKey('member-${detail.rows[i].memberId}'),
-                delay: MotionDuration.stagger * (i % 8),
-                child: MemberRow(
-                  name: detail.rows[i].name,
-                  status: detail.rows[i].status,
-                  rent: detail.rows[i].rent,
-                  paid: detail.rows[i].paid,
-                  pending: detail.rows[i].pending,
-                  subtitle: detail.rows[i].mobile,
-                  dueDate: detail.rows[i].periodEnd,
-                  onTap: () => _openMember(detail.rows[i]),
-                ),
+            Card(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              clipBehavior: Clip.antiAlias,
+              child: Column(
+                children: [
+                  for (var i = 0; i < detail.rows.length; i++) ...[
+                    Reveal(
+                      key: ValueKey('member-${detail.rows[i].memberId}'),
+                      delay: MotionDuration.stagger * (i % 8),
+                      child: MemberRow(
+                        name: detail.rows[i].name,
+                        status: detail.rows[i].status,
+                        rent: detail.rows[i].rent,
+                        paid: detail.rows[i].paid,
+                        // Balance, not just this cycle: carry-over from ended
+                        // cycles belongs on the row too.
+                        pending: detail.rows[i].totalDue,
+                        subtitle: detail.rows[i].mobile,
+                        dueDate: detail.rows[i].periodEnd,
+                        onTap: () => _openMember(detail.rows[i]),
+                      ),
+                    ),
+                    if (i < detail.rows.length - 1)
+                      const Divider(
+                          height: 1, thickness: 1, indent: 56, color: AppColors.border),
+                  ],
+                ],
               ),
-              const SizedBox(height: 10),
-            ],
+            ),
         ],
       ),
     );
   }
 
   Widget _bottomActions(BuildContext context, RoomDetail detail) {
-    return SafeArea(
-      top: false,
-      child: Container(
+    return Container(
+      // A bar that matches the header: white surface with a shadow thrown
+      // upwards onto the content it floats over.
+      decoration: BoxDecoration(
         color: AppColors.card,
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-        child: Row(
-          children: [
-            Expanded(
-              child: FilledButton.icon(
-                onPressed: () => _openRecordFlow(detail),
-                icon: const Icon(Icons.payments_outlined, size: 18),
-                label: const Text('Record Rent Payment'),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.mainText.withValues(alpha: 0.16),
+            blurRadius: 12,
+            offset: const Offset(0, -3),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+          child: SizedBox(
+            height: 50,
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                // Squarer than the default pill, and full width so it reads as
+                // the bar's single action.
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               ),
+              onPressed: () => _openRecordFlow(detail),
+              icon: const Icon(Icons.payments_outlined, size: 18),
+              label: const Text('Record Rent Payment'),
             ),
-          ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _OverviewCard extends StatelessWidget {
-  const _OverviewCard({required this.detail});
-
-  final RoomDetail detail;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.12),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.meeting_room_outlined,
-                  color: AppColors.primary, size: 26),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Room ${detail.room.roomNumber}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w800)),
-                  const SizedBox(height: 2),
-                  Text(
-                    '${detail.memberCount}/${detail.capacity} occupied',
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: AppColors.secondaryText),
-                  ),
-                ],
-              ),
-            ),
-            StatusPill.room(detail.room.status),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
+/// The same tiles as the dashboard, so money reads identically on both screens.
 class _MoneyCards extends StatelessWidget {
   const _MoneyCards({required this.detail});
 
@@ -418,42 +432,32 @@ class _MoneyCards extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Widget card(String label, String value, Color color, IconData icon) {
-      final theme = Theme.of(context);
-      return Expanded(
-        child: Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(icon, size: 18, color: color),
-                const SizedBox(height: 6),
-                PopInValue(
-                  value: value,
-                  style: theme.textTheme.titleSmall
-                      ?.copyWith(fontWeight: FontWeight.w800),
-                ),
-                Text(label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: AppColors.secondaryText, fontSize: 11)),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Row(
+    return GridView.count(
+      crossAxisCount: 3,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      mainAxisSpacing: 10,
+      crossAxisSpacing: 10,
+      childAspectRatio: 1.9,
       children: [
-        card('Expected', inr(detail.totalRent), AppColors.mainText, Icons.receipt_outlined),
-        const SizedBox(width: 10),
-        card('Collected', inr(detail.totalPaid), AppColors.success, Icons.wallet_outlined),
-        const SizedBox(width: 10),
-        card('Remaining', inr(detail.totalPending), AppColors.danger,
-            Icons.pending_actions_outlined),
+        SummaryMetric(
+          icon: Icons.receipt_outlined,
+          value: inr(detail.totalRent),
+          label: 'Expected',
+          color: AppColors.mainText,
+        ),
+        SummaryMetric(
+          icon: Icons.wallet_outlined,
+          value: inr(detail.totalPaid),
+          label: 'Collected',
+          color: AppColors.success,
+        ),
+        SummaryMetric(
+          icon: Icons.pending_actions_outlined,
+          value: inr(detail.totalDue),
+          label: 'Remaining',
+          color: AppColors.danger,
+        ),
       ],
     );
   }

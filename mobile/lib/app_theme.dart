@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'motion.dart';
+
 /// Design tokens from the UI redesign PRD (light theme, violet accents).
 class AppColors {
   static const background = Color(0xFFF5F7FB);
@@ -17,6 +19,10 @@ class AppColors {
   static const warning = Color(0xFFD97706);
   static const warningSoft = Color(0xFFFEF3C7);
   static const neutralChip = Color(0xFFEEF2F7);
+  // Member avatars use one calm blue for everyone: the balance to their right
+  // already carries the paid/overdue colour, so the avatar must not repeat it.
+  static const sky = Color(0xFF0284C7);
+  static const skySoft = Color(0xFFE0F2FE);
 }
 
 ThemeData buildLightTheme() {
@@ -33,6 +39,18 @@ ThemeData buildLightTheme() {
     colorScheme: scheme,
     useMaterial3: true,
     scaffoldBackgroundColor: AppColors.background,
+    // Every MaterialPageRoute - including ones pushed by the SDK and by any
+    // screen that forgets to opt in - gets the app's side-by-side slide.
+    pageTransitionsTheme: const PageTransitionsTheme(
+      builders: {
+        TargetPlatform.android: MotionPageTransitionsBuilder(),
+        TargetPlatform.iOS: MotionPageTransitionsBuilder(),
+        TargetPlatform.macOS: MotionPageTransitionsBuilder(),
+        TargetPlatform.windows: MotionPageTransitionsBuilder(),
+        TargetPlatform.linux: MotionPageTransitionsBuilder(),
+        TargetPlatform.fuchsia: MotionPageTransitionsBuilder(),
+      },
+    ),
     // Times New Roman ships with iOS/Windows/macOS but not Android, so the
     // fallback list keeps Android on a serif face instead of dropping to
     // Roboto. Bundling Times New Roman itself is not an option: it is a
@@ -117,7 +135,10 @@ ThemeData buildLightTheme() {
     ),
     progressIndicatorTheme: const ProgressIndicatorThemeData(color: AppColors.primary),
     snackBarTheme: SnackBarThemeData(
-      behavior: SnackBarBehavior.floating,
+      // Fixed, not floating: the dashboard's FAB plus bottom nav leave too
+      // little room for a floating bar on short viewports (keyboard open), which
+      // trips "Floating SnackBar presented off screen".
+      behavior: SnackBarBehavior.fixed,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ),
     dividerColor: AppColors.border,

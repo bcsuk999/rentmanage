@@ -57,6 +57,12 @@ class ThinProgress extends StatelessWidget {
 }
 
 /// Compact member rent row used on room cards and detail screens.
+/// A single customer row in the Khata-style list: soft initial avatar, name with
+/// a quiet meta line, and the balance pinned right with a small caption above it.
+///
+/// Deliberately has no background or border of its own — the caller supplies the
+/// white surface and the hairline dividers, so a group of rows reads as one list
+/// (rooms) or as a standalone ledger (room details) without changing the widget.
 class MemberRow extends StatelessWidget {
   const MemberRow({
     super.key,
@@ -83,81 +89,89 @@ class MemberRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final color = memberStatusColor(status);
-    final overdue = isOverdueStatus(status);
-    final progress = rent <= 0 ? 0.0 : (paid / rent).clamp(0.0, 1.0);
     final empty = rent <= 0 && paid <= 0 && pending <= 0;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: overdue ? AppColors.danger : AppColors.border,
-          width: overdue ? 1.5 : 1,
-        ),
-        boxShadow: memberGlow(status),
-      ),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    final amountColor = empty ? AppColors.secondaryText : (pending > 0 ? color : AppColors.success);
+    final caption = empty ? 'No period' : displayStatus(status);
+    // No "paid of rent" line: the amount on the right already says what is
+    // owed, so the row keeps only the phone number (when given) and the date.
+    final meta = [
+      if (subtitle != null && subtitle!.isNotEmpty) subtitle!,
+      if (empty) 'No rent period this month',
+    ].join(' · ');
+
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 9, 8, 9),
+        child: Row(
           children: [
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 15,
-                  backgroundColor: memberStatusSoft(status),
-                  child: Text(
-                    name.isEmpty ? '?' : name[0].toUpperCase(),
-                    style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 13),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.titleSmall
-                              ?.copyWith(color: color, fontWeight: FontWeight.w700)),
-                      if (subtitle != null && subtitle!.isNotEmpty)
-                        Text(subtitle!,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodySmall
-                                ?.copyWith(color: AppColors.secondaryText)),
-                    ],
-                  ),
-                ),
-                StatusPill.member(status),
-              ],
+            CircleAvatar(
+              radius: 17,
+              backgroundColor: AppColors.skySoft,
+              child: Text(
+                name.isEmpty ? '?' : name[0].toUpperCase(),
+                style: const TextStyle(
+                    color: AppColors.sky, fontWeight: FontWeight.w800, fontSize: 14),
+              ),
             ),
-            const SizedBox(height: 8),
-            ThinProgress(value: progress, color: color),
-            const SizedBox(height: 6),
-            if (empty)
-              Text('No rent period for this month yet.',
-                  style: theme.textTheme.bodySmall?.copyWith(color: AppColors.secondaryText))
-            else
-              Row(
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: Text('${inr(paid)} of ${inr(rent)} paid',
-                        style: theme.textTheme.bodySmall
-                            ?.copyWith(color: AppColors.secondaryText)),
-                  ),
-                  if (dueDate != null)
-                    Text('Due ${fmtDateShort(dueDate!)} · ',
-                        style: theme.textTheme.bodySmall
-                            ?.copyWith(color: AppColors.secondaryText)),
-                  Text('${inr(pending)} due',
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: color, fontWeight: FontWeight.w700)),
+                  Text(name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                          color: AppColors.mainText,
+                          fontWeight: FontWeight.w700,
+                          height: 1.15)),
+                  const SizedBox(height: 2),
+                  if (meta.isNotEmpty)
+                    Text(meta,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                            color: AppColors.secondaryText,
+                            fontSize: 10.5,
+                            height: 1.15)),
+                  if (dueDate != null) ...[
+                    const SizedBox(height: 2),
+                    Text('Due date : ${fmtDateMedium(dueDate!)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                            color: AppColors.secondaryText,
+                            fontSize: 9.5,
+                            height: 1.15,
+                            letterSpacing: 0.1)),
+                  ],
                 ],
               ),
+            ),
+            const SizedBox(width: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(caption,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                        color: AppColors.secondaryText,
+                        fontSize: 9.5,
+                        height: 1.1,
+                        letterSpacing: 0.1)),
+                const SizedBox(height: 1),
+                Text(empty ? '—' : inr(pending),
+                    style: theme.textTheme.titleSmall?.copyWith(
+                        color: amountColor,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                        height: 1.15)),
+              ],
+            ),
+            if (onTap != null) ...[
+              const SizedBox(width: 2),
+              const Icon(Icons.chevron_right, size: 16, color: AppColors.secondaryText),
+            ],
           ],
         ),
       ),

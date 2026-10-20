@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import 'app_theme.dart';
+import 'motion.dart';
 import 'widgets.dart';
 
 const _owner = 'bcsuk999';
@@ -274,7 +275,16 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
         latest != null &&
         _compare(latest.version, _installed!) > 0;
     return Scaffold(
-      appBar: AppBar(title: const Text('App Updates')),
+      appBar: AppBar(
+        elevation: 8,
+        scrolledUnderElevation: 8,
+        shadowColor: AppColors.mainText.withValues(alpha: 0.16),
+        surfaceTintColor: Colors.transparent,
+        leading: const BackButton(),
+        centerTitle: true,
+        title: const Text('App Updates',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Center(
@@ -327,16 +337,7 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
                   Card(
                     child: Padding(
                       padding: const EdgeInsets.all(20),
-                      child: Column(
-                        children: [
-                          Text(_error!, textAlign: TextAlign.center),
-                          const SizedBox(height: 12),
-                          OutlinedButton(
-                            onPressed: _check,
-                            child: const Text('Check Again'),
-                          ),
-                        ],
-                      ),
+                      child: Text(_error!, textAlign: TextAlign.center),
                     ),
                   )
                 else if (latest != null)
@@ -392,42 +393,14 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
                                   style: theme.textTheme.bodySmall?.copyWith(color: AppColors.secondaryText),
                                   textAlign: TextAlign.center,
                                 ),
-                                const SizedBox(height: 12),
                               ],
-                            )
-                          else if (updateAvailable)
-                            FilledButton.icon(
-                              onPressed: _downloading ? null : _downloadAndInstall,
-                              icon: const Icon(Icons.system_update_alt),
-                              label: Text('Download & Install v${latest.version} (${_mb(latest.size)})'),
-                              style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
                             )
                           else if (_downloadedApkPath != null)
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                FilledButton.icon(
-                                  onPressed: () => _installApk(_downloadedApkPath!),
-                                  icon: const Icon(Icons.install_desktop),
-                                  label: const Text('Install Downloaded APK'),
-                                  style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'APK saved to: $_downloadedApkPath',
-                                  style: theme.textTheme.bodySmall?.copyWith(color: AppColors.secondaryText),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ],
+                            Text(
+                              'APK saved to: $_downloadedApkPath',
+                              style: theme.textTheme.bodySmall?.copyWith(color: AppColors.secondaryText),
+                              textAlign: TextAlign.center,
                             ),
-                          SizedBox(
-                            width: double.infinity,
-                            child: OutlinedButton.icon(
-                              onPressed: _downloading ? null : _check,
-                              icon: const Icon(Icons.refresh, size: 18),
-                              label: const Text('Check Again'),
-                            ),
-                          ),
                         ],
                       ),
                     ),
@@ -440,6 +413,70 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
                       ?.copyWith(color: AppColors.secondaryText),
                 ),
               ],
+            ),
+          ),
+        ),
+      ),
+      bottomNavigationBar: _bottomAction(latest, updateAvailable),
+    );
+  }
+
+  /// The page's primary action, pinned to a shadowed bar so it stays reachable
+  /// however long the release notes run.
+  Widget _bottomAction(_Release? latest, bool updateAvailable) {
+    late final VoidCallback? onPressed;
+    late final String label;
+    var busy = false;
+    if (latest == null) {
+      onPressed = _checking ? null : _check;
+      label = 'Check Again';
+      busy = _checking;
+    } else if (updateAvailable) {
+      onPressed = _downloading ? null : _downloadAndInstall;
+      label = _downloading
+          ? 'Downloading…'
+          : 'Download & Install v${latest.version} (${_mb(latest.size)})';
+      busy = _downloading;
+    } else if (_downloadedApkPath != null) {
+      onPressed = () => _installApk(_downloadedApkPath!);
+      label = 'Install Downloaded APK';
+    } else {
+      onPressed = _checking ? null : _check;
+      label = 'Check Again';
+      busy = _checking;
+    }
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.mainText.withValues(alpha: 0.16),
+            blurRadius: 12,
+            offset: const Offset(0, -3),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+          child: SizedBox(
+            height: 50,
+            child: FilledButton(
+              style: FilledButton.styleFrom(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: onPressed,
+              child: AnimatedSwitcher(
+                duration: MotionDuration.quick,
+                child: busy
+                    ? const SizedBox(
+                        key: ValueKey('busy'),
+                        height: 18,
+                        width: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : Text(label, key: ValueKey(label)),
+              ),
             ),
           ),
         ),

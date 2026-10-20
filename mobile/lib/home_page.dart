@@ -5,6 +5,7 @@ import 'app_theme.dart';
 import 'app_update_page.dart';
 import 'change_password_page.dart';
 import 'member_detail_page.dart';
+import 'member_form_page.dart';
 import 'motion.dart';
 import 'overdue_page.dart';
 import 'payment_history_page.dart';
@@ -97,9 +98,10 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
   bool _searching = false;
 
-  /// Month the summary tiles describe. The room list below is always the cycle
-  /// running today, so this only steers the tiles.
-  DateTime _period = DateTime(DateTime.now().year, DateTime.now().month);
+  /// Drives the add-room button: labelled at the top of the rooms list, icon
+  /// only once the list has scrolled away from the top.
+  final _roomsScroll = ScrollController();
+  bool _atTop = true;
 
   /// Single-role system: every signed-in landlord has full access.
   bool get _isAdmin => true;
@@ -118,6 +120,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     _search.addListener(() {
       if (mounted) setState(() {});
     });
+    _roomsScroll.addListener(_onRoomsScroll);
     if (widget.initialRooms != null) {
       // Show the cached list instantly, then refresh quietly in background.
       _rooms = widget.initialRooms;
@@ -140,7 +143,17 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     _bandCurve.dispose();
     _tabBand.dispose();
     _search.dispose();
+    _roomsScroll.dispose();
     super.dispose();
+  }
+
+  /// Collapses the add-room button while the rooms list is scrolled. Kept in a
+  /// listener rather than a NotificationListener so the FAB, which lives in the
+  /// Scaffold, rebuilds with it.
+  void _onRoomsScroll() {
+    if (!_roomsScroll.hasClients) return;
+    final atTop = _roomsScroll.offset <= 4;
+    if (atTop != _atTop && mounted) setState(() => _atTop = atTop);
   }
 
   /// Collapse the outgoing slot once the band settles. Without this
@@ -182,14 +195,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     }
   }
 
-  /// Totals for the selected month. Separate from the room list because the
-  /// list does not depend on the month while the tiles do.
+  /// Portfolio totals up to today. No period is sent: the tiles are a running
+  /// total, so they do not change when the room list refreshes.
   Future<LandlordSummary> _loadSummary() async {
     try {
-      return await widget.api.landlordSummary(
-        from: monthStart(_period),
-        to: monthEnd(_period),
-      );
+      return await widget.api.landlordSummary();
     } on ApiException catch (e) {
       if (e.statusCode == 401 && mounted) _signOut();
       rethrow;
@@ -271,8 +281,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     }
   }
 
-  /// Loads the month tiles. A failure here never blocks the room list: the grid
-  /// just stays empty rather than showing an error panel over the whole screen.
+  /// Loads the summary tiles. A failure here never blocks the room list: the grid
+  /// keeps its last known figures rather than showing an error panel.
   Future<void> _refreshSummary() async {
     final id = ++_summaryRequestId;
     if (mounted) setState(() => _summaryLoading = true);
@@ -286,29 +296,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     } catch (e) {
       if (!mounted || id != _summaryRequestId) return;
       if (e is ApiException && e.statusCode == 401) return; // signed out above
-      setState(() {
-        _summary = null;
-        _summaryLoading = false;
-      });
+      setState(() => _summaryLoading = false);
     }
-  }
-
-  /// Clears the stale totals the moment the month changes; the next summary
-  /// response fills them in.
-  void _clearSummary() {
-    if (!mounted) return;
-    setState(() {
-      _summary = null;
-      _summaryLoading = true;
-    });
-  }
-
-  /// The month only steers the tiles. The room list is always the cycle running
-  /// today, so switching months leaves the cards untouched on purpose.
-  void _movePeriod(int delta) {
-    setState(() => _period = DateTime(_period.year, _period.month + delta));
-    _clearSummary();
-    _refreshSummary();
   }
 
   /// Single entry point for tab changes. The band always runs the same way -
@@ -328,18 +317,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       if (next == 1) {
         _overdueKey.currentState?.refreshSilently();
       } else if (next == 0) {
-        // Same idea for the rooms list: keepList leaves the cards and the month
-        // tiles on screen while the numbers refresh underneath.
+        // Same idea for the rooms list: keepList leaves the cards and the
+        // summary tiles on screen while the numbers refresh underneath.
         _refresh(keepList: true, silent: true, quiet: true);
       }
     });
-  }
-
-  void _goThisMonth() {
-    final now = DateTime.now();
-    setState(() => _period = DateTime(now.year, now.month));
-    _clearSummary();
-    _refreshSummary();
   }
 
   Future<void> _useCached() async {
@@ -406,19 +388,62 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   }
 
   Future<void> _showAddRoom() async {
-    final created = await showDialog<bool>(
-      context: context,
-      builder: (_) => _AddRoomDialog(api: widget.api),
+    final created = await Navigator.of(context).push<bool>(
+      _drawerRoute(_AddRoomPage(api: widget.api)),
     );
     if (created == true && mounted) {
       _refresh(keepList: true);
     }
   }
 
+  /// The add-room form arrives like a drawer: it rises from the bottom over the
+  /// dimmed dashboard instead of popping up as a dialog.
+  Route<bool> _drawerRoute(Widget page) {
+    return PageRouteBuilder<bool>(
+      opaque: false,
+      barrierDismissible: true,
+      barrierColor: AppColors.mainText.withValues(alpha: 0.35),
+      transitionDuration: MotionDuration.medium,
+      reverseTransitionDuration: MotionDuration.fast,
+      pageBuilder: (_, _, _) => page,
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        final curve = CurvedAnimation(
+          parent: animation,
+          curve: MotionCurve.smoothOut,
+          reverseCurve: MotionCurve.easeInOut,
+        );
+        return SlideTransition(
+          position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero).animate(curve),
+          child: child,
+        );
+      },
+    );
+  }
+
+  /// Add a member straight from a room card that has none yet.
+  Future<void> _addMemberTo(Room room) async {
+    final created = await Navigator.of(context).push<bool>(
+      smoothRoute(
+        MemberFormPage(
+          api: widget.api,
+          roomId: room.id,
+          roomNumber: room.roomNumber,
+        ),
+      ),
+    );
+    if (created == true && mounted) _refreshList(keepList: true);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        // Soft shadow under the header so the scrolling list reads as content
+        // passing beneath it instead of blending into the bar.
+        elevation: 8,
+        scrolledUnderElevation: 8,
+        shadowColor: AppColors.mainText.withValues(alpha: 0.16),
+        surfaceTintColor: Colors.transparent,
         leadingWidth: 56,
         leading: Padding(
           padding: const EdgeInsets.only(left: 12, top: 8, bottom: 8),
@@ -460,11 +485,10 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           child: FadeTransition(opacity: animation, child: child),
         ),
         child: (_tab == 0 && _isAdmin)
-            ? FloatingActionButton(
+            ? _AddRoomFab(
                 key: const ValueKey('fab'),
-                tooltip: 'Add room',
+                expanded: _atTop,
                 onPressed: _showAddRoom,
-                child: const Icon(Icons.add),
               )
             : const SizedBox.shrink(key: ValueKey('no-fab')),
       ),
@@ -564,6 +588,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     // desktop.
     return SingleChildScrollView(
       key: ValueKey(hits == null ? 'rooms-content' : 'hits-content'),
+      controller: _roomsScroll,
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
       child: Center(
@@ -572,8 +597,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _periodRow(context),
-              const SizedBox(height: 12),
               _summaryGrid(context),
               const SizedBox(height: 12),
               _searchRow(context),
@@ -594,53 +617,13 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                     child: _RoomCard(
                       room: rooms[i],
                       onOpen: () => _openDetails(rooms[i]),
+                      onAddMember: () => _addMemberTo(rooms[i]),
                     ),
                   ),
                   const SizedBox(height: 12),
                 ],
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _periodRow(BuildContext context) {
-    final theme = Theme.of(context);
-    final isCurrent =
-        _period.year == DateTime.now().year && _period.month == DateTime.now().month;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                IconButton(
-                  tooltip: 'Previous month',
-                  icon: const Icon(Icons.chevron_left),
-                  onPressed: () => _movePeriod(-1),
-                ),
-                Expanded(
-                  child: Text(monthLabel(_period),
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
-                ),
-                if (!isCurrent)
-                  TextButton(onPressed: _goThisMonth, child: const Text('This month'))
-                else
-                  TextButton(
-                      onPressed: null,
-                      child: Text('This month',
-                          style: TextStyle(color: AppColors.secondaryText.withValues(alpha: 0.5)))),
-                IconButton(
-                  tooltip: 'Next month',
-                  icon: const Icon(Icons.chevron_right),
-                  onPressed: () => _movePeriod(1),
-                ),
-              ],
-            ),
-          ],
         ),
       ),
     );
@@ -779,7 +762,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                   textAlign: TextAlign.center,
                   style: theme.textTheme.titleSmall),
               const SizedBox(height: 6),
-              Text('Try a room number, a name, or part of a mobile number.',
+              Text('Try a room name, a member name, or part of a mobile number.',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodySmall?.copyWith(color: AppColors.secondaryText)),
             ],
@@ -820,7 +803,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
   /// 'roomNumber' -> 'room number', for display.
   static String _matchedLabel(String field) => switch (field) {
-        'roomNumber' => 'room number',
+        'roomNumber' => 'room name',
         'aadhaarNumber' => 'aadhaar number',
         'notes' => 'room notes',
         'mobile' => 'mobile',
@@ -1037,10 +1020,11 @@ class _SearchButton extends StatelessWidget {
 }
 
 class _RoomCard extends StatelessWidget {
-  const _RoomCard({required this.room, required this.onOpen});
+  const _RoomCard({required this.room, required this.onOpen, this.onAddMember});
 
   final Room room;
   final VoidCallback onOpen;
+  final VoidCallback? onAddMember;
 
   @override
   Widget build(BuildContext context) {
@@ -1100,41 +1084,58 @@ class _RoomCard extends StatelessWidget {
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (room.members.isEmpty)
-                    Text('No active members.', style: theme.textTheme.bodySmall)
-                  else
-                    for (final m in room.members) ...[
-                      MemberRow(
-                        name: m.name,
-                        status: m.status,
-                        rent: m.rent,
-                        paid: m.paid,
-                        pending: m.pending,
-                        dueDate: m.dueDate,
-                      ),
-                      const SizedBox(height: 8),
-                    ],
-                  Row(
+              // Member rows sit on a grey panel so the list reads as one block,
+              // separate from the room header above it.
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  color: AppColors.neutralChip,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: Text(
-                          room.paymentState.isEmpty || displayStatus(room.paymentState) == 'Due'
-                              ? 'Due ${inr(room.totalPending)}'
-                              : 'Due ${inr(room.totalPending)} · ${displayStatus(room.paymentState)}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.w800, color: AppColors.danger),
-                        ),
-                      ),
-                      const Icon(Icons.visibility_outlined,
-                          size: 20, color: AppColors.secondaryText),
+                      if (room.members.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                          child: Center(
+                            child: OutlinedButton.icon(
+                              onPressed: onAddMember,
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppColors.primary,
+                                backgroundColor: AppColors.card,
+                                side: const BorderSide(color: AppColors.border),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10)),
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                visualDensity: VisualDensity.compact,
+                                textStyle: const TextStyle(
+                                    fontSize: 12.5, fontWeight: FontWeight.w700),
+                              ),
+                              icon: const Icon(Icons.person_add_alt_1_outlined, size: 16),
+                              label: const Text('Add member'),
+                            ),
+                          ),
+                        )
+                      else
+                        for (var i = 0; i < room.members.length; i++) ...[
+                          MemberRow(
+                            name: room.members[i].name,
+                            status: room.members[i].status,
+                            rent: room.members[i].rent,
+                            paid: room.members[i].paid,
+                            pending: room.members[i].pending,
+                            dueDate: room.members[i].dueDate,
+                          ),
+                          if (i < room.members.length - 1)
+                            const Divider(
+                                height: 1,
+                                thickness: 1,
+                                indent: 56,
+                                color: AppColors.border),
+                        ],
                     ],
                   ),
-                ],
+                ),
               ),
             ),
           ],
@@ -1337,24 +1338,26 @@ class _MemberHitCard extends StatelessWidget {
   }
 }
 
-class _AddRoomDialog extends StatefulWidget {
-  const _AddRoomDialog({required this.api});
+/// Add-room form, shown as a full page so the route can slide in like a drawer
+/// instead of popping over the list as a dialog.
+class _AddRoomPage extends StatefulWidget {
+  const _AddRoomPage({required this.api});
 
   final ApiClient api;
 
   @override
-  State<_AddRoomDialog> createState() => _AddRoomDialogState();
+  State<_AddRoomPage> createState() => _AddRoomPageState();
 }
 
-class _AddRoomDialogState extends State<_AddRoomDialog> {
+class _AddRoomPageState extends State<_AddRoomPage> {
   final _number = TextEditingController();
   final _capacity = TextEditingController(text: '2');
   String _status = 'Empty';
   bool _busy = false;
   String? _error;
 
-  /// Set once the dialog is being popped, so the [finally] block does not
-  /// rebuild a dialog that is on its way out.
+  /// Set once the page is being popped, so the [finally] block does not
+  /// rebuild a form that is on its way out.
   bool _popping = false;
 
   @override
@@ -1367,7 +1370,7 @@ class _AddRoomDialogState extends State<_AddRoomDialog> {
   Future<void> _submit() async {
     final capacity = int.tryParse(_capacity.text.trim()) ?? 0;
     if (_number.text.trim().isEmpty || capacity < 1) {
-      setState(() => _error = 'Enter a room number and a capacity of at least 1.');
+      setState(() => _error = 'Enter a room name and a capacity of at least 1.');
       return;
     }
     setState(() {
@@ -1395,12 +1398,25 @@ class _AddRoomDialogState extends State<_AddRoomDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Add room'),
-      content: SizedBox(
-        width: 360,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        elevation: 8,
+        scrolledUnderElevation: 8,
+        shadowColor: AppColors.mainText.withValues(alpha: 0.16),
+        surfaceTintColor: Colors.transparent,
+        leading: IconButton(
+          tooltip: 'Back',
+          icon: const Icon(Icons.arrow_back),
+          onPressed: _busy ? null : () => Navigator.of(context).pop(false),
+        ),
+        centerTitle: true,
+        title: const Text('Add Room',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+      ),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
           children: [
             if (_error != null) ...[
               ShakeOnError(
@@ -1419,7 +1435,7 @@ class _AddRoomDialogState extends State<_AddRoomDialog> {
             ],
             TextField(
               controller: _number,
-              decoration: const InputDecoration(labelText: 'Room number'),
+              decoration: const InputDecoration(labelText: 'Room name'),
               textInputAction: TextInputAction.next,
             ),
             const SizedBox(height: 12),
@@ -1440,22 +1456,106 @@ class _AddRoomDialogState extends State<_AddRoomDialog> {
           ],
         ),
       ),
-      actions: [
-        TextButton(onPressed: _busy ? null : () => Navigator.of(context).pop(false), child: const Text('Cancel')),
-        FilledButton(
-          onPressed: _busy ? null : _submit,
-          child: AnimatedSwitcher(
-            duration: MotionDuration.quick,
-            child: _busy
-                ? const SizedBox(
-                    key: ValueKey('busy'),
-                    height: 18,
-                    width: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2))
-                : const Text('Add room', key: ValueKey('idle')),
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.mainText.withValues(alpha: 0.16),
+              blurRadius: 12,
+              offset: const Offset(0, -3),
+            ),
+          ],
+        ),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+            child: SizedBox(
+              height: 50,
+              child: FilledButton(
+                style: FilledButton.styleFrom(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: _busy ? null : _submit,
+                child: AnimatedSwitcher(
+                  duration: MotionDuration.quick,
+                  child: _busy
+                      ? const SizedBox(
+                          key: ValueKey('busy'),
+                          height: 18,
+                          width: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Text('Add Room', key: ValueKey('idle')),
+                ),
+              ),
+            ),
           ),
         ),
-      ],
+      ),
+    );
+  }
+}
+
+/// Add-room button: a labelled pill while the rooms list rests at the top,
+/// then just its icon once the list scrolls. Width, clip and fade all follow
+/// one tween, so the two shapes flow into each other instead of snapping.
+class _AddRoomFab extends StatelessWidget {
+  const _AddRoomFab({super.key, required this.expanded, required this.onPressed});
+
+  final bool expanded;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: 'Add room',
+      child: Material(
+        color: scheme.primary,
+        elevation: 6,
+        shadowColor: AppColors.mainText.withValues(alpha: 0.28),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onPressed,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.add_home_outlined, size: 24, color: scheme.onPrimary),
+                TweenAnimationBuilder<double>(
+                  tween: Tween<double>(begin: 1, end: expanded ? 1 : 0),
+                  duration: MotionDuration.fast,
+                  curve: MotionCurve.smoothOut,
+                  builder: (context, t, child) => ClipRect(
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      widthFactor: t,
+                      // Without an explicit height factor the Align would try to
+                      // fill the FAB slot's unbounded height.
+                      heightFactor: 1,
+                      child: Opacity(opacity: t, child: child),
+                    ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: Text(
+                      'Add room',
+                      style: TextStyle(
+                        color: scheme.onPrimary,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

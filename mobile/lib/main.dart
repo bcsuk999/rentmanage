@@ -4,6 +4,7 @@ import 'api.dart';
 import 'app_theme.dart';
 import 'home_page.dart';
 import 'login_page.dart';
+import 'motion.dart';
 import 'payment_history_page.dart';
 import 'session_cache.dart';
 
@@ -119,18 +120,57 @@ class _RentManageAppState extends State<RentManageApp> {
       );
     }
 
+    // Sign-in and sign-out swap the root screen. Keyed by auth state, the
+    // switcher fades the old screen out while the new one rises into place, so
+    // the same motion language carries the user across the auth boundary.
+    final Widget shell = AnimatedSwitcher(
+      duration: MotionDuration.slow,
+      switchInCurve: MotionCurve.smoothOut,
+      switchOutCurve: MotionCurve.easeInOut,
+      layoutBuilder: (currentChild, previousChildren) => Stack(
+        fit: StackFit.expand,
+        children: [
+          ...previousChildren,
+          ?currentChild,
+        ],
+      ),
+      transitionBuilder: (child, animation) => FadeTransition(
+        opacity: animation,
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, MotionDistance.small / 100),
+            end: Offset.zero,
+          ).animate(animation),
+          child: child,
+        ),
+      ),
+      child: KeyedSubtree(
+        key: ValueKey(
+          _restoring
+              ? 'restoring'
+              : _user != null
+                  ? 'home'
+                  : 'login',
+        ),
+        child: page,
+      ),
+    );
+
     return MaterialApp(
       title: 'Rent Manager',
       debugShowCheckedModeBanner: false,
       theme: buildLightTheme(),
       // The reference design is light-only.
       themeMode: ThemeMode.light,
-      home: _pagePainted
-          ? page
-          : Stack(
-              fit: StackFit.expand,
-              children: [page, const SplashScreen()],
-            ),
+      // The splash is a sibling of the shell, not a replacement for it, so the
+      // real screen keeps its state while the splash paints over it.
+      home: Stack(
+        fit: StackFit.expand,
+        children: [
+          shell,
+          if (!_pagePainted) const SplashScreen(),
+        ],
+      ),
     );
   }
 }
