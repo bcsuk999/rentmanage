@@ -70,7 +70,8 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
       setState(() {
         _loading = false;
         if (_detail == null) {
-          _error = 'Unable to load the latest data. Check your internet connection and try again.';
+          _error =
+              'Unable to load the latest data. Check your internet connection and try again.';
         }
       });
     } finally {
@@ -181,53 +182,68 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
                 const SizedBox(height: 12),
                 TextField(
                   controller: notes,
-                  decoration: const InputDecoration(labelText: 'Notes (optional)'),
+                  decoration: const InputDecoration(
+                    labelText: 'Notes (optional)',
+                  ),
                   maxLines: 2,
                 ),
               ],
             ),
           ),
           actions: [
-            TextButton(
-              onPressed: busy ? null : () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel'),
+            PressScale(
+              enabled: !busy,
+              child: TextButton(
+                onPressed: busy ? null : () => Navigator.of(ctx).pop(false),
+                child: const Text('Cancel'),
+              ),
             ),
-            FilledButton(
-              onPressed: busy
-                  ? null
-                  : () async {
-                      final cap = int.tryParse(capacity.text.trim()) ?? 0;
-                      if (roomNumber.text.trim().isEmpty || cap < 1) {
-                        setState(() =>
-                            error = 'Enter a room name and a capacity of at least 1.');
-                        return;
-                      }
-                      setState(() {
-                        busy = true;
-                        error = null;
-                      });
-                      try {
-                        await widget.api.updateRoom(
-                          roomId: widget.roomId,
-                          roomNumber: roomNumber.text.trim(),
-                          capacity: cap,
-                          status: status,
-                          notes: notes.text.trim().isEmpty ? null : notes.text.trim(),
-                        );
-                        if (!ctx.mounted) return;
-                        Navigator.of(ctx).pop(true);
-                      } on ApiException catch (e) {
-                        setState(() => error = e.message);
-                      } catch (_) {
-                        setState(() => error = 'Could not reach the server.');
-                      } finally {
-                        if (ctx.mounted) setState(() => busy = false);
-                      }
-                    },
-              child: busy
-                  ? const SizedBox(
-                      height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Text('Save'),
+            PressScale(
+              enabled: !busy,
+              child: FilledButton(
+                onPressed: busy
+                    ? null
+                    : () async {
+                        final cap = int.tryParse(capacity.text.trim()) ?? 0;
+                        if (roomNumber.text.trim().isEmpty || cap < 1) {
+                          setState(
+                            () => error =
+                                'Enter a room name and a capacity of at least 1.',
+                          );
+                          return;
+                        }
+                        setState(() {
+                          busy = true;
+                          error = null;
+                        });
+                        try {
+                          await widget.api.updateRoom(
+                            roomId: widget.roomId,
+                            roomNumber: roomNumber.text.trim(),
+                            capacity: cap,
+                            status: status,
+                            notes: notes.text.trim().isEmpty
+                                ? null
+                                : notes.text.trim(),
+                          );
+                          if (!ctx.mounted) return;
+                          Navigator.of(ctx).pop(true);
+                        } on ApiException catch (e) {
+                          setState(() => error = e.message);
+                        } catch (_) {
+                          setState(() => error = 'Could not reach the server.');
+                        } finally {
+                          if (ctx.mounted) setState(() => busy = false);
+                        }
+                      },
+                child: busy
+                    ? const SizedBox(
+                        height: 18,
+                        width: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Save'),
+              ),
             ),
           ],
         ),
@@ -247,15 +263,17 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
         scrolledUnderElevation: 8,
         shadowColor: AppColors.mainText.withValues(alpha: 0.16),
         surfaceTintColor: Colors.transparent,
-        leading: const BackButton(),
+        leading: const PressScale(child: BackButton()),
         centerTitle: true,
         title: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Room $roomNumber',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+            Text(
+              'Room $roomNumber',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+            ),
             if (detail != null) ...[
               const SizedBox(height: 1),
               Row(
@@ -286,16 +304,19 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
         ),
         actions: [
           if (detail != null)
-            IconButton(
-              tooltip: 'Edit room',
-              icon: const Icon(Icons.edit_outlined),
-              onPressed: () => _showEditRoomDialog(detail),
+            PressScale(
+              child: IconButton(
+                tooltip: 'Edit room',
+                icon: const Icon(Icons.edit_outlined),
+                onPressed: () => _showEditRoomDialog(detail),
+              ),
             ),
           const SizedBox(width: 4),
         ],
       ),
       body: _body(context),
-      bottomNavigationBar: detail == null ? null : _bottomActions(context, detail),
+      bottomNavigationBar:
+          detail == null ? null : _bottomActions(context, detail),
     );
   }
 
@@ -334,27 +355,36 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
           Row(
             children: [
               Expanded(
-                child: Text('Members (${detail.rows.length})',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleSmall
-                        ?.copyWith(fontWeight: FontWeight.w800)),
+                child: Text(
+                  'Members (${detail.rows.length})',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+                ),
               ),
-              TextButton.icon(
-                onPressed: detail.isFull ? null : _openAddMember,
-                icon: const Icon(Icons.person_add_outlined, size: 18),
-                label: SwapText(detail.isFull ? 'Full' : 'Add'),
+              PressScale(
+                enabled: !detail.isFull,
+                child: TextButton.icon(
+                  onPressed: detail.isFull ? null : _openAddMember,
+                  icon: const Icon(Icons.person_add_outlined, size: 18),
+                  label: SwapText(detail.isFull ? 'Full' : 'Add'),
+                ),
               ),
             ],
           ),
           const SizedBox(height: 4),
           if (detail.rows.isEmpty)
             const Card(
-                child: Padding(
-                    padding: EdgeInsets.all(16), child: Text('No active members.')))
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Text('No active members.'),
+              ),
+            )
           else
             Card(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
               clipBehavior: Clip.antiAlias,
               child: Column(
                 children: [
@@ -377,7 +407,11 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
                     ),
                     if (i < detail.rows.length - 1)
                       const Divider(
-                          height: 1, thickness: 1, indent: 56, color: AppColors.border),
+                        height: 1,
+                        thickness: 1,
+                        indent: 56,
+                        color: AppColors.border,
+                      ),
                   ],
                 ],
               ),
@@ -407,15 +441,19 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
           child: SizedBox(
             height: 50,
-            child: FilledButton.icon(
-              style: FilledButton.styleFrom(
-                // Squarer than the default pill, and full width so it reads as
-                // the bar's single action.
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            child: PressScale(
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  // Squarer than the default pill, and full width so it reads as
+                  // the bar's single action.
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                onPressed: () => _openRecordFlow(detail),
+                icon: const Icon(Icons.payments_outlined, size: 18),
+                label: const Text('Record Rent Payment'),
               ),
-              onPressed: () => _openRecordFlow(detail),
-              icon: const Icon(Icons.payments_outlined, size: 18),
-              label: const Text('Record Rent Payment'),
             ),
           ),
         ),

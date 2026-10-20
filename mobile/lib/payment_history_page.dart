@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'app_theme.dart';
+import 'motion.dart';
 import 'payment_allocation.dart';
 import 'status_colors.dart';
 import 'widgets.dart';
@@ -45,7 +46,7 @@ class _PaymentHistoryPageState extends State<PaymentHistoryPage> {
         scrolledUnderElevation: 8,
         shadowColor: AppColors.mainText.withValues(alpha: 0.16),
         surfaceTintColor: Colors.transparent,
-        leading: const BackButton(),
+        leading: const PressScale(child: BackButton()),
         centerTitle: true,
         title: const Text(
           'Payment Records',
@@ -65,7 +66,6 @@ class _PaymentHistoryPageState extends State<PaymentHistoryPage> {
     );
   }
 }
-
 
 /// Embeddable records list (also used inside the Member Details page).
 class PaymentHistoryList extends StatefulWidget {
@@ -192,10 +192,14 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
       var filtered = result.rows;
       if (_searchQuery.isNotEmpty) {
         final q = _searchQuery.toLowerCase();
-        filtered = filtered.where((r) =>
-            r.memberName.toLowerCase().contains(q) ||
-            r.memberMobile.contains(q) ||
-            r.reference.toLowerCase().contains(q)).toList();
+        filtered = filtered
+            .where(
+              (r) =>
+                  r.memberName.toLowerCase().contains(q) ||
+                  r.memberMobile.contains(q) ||
+                  r.reference.toLowerCase().contains(q),
+            )
+            .toList();
       }
       setState(() {
         if (reset) {
@@ -220,7 +224,8 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Could not reach the server. Check your internet connection and try again.';
+        _error =
+            'Could not reach the server. Check your internet connection and try again.';
         _loading = false;
         _loadingMore = false;
       });
@@ -285,23 +290,39 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
             const SizedBox(height: 12),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Text('Payment method',
-                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+              child: Text(
+                'Payment method',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
             ),
             const SizedBox(height: 4),
             for (final m in ['All', ...paymentMethods])
-              ListTile(
-                dense: true,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 20),
-                title: Text(m,
+              PressScale(
+                child: ListTile(
+                  dense: true,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+                  title: Text(
+                    m,
                     style: TextStyle(
-                      fontWeight: m == _method ? FontWeight.w700 : FontWeight.w500,
-                      color: m == _method ? AppColors.primary : AppColors.mainText,
-                    )),
-                trailing: m == _method
-                    ? const Icon(Icons.check_circle, color: AppColors.primary, size: 20)
-                    : null,
-                onTap: () => Navigator.of(context).pop(m),
+                      fontWeight: m == _method
+                          ? FontWeight.w700
+                          : FontWeight.w500,
+                      color: m == _method
+                          ? AppColors.primary
+                          : AppColors.mainText,
+                    ),
+                  ),
+                  trailing: m == _method
+                      ? const Icon(
+                          Icons.check_circle,
+                          color: AppColors.primary,
+                          size: 20,
+                        )
+                      : null,
+                  onTap: () => Navigator.of(context).pop(m),
+                ),
               ),
             const SizedBox(height: 8),
           ],
@@ -343,7 +364,8 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
   }
 
   Widget _filterBar(BuildContext context) {
-    final scope = widget.scopeLabel ??
+    final scope =
+        widget.scopeLabel ??
         [
           if (widget.roomNumber != null) 'Room ${widget.roomNumber}',
           if (widget.memberName != null) widget.memberName!,
@@ -371,13 +393,15 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
                       prefixIcon: const Icon(Icons.search),
                       suffixIcon: _searchController.text.isEmpty
                           ? null
-                          : IconButton(
-                              tooltip: 'Clear',
-                              icon: const Icon(Icons.clear),
-                              onPressed: () {
-                                _searchController.clear();
-                                _runSearch('');
-                              },
+                          : PressScale(
+                              child: IconButton(
+                                tooltip: 'Clear',
+                                icon: const Icon(Icons.clear),
+                                onPressed: () {
+                                  _searchController.clear();
+                                  _runSearch('');
+                                },
+                              ),
                             ),
                     ),
                   ),
@@ -390,11 +414,12 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
           if (scope.isNotEmpty)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: Text(scope,
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(color: AppColors.secondaryText)),
+              child: Text(
+                scope,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: AppColors.secondaryText),
+              ),
             ),
           const SizedBox(height: 8),
           // Cards 2, 3, 4: method and the two date pickers, each its own card.
@@ -445,16 +470,18 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
               alignment: Alignment.centerRight,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 2, 16, 0),
-                child: TextButton.icon(
-                  onPressed: _clearFilters,
-                  icon: const Icon(Icons.restart_alt, size: 16),
-                  label: const Text('Clear', style: TextStyle(fontSize: 12)),
-                  style: TextButton.styleFrom(
-                    foregroundColor: AppColors.danger,
-                    padding: const EdgeInsets.symmetric(horizontal: 6),
-                    minimumSize: const Size(0, 30),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    visualDensity: VisualDensity.compact,
+                child: PressScale(
+                  child: TextButton.icon(
+                    onPressed: _clearFilters,
+                    icon: const Icon(Icons.restart_alt, size: 16),
+                    label: const Text('Clear', style: TextStyle(fontSize: 12)),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.danger,
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      minimumSize: const Size(0, 30),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                    ),
                   ),
                 ),
               ),
@@ -474,56 +501,66 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
     required VoidCallback onTap,
   }) {
     final theme = Theme.of(context);
-    return Card(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: active ? AppColors.primary : AppColors.border,
-          width: active ? 1.4 : 1,
+    return PressScale(
+      child: Card(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(
+            color: active ? AppColors.primary : AppColors.border,
+            width: active ? 1.4 : 1,
+          ),
         ),
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  Icon(icon,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      icon,
                       size: 13,
-                      color: active ? AppColors.primary : AppColors.secondaryText),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(label,
+                      color: active
+                          ? AppColors.primary
+                          : AppColors.secondaryText,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        label,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall
-                            ?.copyWith(fontSize: 10, color: AppColors.secondaryText)),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 2),
-              // The chosen value reads as the card's headline, so it sits in
-              // the middle of the card rather than hugging the left edge.
-              Align(
-                alignment: Alignment.center,
-                child: Text(
-                  value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                    color: active ? AppColors.primary : AppColors.mainText,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontSize: 10,
+                          color: AppColors.secondaryText,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                // The chosen value reads as the card's headline, so it sits in
+                // the middle of the card rather than hugging the left edge.
+                Align(
+                  alignment: Alignment.center,
+                  child: Text(
+                    value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                      color: active ? AppColors.primary : AppColors.mainText,
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -553,7 +590,10 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
       );
     }
     if (_error != null && _rows.isEmpty) {
-      final panel = ErrorPanel(message: _error!, onRetry: () => _load(reset: true));
+      final panel = ErrorPanel(
+        message: _error!,
+        onRetry: () => _load(reset: true),
+      );
       return widget.embedded ? panel : ListView(children: [panel]);
     }
     if (_rows.isEmpty) {
@@ -562,7 +602,7 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
         title: 'No payments yet',
         body: _hasFilters
             ? 'No records match these filters. Try clearing them.'
-            : 'Recorded payments for this filter will appear here.',
+            : '',
       );
       return widget.embedded ? panel : ListView(children: [panel]);
     }
@@ -579,12 +619,15 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
             child: Center(
               child: _loadingMore
                   ? const CircularProgressIndicator()
-                  : OutlinedButton(
-                      onPressed: () {
-                        setState(() => _loadingMore = true);
-                        _load();
-                      },
-                      child: const Text('Load more'),
+                  : PressScale(
+                      enabled: !_loadingMore,
+                      child: OutlinedButton(
+                        onPressed: () {
+                          setState(() => _loadingMore = true);
+                          _load();
+                        },
+                        child: const Text('Load more'),
+                      ),
                     ),
             ),
           );
@@ -616,16 +659,18 @@ class _SearchButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.primary,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: () => onPressed(),
-        child: const SizedBox(
-          height: 38,
-          width: 38,
-          child: Icon(Icons.search, color: Colors.white, size: 20),
+    return PressScale(
+      child: Material(
+        color: AppColors.primary,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: () => onPressed(),
+          child: const SizedBox(
+            height: 38,
+            width: 38,
+            child: Icon(Icons.search, color: Colors.white, size: 20),
+          ),
         ),
       ),
     );
@@ -659,146 +704,166 @@ class _PaymentCardState extends State<_PaymentCard> {
         ? '-'
         : '${fmtDateShortIso(record.periodStartIso)} – ${fmtDateShortIso(record.periodEndIso)}';
     Widget detail(String label, String value) => Padding(
-          padding: const EdgeInsets.only(bottom: 6),
-          child: Row(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: AppColors.secondaryText,
+              ),
+            ),
+          ),
+          Text(
+            ':',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: AppColors.secondaryText,
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    return PressScale(
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: _toggle,
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Text(label,
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: AppColors.secondaryText)),
+              // Ribbon sits flush against the card's top-left corner.
+              Row(
+                children: [
+                  // Expanded (not Flexible + Spacer) so the ribbon slot takes all
+                  // the leftover width and the amount stays pinned to the right edge.
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              AppColors.primary,
+                              AppColors.primary.withValues(alpha: 0.7),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: const BorderRadius.only(
+                            bottomRight: Radius.circular(20),
+                          ),
+                        ),
+                        child: Text(
+                          record.memberName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(right: 14),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Paid :',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.secondaryText,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          inr(record.amount),
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.success,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              Text(':',
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: AppColors.secondaryText)),
-              Expanded(
-                child: Text(value,
-                    textAlign: TextAlign.right,
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(fontWeight: FontWeight.w600)),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 8, 8, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            time,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: AppColors.secondaryText,
+                            ),
+                          ),
+                        ),
+                        PressScale(
+                          child: IconButton(
+                            tooltip: _expanded
+                                ? 'Hide details'
+                                : 'Show details',
+                            visualDensity: VisualDensity.compact,
+                            icon: Icon(
+                              _expanded ? Icons.expand_less : Icons.expand_more,
+                              size: 20,
+                              color: AppColors.secondaryText,
+                            ),
+                            onPressed: _toggle,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (_expanded) ...[
+                      const SizedBox(height: 8),
+                      const Divider(height: 1),
+                      const SizedBox(height: 10),
+                      detail('Room', record.roomNumber),
+                      if (record.memberMobile.isNotEmpty)
+                        detail('Phone', record.memberMobile),
+                      detail('Rent period', rentPeriod),
+                      detail('Method', record.method),
+                      if (record.notes.isNotEmpty) detail('Note', record.notes),
+                      if (record.allocations.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        _allocationBreakdown(context, theme),
+                      ] else if (record.allocOverdue != null) ...[
+                        const SizedBox(height: 8),
+                        detail(
+                          'Allocation',
+                          'Overdue ${inr(record.allocOverdue!)} · Current ${inr(record.allocCurrent ?? 0)}',
+                        ),
+                      ],
+                    ],
+                  ],
+                ),
               ),
             ],
           ),
-        );
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: _toggle,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Ribbon sits flush against the card's top-left corner.
-            Row(
-              children: [
-                // Expanded (not Flexible + Spacer) so the ribbon slot takes all
-            // the leftover width and the amount stays pinned to the right edge.
-            Expanded(
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        AppColors.primary,
-                        AppColors.primary.withValues(alpha: 0.7),
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: const BorderRadius.only(
-                      bottomRight: Radius.circular(20),
-                    ),
-                  ),
-                  child: Text(
-                    record.memberName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.only(right: 14),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Paid :',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.secondaryText,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    inr(record.amount),
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.success,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 8, 8, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          time,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodySmall
-                              ?.copyWith(color: AppColors.secondaryText),
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: _expanded ? 'Hide details' : 'Show details',
-                        visualDensity: VisualDensity.compact,
-                        icon: Icon(
-                          _expanded ? Icons.expand_less : Icons.expand_more,
-                          size: 20,
-                          color: AppColors.secondaryText,
-                        ),
-                        onPressed: _toggle,
-                      ),
-                    ],
-                  ),
-                  if (_expanded) ...[
-                    const SizedBox(height: 8),
-                    const Divider(height: 1),
-                    const SizedBox(height: 10),
-                    detail('Room', record.roomNumber),
-                    if (record.memberMobile.isNotEmpty)
-                      detail('Phone', record.memberMobile),
-                    detail('Rent period', rentPeriod),
-                    detail('Method', record.method),
-                    if (record.notes.isNotEmpty) detail('Note', record.notes),
-                    if (record.allocations.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      _allocationBreakdown(context, theme),
-                    ] else if (record.allocOverdue != null) ...[
-                      const SizedBox(height: 8),
-                      detail(
-                          'Allocation',
-                          'Overdue ${inr(record.allocOverdue!)} · Current ${inr(record.allocCurrent ?? 0)}'),
-                    ],
-],
-                ],
-              ),
-            ),
-          ],
         ),
       ),
     );
@@ -826,18 +891,22 @@ class _PaymentCardState extends State<_PaymentCard> {
           Row(
             children: [
               Expanded(
-                child: Text('Allocation',
-                    style: theme.textTheme.titleSmall
-                        ?.copyWith(fontWeight: FontWeight.w700)),
+                child: Text(
+                  'Allocation',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
               Text(
                 overdueCount == 0
                     ? 'Current only'
                     : overdueCount == allocations.length
-                        ? 'All overdue'
-                        : '${inr(toOverdue)} overdue',
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: AppColors.secondaryText),
+                    ? 'All overdue'
+                    : '${inr(toOverdue)} overdue',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: AppColors.secondaryText,
+                ),
               ),
             ],
           ),

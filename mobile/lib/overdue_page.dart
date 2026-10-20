@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'app_theme.dart';
+import 'motion.dart';
 import 'payment_drawer.dart';
 import 'status_colors.dart';
 import 'widgets.dart';
@@ -91,7 +92,9 @@ class OverduePageState extends State<OverduePage> {
       });
       if (_report != null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Offline — showing saved overdue data.')),
+          const SnackBar(
+            content: Text('Offline — showing saved overdue data.'),
+          ),
         );
       }
     } finally {
@@ -117,7 +120,9 @@ class OverduePageState extends State<OverduePage> {
     }
     if (earliest == null) return 0;
     final now = DateTime.now();
-    final days = now.difference(DateTime(earliest.year, earliest.month, earliest.day)).inDays;
+    final days = now
+        .difference(DateTime(earliest.year, earliest.month, earliest.day))
+        .inDays;
     return days < 0 ? 0 : days;
   }
 
@@ -149,10 +154,7 @@ class OverduePageState extends State<OverduePage> {
 
   @override
   Widget build(BuildContext context) {
-    return RefreshIndicator(
-      onRefresh: _load,
-      child: _body(context),
-    );
+    return RefreshIndicator(onRefresh: _load, child: _body(context));
   }
 
   Widget _body(BuildContext context) {
@@ -266,18 +268,23 @@ class OverduePageState extends State<OverduePage> {
             for (final b in buckets)
               Padding(
                 padding: const EdgeInsets.only(right: 8),
-                child: FilterChip(
-                  label: Text(b),
-                  selected: _bucket == b,
-                  onSelected: (_) => setState(() => _bucket = b),
-                  selectedColor: AppColors.danger.withValues(alpha: 0.15),
-                  checkmarkColor: AppColors.danger,
-                  labelStyle: TextStyle(
-                    color: _bucket == b ? AppColors.danger : AppColors.secondaryText,
-                    fontWeight: _bucket == b ? FontWeight.w700 : FontWeight.w500,
-                  ),
-                  side: BorderSide(
-                    color: _bucket == b ? AppColors.danger : AppColors.border,
+                child: PressScale(
+                  child: FilterChip(
+                    label: Text(b),
+                    selected: _bucket == b,
+                    onSelected: (_) => setState(() => _bucket = b),
+                    selectedColor: AppColors.danger.withValues(alpha: 0.15),
+                    checkmarkColor: AppColors.danger,
+                    labelStyle: TextStyle(
+                      color: _bucket == b
+                          ? AppColors.danger
+                          : AppColors.secondaryText,
+                      fontWeight:
+                          _bucket == b ? FontWeight.w700 : FontWeight.w500,
+                    ),
+                    side: BorderSide(
+                      color: _bucket == b ? AppColors.danger : AppColors.border,
+                    ),
                   ),
                 ),
               ),
@@ -322,182 +329,215 @@ class _OverdueCardState extends State<_OverdueCard> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: Text(label,
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: AppColors.secondaryText)),
+                child: Text(
+                  label,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: AppColors.secondaryText,
+                  ),
+                ),
               ),
-              Text(':',
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: AppColors.secondaryText)),
+              Text(
+                ':',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: AppColors.secondaryText,
+                ),
+              ),
               Expanded(
-                child: Text(value,
-                    textAlign: TextAlign.right,
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(fontWeight: FontWeight.w600)),
+                child: Text(
+                  value,
+                  textAlign: TextAlign.right,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
             ],
           ),
         );
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: _toggle,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Ribbon sits flush against the card's top-left corner.
-            Row(
-              children: [
-                // Expanded (not Flexible + Spacer) so the ribbon slot takes all
-            // the leftover width and the amount stays pinned to the right edge.
-            Expanded(
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        AppColors.danger,
-                        AppColors.danger.withValues(alpha: 0.7),
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: const BorderRadius.only(
-                      bottomRight: Radius.circular(20),
-                    ),
-                  ),
-                  child: Text(
-                    member.name.isEmpty ? '?' : member.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.only(right: 14),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
+    return PressScale(
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: _toggle,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Ribbon sits flush against the card's top-left corner.
+              Row(
                 children: [
-                  Text(
-                    'Overdue :',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.secondaryText,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    inr(member.totalOverdue),
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.danger,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 8, 8, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
+                  // Expanded (not Flexible + Spacer) so the ribbon slot takes all
+                  // the leftover width and the amount stays pinned to the right edge.
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              AppColors.danger,
+                              AppColors.danger.withValues(alpha: 0.7),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: const BorderRadius.only(
+                            bottomRight: Radius.circular(20),
+                          ),
+                        ),
                         child: Text(
-                          'Room ${member.roomNumber} · $days day${days == 1 ? '' : 's'} overdue',
+                          member.name.isEmpty ? '?' : member.name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodySmall
-                              ?.copyWith(color: AppColors.secondaryText),
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
-                      IconButton(
-                        tooltip: _expanded ? 'Hide details' : 'Show details',
-                        visualDensity: VisualDensity.compact,
-                        icon: Icon(
-                          _expanded ? Icons.expand_less : Icons.expand_more,
-                          size: 20,
-                          color: AppColors.secondaryText,
-                        ),
-                        onPressed: _toggle,
-                      ),
-                    ],
+                    ),
                   ),
-                  if (_expanded) ...[
-                    const SizedBox(height: 8),
-                    const Divider(height: 1),
-                    const SizedBox(height: 10),
-                    detail('Room', member.roomNumber),
-                    if (member.mobile.isNotEmpty) detail('Phone', member.mobile),
-                    detail('Days overdue', '$days day${days == 1 ? '' : 's'}'),
-                    const SizedBox(height: 6),
-                    for (final p in member.periods)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                const Icon(Icons.calendar_month_outlined,
-                                    size: 16, color: AppColors.secondaryText),
-                                const SizedBox(width: 6),
-                                Expanded(
-                                  child: Text(
-                                    '${p.start == null ? '?' : fmtDateShort(p.start!)} – ${p.end == null ? '?' : fmtDateShort(p.end!)}',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: theme.textTheme.bodySmall
-                                        ?.copyWith(fontWeight: FontWeight.w600),
-                                  ),
-                                ),
-                                Text(
-                                  inr(p.pending),
-                                  style: const TextStyle(
-                                      color: AppColors.danger,
-                                      fontWeight: FontWeight.w700),
-                                ),
-                                if (widget.isAdmin && p.pending > 0)
-                                  TextButton(
-                                    onPressed: () => widget.onRecord(member, p),
-                                    style: TextButton.styleFrom(
-                                      visualDensity: VisualDensity.compact,
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 8),
-                                      minimumSize: const Size(0, 30),
-                                      tapTargetSize:
-                                          MaterialTapTargetSize.shrinkWrap,
-                                    ),
-                                    child: const Text('Record'),
-                                  ),
-                              ],
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.only(left: 22),
-                              child: Text(
-                                'Rent ${inr(p.rent)} · Paid ${inr(p.paid)}',
-                                style: theme.textTheme.bodySmall
-                                    ?.copyWith(color: AppColors.secondaryText),
-                              ),
-                            ),
-                          ],
+                  Padding(
+                    padding: const EdgeInsets.only(right: 14),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Overdue :',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.secondaryText,
+                          ),
                         ),
-                      ),
-                  ],
+                        const SizedBox(width: 4),
+                        Text(
+                          inr(member.totalOverdue),
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.danger,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               ),
-            ),
-          ],
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 8, 8, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Room ${member.roomNumber} · $days day${days == 1 ? '' : 's'} overdue',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: AppColors.secondaryText,
+                            ),
+                          ),
+                        ),
+                        PressScale(
+                          child: IconButton(
+                            tooltip:
+                                _expanded ? 'Hide details' : 'Show details',
+                            visualDensity: VisualDensity.compact,
+                            icon: Icon(
+                              _expanded ? Icons.expand_less : Icons.expand_more,
+                              size: 20,
+                              color: AppColors.secondaryText,
+                            ),
+                            onPressed: _toggle,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (_expanded) ...[
+                      const SizedBox(height: 8),
+                      const Divider(height: 1),
+                      const SizedBox(height: 10),
+                      detail('Room', member.roomNumber),
+                      if (member.mobile.isNotEmpty)
+                        detail('Phone', member.mobile),
+                      detail(
+                        'Days overdue',
+                        '$days day${days == 1 ? '' : 's'}',
+                      ),
+                      const SizedBox(height: 6),
+                      for (final p in member.periods)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(
+                                    Icons.calendar_month_outlined,
+                                    size: 16,
+                                    color: AppColors.secondaryText,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      '${p.start == null ? '?' : fmtDateShort(p.start!)} – ${p.end == null ? '?' : fmtDateShort(p.end!)}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style:
+                                          theme.textTheme.bodySmall?.copyWith(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                  Text(
+                                    inr(p.pending),
+                                    style: const TextStyle(
+                                      color: AppColors.danger,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  if (widget.isAdmin && p.pending > 0)
+                                    PressScale(
+                                      child: TextButton(
+                                        onPressed: () =>
+                                            widget.onRecord(member, p),
+                                        style: TextButton.styleFrom(
+                                          visualDensity: VisualDensity.compact,
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                          ),
+                                          minimumSize: const Size(0, 30),
+                                          tapTargetSize:
+                                              MaterialTapTargetSize.shrinkWrap,
+                                        ),
+                                        child: const Text('Record'),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.only(left: 22),
+                                child: Text(
+                                  'Rent ${inr(p.rent)} · Paid ${inr(p.paid)}',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: AppColors.secondaryText,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

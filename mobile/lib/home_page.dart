@@ -37,7 +37,8 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin {
+class _HomePageState extends State<HomePage>
+    with SingleTickerProviderStateMixin {
   int _tab = 0;
 
   /// Tab being animated away; equals [_tab] once the band has settled.
@@ -55,8 +56,10 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   /// [CurvedAnimation] registers a status listener on its parent in the
   /// constructor and only removes it in `dispose()`, so building one inside
   /// `build` leaks a listener on [_tabBand] on every rebuild and every frame.
-  late final CurvedAnimation _bandCurve =
-      CurvedAnimation(parent: _tabBand, curve: MotionCurve.smoothOut);
+  late final CurvedAnimation _bandCurve = CurvedAnimation(
+    parent: _tabBand,
+    curve: MotionCurve.smoothOut,
+  );
 
   /// Incoming tab: parked a full width to the right, slides home.
   late final Animation<Offset> _inSlide = Tween<Offset>(
@@ -71,8 +74,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   ).animate(_bandCurve);
 
   /// Parked tab: holds at the centre (hidden by [Offstage] in the slot).
-  static final Animation<Offset> _parked =
-      AlwaysStoppedAnimation<Offset>(Offset.zero);
+  static final Animation<Offset> _parked = AlwaysStoppedAnimation<Offset>(
+    Offset.zero,
+  );
 
   /// Lets the shell ask a parked tab to refresh itself in the background.
   final _overdueKey = GlobalKey<OverduePageState>();
@@ -160,7 +164,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   /// [_prevTab] latches onto a stale tab, so its slot keeps rendering (and
   /// re-fetching) long after the switch that created it.
   void _onBandStatus(AnimationStatus status) {
-    if (status != AnimationStatus.completed || !mounted || _prevTab == _tab) return;
+    if (status != AnimationStatus.completed || !mounted || _prevTab == _tab) {
+      return;
+    }
     setState(() => _prevTab = _tab);
   }
 
@@ -208,7 +214,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
   /// Loads the room list and the month tiles together, for the cases that want
   /// both: first paint, pull-to-refresh and returning to the tab.
-  Future<void> _refresh({bool silent = false, bool keepList = false, bool quiet = false}) async {
+  Future<void> _refresh({
+    bool silent = false,
+    bool keepList = false,
+    bool quiet = false,
+  }) async {
     await Future.wait([
       _refreshList(silent: silent, keepList: keepList, quiet: quiet),
       _refreshSummary(),
@@ -227,8 +237,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   ///
   /// Every call bumps [_roomsRequestId]; responses from superseded requests are
   /// dropped, so rapid typing can't race or overwrite newer data.
-  Future<void> _refreshList(
-      {bool silent = false, bool keepList = false, bool quiet = false}) async {
+  Future<void> _refreshList({
+    bool silent = false,
+    bool keepList = false,
+    bool quiet = false,
+  }) async {
     final id = ++_roomsRequestId;
     final term = _term;
     if (mounted) {
@@ -388,9 +401,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   }
 
   Future<void> _showAddRoom() async {
-    final created = await Navigator.of(context).push<bool>(
-      _drawerRoute(_AddRoomPage(api: widget.api)),
-    );
+    final created = await Navigator.of(
+      context,
+    ).push<bool>(_drawerRoute(_AddRoomPage(api: widget.api)));
     if (created == true && mounted) {
       _refresh(keepList: true);
     }
@@ -413,7 +426,10 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           reverseCurve: MotionCurve.easeInOut,
         );
         return SlideTransition(
-          position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero).animate(curve),
+          position: Tween<Offset>(
+            begin: const Offset(0, 1),
+            end: Offset.zero,
+          ).animate(curve),
           child: child,
         );
       },
@@ -450,31 +466,29 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           child: Image.asset(
             'logo.png',
             fit: BoxFit.contain,
-            errorBuilder: (_, _, _) => const Icon(
-              Icons.home_work_outlined,
-              color: AppColors.primary,
-            ),
+            errorBuilder: (_, _, _) =>
+                const Icon(Icons.home_work_outlined, color: AppColors.primary),
           ),
         ),
         centerTitle: true,
-        title: const Text('Dashboard',
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20)),
+        title: const Text(
+          'Dashboard',
+          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20),
+        ),
         actions: [
-          IconButton(
-            tooltip: 'Overdue dues',
-            icon: const Icon(Icons.notifications_outlined),
-            onPressed: () => _goToTab(1),
+          PressScale(
+            child: IconButton(
+              tooltip: 'Overdue dues',
+              icon: const Icon(Icons.notifications_outlined),
+              onPressed: () => _goToTab(1),
+            ),
           ),
           const SizedBox(width: 4),
         ],
       ),
       body: Stack(
         fit: StackFit.expand,
-        children: [
-          _bandSlot(0),
-          _bandSlot(1),
-          _bandSlot(2),
-        ],
+        children: [_bandSlot(0), _bandSlot(1), _bandSlot(2)],
       ),
       floatingActionButton: AnimatedSwitcher(
         duration: MotionDuration.fast,
@@ -521,10 +535,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         // Passed as `child` so the tab subtree is built once per home-page
         // build instead of once per animation frame.
         child: _tabBody(context, tab),
-        builder: (context, child) => FractionalTranslation(
-          translation: position.value,
-          child: child,
-        ),
+        builder: (context, child) =>
+            FractionalTranslation(translation: position.value, child: child),
       ),
     );
   }
@@ -583,7 +595,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     final rooms = _rooms ?? const <Room>[];
     // [_hitsFor] records which term the hits belong to, so the previous term's
     // results never sit under a newly typed one while the request is in flight.
-    final hits = _hitsFor == _term && _term.isNotEmpty ? _hits ?? const <SearchHit>[] : null;
+    final hits = _hitsFor == _term && _term.isNotEmpty
+        ? _hits ?? const <SearchHit>[]
+        : null;
     // Mobile viewport everywhere: one centered phone-width column, even on
     // desktop.
     return SingleChildScrollView(
@@ -721,13 +735,15 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               prefixIcon: const Icon(Icons.search),
               suffixIcon: _search.text.isEmpty
                   ? null
-                  : IconButton(
-                      tooltip: 'Clear',
-                      icon: const Icon(Icons.clear),
-                      onPressed: () {
-                        _search.clear();
-                        _runSearch('');
-                      },
+                  : PressScale(
+                      child: IconButton(
+                        tooltip: 'Clear',
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          _search.clear();
+                          _runSearch('');
+                        },
+                      ),
                     ),
             ),
           ),
@@ -758,13 +774,19 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             children: [
               Icon(Icons.search_off, size: 34, color: AppColors.secondaryText),
               const SizedBox(height: 10),
-              Text('No matches for "$_term"',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.titleSmall),
+              Text(
+                'No matches for "$_term"',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.titleSmall,
+              ),
               const SizedBox(height: 6),
-              Text('Try a room name, a member name, or part of a mobile number.',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodySmall?.copyWith(color: AppColors.secondaryText)),
+              Text(
+                'Try a room name, a member name, or part of a mobile number.',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: AppColors.secondaryText,
+                ),
+              ),
             ],
           ),
         ),
@@ -775,8 +797,12 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       children: [
         Padding(
           padding: const EdgeInsets.only(left: 4, bottom: 10),
-          child: Text('${hits.length} result${hits.length == 1 ? '' : 's'} for "$_term"',
-              style: theme.textTheme.bodySmall?.copyWith(color: AppColors.secondaryText)),
+          child: Text(
+            '${hits.length} result${hits.length == 1 ? '' : 's'} for "$_term"',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: AppColors.secondaryText,
+            ),
+          ),
         ),
         for (var i = 0; i < hits.length; i++) ...[
           Reveal(
@@ -784,15 +810,15 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             delay: MotionDuration.stagger * (i % 8),
             child: switch (hits[i]) {
               final SearchRoomHit r => _RoomHitCard(
-                hit: r,
-                matchedLabel: _matchedLabel(r.matchedOn),
-                onOpen: () => _openRoom(r.id, r.roomNumber),
-              ),
+                  hit: r,
+                  matchedLabel: _matchedLabel(r.matchedOn),
+                  onOpen: () => _openRoom(r.id, r.roomNumber),
+                ),
               final SearchMemberHit m => _MemberHitCard(
-                hit: m,
-                matchedLabel: _matchedLabel(m.matchedOn),
-                onOpen: m.roomId == null ? null : () => _openMember(m),
-              ),
+                  hit: m,
+                  matchedLabel: _matchedLabel(m.matchedOn),
+                  onOpen: m.roomId == null ? null : () => _openMember(m),
+                ),
             },
           ),
           const SizedBox(height: 10),
@@ -842,7 +868,12 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
         children: [
-          Text('Account', style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
+          Text(
+            'Account',
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
           const SizedBox(height: 12),
           Card(
             child: Padding(
@@ -853,11 +884,15 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                     children: [
                       CircleAvatar(
                         radius: 26,
-                        backgroundColor: AppColors.primary.withValues(alpha: 0.12),
+                        backgroundColor: AppColors.primary.withValues(
+                          alpha: 0.12,
+                        ),
                         child: Text(
                           name.isEmpty ? '?' : name[0].toUpperCase(),
-                          style: theme.textTheme.headlineSmall
-                              ?.copyWith(color: AppColors.primary, fontWeight: FontWeight.w800),
+                          style: theme.textTheme.headlineSmall?.copyWith(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 14),
@@ -865,15 +900,21 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.w700)),
+                            Text(
+                              name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
                             if (mobile.isNotEmpty)
-                              Text('+91 $mobile',
-                                  style: theme.textTheme.bodySmall
-                                      ?.copyWith(color: AppColors.secondaryText)),
+                              Text(
+                                '+91 $mobile',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: AppColors.secondaryText,
+                                ),
+                              ),
                           ],
                         ),
                       ),
@@ -910,11 +951,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             icon: Icons.lock_outline,
             color: AppColors.warning,
             title: 'Change Password',
-            onTap: () => Navigator.of(context).push(
-              smoothRoute(
-                ChangePasswordPage(api: widget.api),
-              ),
-            ),
+            onTap: () => Navigator.of(
+              context,
+            ).push(smoothRoute(ChangePasswordPage(api: widget.api))),
           ),
           const SizedBox(height: 8),
           _menuTile(
@@ -922,24 +961,30 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             icon: Icons.system_update_outlined,
             color: AppColors.success,
             title: 'App Updates',
-            onTap: () => Navigator.of(context).push(
-              smoothRoute(
-                const AppUpdatePage(),
-              ),
-            ),
+            onTap: () =>
+                Navigator.of(context).push(smoothRoute(const AppUpdatePage())),
           ),
           const SizedBox(height: 24),
           Center(
             child: SizedBox(
               width: 200,
-              child: OutlinedButton.icon(
-                onPressed: _signOut,
-                icon: const Icon(Icons.logout, color: AppColors.danger, size: 18),
-                label: const Text('Log out', style: TextStyle(color: AppColors.danger)),
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: AppColors.danger, width: 1.5),
-                  backgroundColor: Colors.transparent,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
+              child: PressScale(
+                child: OutlinedButton.icon(
+                  onPressed: _signOut,
+                  icon: const Icon(
+                    Icons.logout,
+                    color: AppColors.danger,
+                    size: 18,
+                  ),
+                  label: const Text(
+                    'Log out',
+                    style: TextStyle(color: AppColors.danger),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: AppColors.danger, width: 1.5),
+                    backgroundColor: Colors.transparent,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
                 ),
               ),
             ),
@@ -949,36 +994,48 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     );
   }
 
-  Widget _menuTile(BuildContext context,
-      {required IconData icon,
-      required Color color,
-      required String title,
-      required VoidCallback onTap}) {
+  Widget _menuTile(
+    BuildContext context, {
+    required IconData icon,
+    required Color color,
+    required String title,
+    required VoidCallback onTap,
+  }) {
     final theme = Theme.of(context);
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: ListTile(
-        onTap: onTap,
-        leading: Container(
-          padding: const EdgeInsets.all(9),
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(14),
-              bottomRight: Radius.circular(14),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: color.withValues(alpha: 0.32),
-                blurRadius: 8,
-                offset: const Offset(0, 3),
+    return PressScale(
+      child: Card(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: ListTile(
+          onTap: onTap,
+          leading: Container(
+            padding: const EdgeInsets.all(9),
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(14),
+                bottomRight: Radius.circular(14),
               ),
-            ],
+              boxShadow: [
+                BoxShadow(
+                  color: color.withValues(alpha: 0.32),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Icon(icon, color: Colors.white, size: 20),
           ),
-          child: Icon(icon, color: Colors.white, size: 20),
+          title: Text(
+            title,
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          trailing: const Icon(
+            Icons.chevron_right,
+            color: AppColors.secondaryText,
+          ),
         ),
-        title: Text(title, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
-        trailing: const Icon(Icons.chevron_right, color: AppColors.secondaryText),
       ),
     );
   }
@@ -994,25 +1051,25 @@ class _SearchButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.primary,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: busy ? null : onPressed,
-        child: SizedBox(
-          height: 48,
-          width: 48,
-          child: busy
-              ? const Center(
-                  child: SizedBox(
-                    height: 18,
-                    width: 18,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.white),
-                  ),
-                )
-              : const Icon(Icons.search, color: Colors.white, size: 22),
+    return AnimatedOpacity(
+      // Muted while the request is in flight: no spinner, the button simply
+      // reads as unavailable until the results land.
+      opacity: busy ? 0.45 : 1,
+      duration: MotionDuration.quick,
+      child: PressScale(
+        enabled: !busy,
+        child: Material(
+          color: AppColors.primary,
+          borderRadius: BorderRadius.circular(12),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: busy ? null : onPressed,
+            child: const SizedBox(
+              height: 48,
+              width: 48,
+              child: Icon(Icons.search, color: Colors.white, size: 22),
+            ),
+          ),
         ),
       ),
     );
@@ -1029,116 +1086,142 @@ class _RoomCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onOpen,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Ribbon sits flush against the card's top-left corner.
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [AppColors.primary, AppColors.primary.withValues(alpha: 0.7)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
+    return PressScale(
+      child: Card(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onOpen,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Ribbon sits flush against the card's top-left corner.
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 5,
                     ),
-                    borderRadius: const BorderRadius.only(
-                      bottomRight: Radius.circular(20),
-                    ),
-                  ),
-                  child: Text(
-                    'Room ${room.roomNumber}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-                const Spacer(),
-                Padding(
-                  padding: const EdgeInsets.only(right: 14),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        '${room.memberCount}/${room.capacity}',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.secondaryText,
-                        ),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          AppColors.primary,
+                          AppColors.primary.withValues(alpha: 0.7),
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
-                      const SizedBox(width: 8),
-                      StatusPill.room(room.status),
-                    ],
+                      borderRadius: const BorderRadius.only(
+                        bottomRight: Radius.circular(20),
+                      ),
+                    ),
+                    child: Text(
+                      'Room ${room.roomNumber}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontSize: 14,
+                        height: 1.2,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                      ),
+                    ),
                   ),
-                ),
-              ],
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
-              // Member rows sit on a grey panel so the list reads as one block,
-              // separate from the room header above it.
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  color: AppColors.neutralChip,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (room.members.isEmpty)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                          child: Center(
-                            child: OutlinedButton.icon(
-                              onPressed: onAddMember,
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: AppColors.primary,
-                                backgroundColor: AppColors.card,
-                                side: const BorderSide(color: AppColors.border),
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(10)),
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                visualDensity: VisualDensity.compact,
-                                textStyle: const TextStyle(
-                                    fontSize: 12.5, fontWeight: FontWeight.w700),
+                  const Spacer(),
+                  Padding(
+                    padding: const EdgeInsets.only(right: 14),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '${room.memberCount}/${room.capacity}',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.secondaryText,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        StatusPill.room(room.status),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+                // Member rows sit on a grey panel so the list reads as one block,
+                // separate from the room header above it.
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    color: AppColors.neutralChip,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (room.members.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                            child: Center(
+                              child: PressScale(
+                                enabled: onAddMember != null,
+                                child: OutlinedButton.icon(
+                                  onPressed: onAddMember,
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: AppColors.primary,
+                                    backgroundColor: AppColors.card,
+                                    side: const BorderSide(
+                                      color: AppColors.border,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 8,
+                                    ),
+                                    visualDensity: VisualDensity.compact,
+                                    textStyle: const TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  icon: const Icon(
+                                    Icons.person_add_alt_1_outlined,
+                                    size: 16,
+                                  ),
+                                  label: const Text('Add member'),
+                                ),
                               ),
-                              icon: const Icon(Icons.person_add_alt_1_outlined, size: 16),
-                              label: const Text('Add member'),
                             ),
-                          ),
-                        )
-                      else
-                        for (var i = 0; i < room.members.length; i++) ...[
-                          MemberRow(
-                            name: room.members[i].name,
-                            status: room.members[i].status,
-                            rent: room.members[i].rent,
-                            paid: room.members[i].paid,
-                            pending: room.members[i].pending,
-                            dueDate: room.members[i].dueDate,
-                          ),
-                          if (i < room.members.length - 1)
-                            const Divider(
+                          )
+                        else
+                          for (var i = 0; i < room.members.length; i++) ...[
+                            MemberRow(
+                              name: room.members[i].name,
+                              status: room.members[i].status,
+                              rent: room.members[i].rent,
+                              paid: room.members[i].paid,
+                              // Outstanding balance, not just the running cycle:
+                              // carry-over belongs in the amount too.
+                              pending: room.members[i].totalDue,
+                              dueDate: room.members[i].dueDate,
+                            ),
+                            if (i < room.members.length - 1)
+                              const Divider(
                                 height: 1,
                                 thickness: 1,
                                 indent: 56,
-                                color: AppColors.border),
-                        ],
-                    ],
+                                color: AppColors.border,
+                              ),
+                          ],
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1148,7 +1231,11 @@ class _RoomCard extends StatelessWidget {
 /// A room that matched. A room hit carries no rent figures by design, so this
 /// shows who lives there instead of money: the money needs the room's own page.
 class _RoomHitCard extends StatelessWidget {
-  const _RoomHitCard({required this.hit, required this.matchedLabel, required this.onOpen});
+  const _RoomHitCard({
+    required this.hit,
+    required this.matchedLabel,
+    required this.onOpen,
+  });
 
   final SearchRoomHit hit;
   final String matchedLabel;
@@ -1157,56 +1244,84 @@ class _RoomHitCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onOpen,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.meeting_room_outlined, size: 18, color: AppColors.primary),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text('Room ${hit.roomNumber}',
+    return PressScale(
+      child: Card(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onOpen,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.meeting_room_outlined,
+                      size: 18,
+                      color: AppColors.primary,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Room ${hit.roomNumber}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
-                  ),
-                  Text('${hit.memberCount}/${hit.capacity}',
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '${hit.memberCount}/${hit.capacity}',
                       style: theme.textTheme.bodySmall?.copyWith(
-                          fontWeight: FontWeight.w700, color: AppColors.secondaryText)),
-                  const SizedBox(width: 8),
-                  StatusPill.room(hit.status),
-                ],
-              ),
-              if (hit.notes != null && hit.notes!.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Text(hit.notes!,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.secondaryText,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    StatusPill.room(hit.status),
+                  ],
+                ),
+                if (hit.notes != null && hit.notes!.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    hit.notes!,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall?.copyWith(color: AppColors.secondaryText)),
-              ],
-              if (hit.members.isNotEmpty) ...[
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: AppColors.secondaryText,
+                    ),
+                  ),
+                ],
+                if (hit.members.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  // Names inline so a member who matched inside this room is
+                  // visible without opening it. Vacated ones are marked so a
+                  // former tenant is never read as a current one.
+                  Text(
+                    hit.members
+                        .map(
+                          (m) => m.status == 'active'
+                              ? m.name
+                              : '${m.name} (vacated)',
+                        )
+                        .join('  ·  '),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: AppColors.secondaryText,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 8),
-                // Names inline so a member who matched inside this room is
-                // visible without opening it. Vacated ones are marked so a
-                // former tenant is never read as a current one.
                 Text(
-                  hit.members
-                      .map((m) => m.status == 'active' ? m.name : '${m.name} (vacated)')
-                      .join('  ·  '),
-                  style: theme.textTheme.bodySmall?.copyWith(color: AppColors.secondaryText),
+                  'Matched on $matchedLabel',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: AppColors.secondaryText,
+                  ),
                 ),
               ],
-              const SizedBox(height: 8),
-              Text('Matched on $matchedLabel',
-                  style: theme.textTheme.bodySmall?.copyWith(color: AppColors.secondaryText)),
-            ],
+            ),
           ),
         ),
       ),
@@ -1218,7 +1333,11 @@ class _RoomHitCard extends StatelessWidget {
 /// in neutral grey and labelled, because their figures are history rather than
 /// money the landlord is still owed.
 class _MemberHitCard extends StatelessWidget {
-  const _MemberHitCard({required this.hit, required this.matchedLabel, required this.onOpen});
+  const _MemberHitCard({
+    required this.hit,
+    required this.matchedLabel,
+    required this.onOpen,
+  });
 
   final SearchMemberHit hit;
   final String matchedLabel;
@@ -1228,109 +1347,153 @@ class _MemberHitCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final vacated = hit.isVacated;
-    final color = vacated ? AppColors.secondaryText : memberStatusColor(hit.cycleStatus);
+    final color =
+        vacated ? AppColors.secondaryText : memberStatusColor(hit.cycleStatus);
     final overdue = hit.overdue;
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onOpen,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  CircleAvatar(
-                    radius: 17,
-                    backgroundColor: vacated ? AppColors.neutralChip : memberStatusSoft(hit.cycleStatus),
-                    child: Text(hit.name.isEmpty ? '?' : hit.name[0].toUpperCase(),
-                        style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 14)),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(hit.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
-                        Text(
-                          [
-                            hit.roomNumber == null ? null : 'Room ${hit.roomNumber}',
-                            hit.mobile,
-                          ].whereType<String>().join(' · '),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodySmall
-                              ?.copyWith(color: AppColors.secondaryText),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  vacated
-                      ? const StatusPill(
-                          text: 'Vacated',
-                          color: AppColors.secondaryText,
-                          soft: AppColors.neutralChip,
-                        )
-                      : StatusPill.member(hit.cycleStatus),
-                ],
-              ),
-              const SizedBox(height: 10),
-              if (vacated)
-                Text(
-                  hit.vacatingDate == null
-                      ? 'No live rent cycle.'
-                      : 'Left on ${fmtDateShort(hit.vacatingDate!)} · no live rent cycle.',
-                  style: theme.textTheme.bodySmall?.copyWith(color: AppColors.secondaryText),
-                )
-              else if (hit.rent <= 0)
-                Text('No rent cycle running today.',
-                    style: theme.textTheme.bodySmall?.copyWith(color: AppColors.secondaryText))
-              else ...[
-                ThinProgress(value: hit.progress, color: color),
-                const SizedBox(height: 6),
+    return PressScale(
+      enabled: onOpen != null,
+      child: Card(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onOpen,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Row(
                   children: [
-                    Expanded(
-                      child: Text('${inr(hit.paid)} of ${inr(hit.rent)} paid',
-                          style: theme.textTheme.bodySmall
-                              ?.copyWith(color: AppColors.secondaryText)),
+                    CircleAvatar(
+                      radius: 17,
+                      backgroundColor: vacated
+                          ? AppColors.neutralChip
+                          : memberStatusSoft(hit.cycleStatus),
+                      child: Text(
+                        hit.name.isEmpty ? '?' : hit.name[0].toUpperCase(),
+                        style: TextStyle(
+                          color: color,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
                     ),
-                    if (hit.dueDate != null)
-                      Text('Due ${fmtDateShort(hit.dueDate!)} · ',
-                          style: theme.textTheme.bodySmall
-                              ?.copyWith(color: AppColors.secondaryText)),
-                    Text('${inr(hit.pending)} due',
-                        style: theme.textTheme.bodySmall
-                            ?.copyWith(color: color, fontWeight: FontWeight.w700)),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            hit.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          Text(
+                            [
+                              hit.roomNumber == null
+                                  ? null
+                                  : 'Room ${hit.roomNumber}',
+                              hit.mobile,
+                            ].whereType<String>().join(' · '),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: AppColors.secondaryText,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    vacated
+                        ? const StatusPill(
+                            text: 'Vacated',
+                            color: AppColors.secondaryText,
+                            soft: AppColors.neutralChip,
+                          )
+                        : StatusPill.member(hit.cycleStatus),
                   ],
                 ),
-              ],
-              if (overdue != null) ...[
-                const SizedBox(height: 8),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                  decoration: BoxDecoration(
-                    color: AppColors.dangerSoft,
-                    borderRadius: BorderRadius.circular(10),
+                const SizedBox(height: 10),
+                if (vacated)
+                  Text(
+                    hit.vacatingDate == null
+                        ? 'No live rent cycle.'
+                        : 'Left on ${fmtDateShort(hit.vacatingDate!)} · no live rent cycle.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: AppColors.secondaryText,
+                    ),
+                  )
+                else if (hit.rent <= 0)
+                  Text(
+                    'No rent cycle running today.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: AppColors.secondaryText,
+                    ),
+                  )
+                else ...[
+                  ThinProgress(value: hit.progress, color: color),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '${inr(hit.paid)} of ${inr(hit.rent)} paid',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: AppColors.secondaryText,
+                          ),
+                        ),
+                      ),
+                      if (hit.dueDate != null)
+                        Text(
+                          'Due ${fmtDateShort(hit.dueDate!)} · ',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: AppColors.secondaryText,
+                          ),
+                        ),
+                      Text(
+                        '${inr(hit.pending)} due',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: color,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
                   ),
-                  child: Text('Overdue ${inr(overdue.amount)} · ${overdue.period}',
+                ],
+                if (overdue != null) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 7,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.dangerSoft,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      'Overdue ${inr(overdue.amount)} · ${overdue.period}',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: AppColors.danger,
                         fontWeight: FontWeight.w600,
-                      )),
+                      ),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                Text(
+                  'Matched on $matchedLabel',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: AppColors.secondaryText,
+                  ),
                 ),
               ],
-              const SizedBox(height: 8),
-              Text('Matched on $matchedLabel',
-                  style: theme.textTheme.bodySmall?.copyWith(color: AppColors.secondaryText)),
-            ],
+            ),
           ),
         ),
       ),
@@ -1370,7 +1533,9 @@ class _AddRoomPageState extends State<_AddRoomPage> {
   Future<void> _submit() async {
     final capacity = int.tryParse(_capacity.text.trim()) ?? 0;
     if (_number.text.trim().isEmpty || capacity < 1) {
-      setState(() => _error = 'Enter a room name and a capacity of at least 1.');
+      setState(
+        () => _error = 'Enter a room name and a capacity of at least 1.',
+      );
       return;
     }
     setState(() {
@@ -1405,14 +1570,19 @@ class _AddRoomPageState extends State<_AddRoomPage> {
         scrolledUnderElevation: 8,
         shadowColor: AppColors.mainText.withValues(alpha: 0.16),
         surfaceTintColor: Colors.transparent,
-        leading: IconButton(
-          tooltip: 'Back',
-          icon: const Icon(Icons.arrow_back),
-          onPressed: _busy ? null : () => Navigator.of(context).pop(false),
+        leading: PressScale(
+          enabled: !_busy,
+          child: IconButton(
+            tooltip: 'Back',
+            icon: const Icon(Icons.arrow_back),
+            onPressed: _busy ? null : () => Navigator.of(context).pop(false),
+          ),
         ),
         centerTitle: true,
-        title: const Text('Add Room',
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+        title: const Text(
+          'Add Room',
+          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+        ),
       ),
       body: SafeArea(
         child: ListView(
@@ -1448,9 +1618,11 @@ class _AddRoomPageState extends State<_AddRoomPage> {
             DropdownButtonFormField<String>(
               initialValue: _status,
               decoration: const InputDecoration(labelText: 'Status'),
-              items: const ['Empty', 'Occupied', 'Maintenance']
-                  .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                  .toList(),
+              items: const [
+                'Empty',
+                'Occupied',
+                'Maintenance',
+              ].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
               onChanged: (v) => setState(() => _status = v ?? 'Empty'),
             ),
           ],
@@ -1473,20 +1645,26 @@ class _AddRoomPageState extends State<_AddRoomPage> {
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
             child: SizedBox(
               height: 50,
-              child: FilledButton(
-                style: FilledButton.styleFrom(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-                onPressed: _busy ? null : _submit,
-                child: AnimatedSwitcher(
-                  duration: MotionDuration.quick,
-                  child: _busy
-                      ? const SizedBox(
-                          key: ValueKey('busy'),
-                          height: 18,
-                          width: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Text('Add Room', key: ValueKey('idle')),
+              child: PressScale(
+                enabled: !_busy,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  onPressed: _busy ? null : _submit,
+                  child: AnimatedSwitcher(
+                    duration: MotionDuration.quick,
+                    child: _busy
+                        ? const SizedBox(
+                            key: ValueKey('busy'),
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Add Room', key: ValueKey('idle')),
+                  ),
                 ),
               ),
             ),
@@ -1501,7 +1679,11 @@ class _AddRoomPageState extends State<_AddRoomPage> {
 /// then just its icon once the list scrolls. Width, clip and fade all follow
 /// one tween, so the two shapes flow into each other instead of snapping.
 class _AddRoomFab extends StatelessWidget {
-  const _AddRoomFab({super.key, required this.expanded, required this.onPressed});
+  const _AddRoomFab({
+    super.key,
+    required this.expanded,
+    required this.onPressed,
+  });
 
   final bool expanded;
   final VoidCallback onPressed;
@@ -1509,49 +1691,57 @@ class _AddRoomFab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Tooltip(
-      message: 'Add room',
-      child: Material(
-        color: scheme.primary,
-        elevation: 6,
-        shadowColor: AppColors.mainText.withValues(alpha: 0.28),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onPressed,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.add_home_outlined, size: 24, color: scheme.onPrimary),
-                TweenAnimationBuilder<double>(
-                  tween: Tween<double>(begin: 1, end: expanded ? 1 : 0),
-                  duration: MotionDuration.fast,
-                  curve: MotionCurve.smoothOut,
-                  builder: (context, t, child) => ClipRect(
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      widthFactor: t,
-                      // Without an explicit height factor the Align would try to
-                      // fill the FAB slot's unbounded height.
-                      heightFactor: 1,
-                      child: Opacity(opacity: t, child: child),
-                    ),
+    return PressScale(
+      child: Tooltip(
+        message: 'Add room',
+        child: Material(
+          color: scheme.primary,
+          elevation: 6,
+          shadowColor: AppColors.mainText.withValues(alpha: 0.28),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(999),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onPressed,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.add_home_outlined,
+                    size: 24,
+                    color: scheme.onPrimary,
                   ),
-                  child: Padding(
-                    padding: const EdgeInsets.only(left: 8),
-                    child: Text(
-                      'Add room',
-                      style: TextStyle(
-                        color: scheme.onPrimary,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14,
+                  TweenAnimationBuilder<double>(
+                    tween: Tween<double>(begin: 1, end: expanded ? 1 : 0),
+                    duration: MotionDuration.fast,
+                    curve: MotionCurve.smoothOut,
+                    builder: (context, t, child) => ClipRect(
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        widthFactor: t,
+                        // Without an explicit height factor the Align would try to
+                        // fill the FAB slot's unbounded height.
+                        heightFactor: 1,
+                        child: Opacity(opacity: t, child: child),
+                      ),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: Text(
+                        'Add room',
+                        style: TextStyle(
+                          color: scheme.onPrimary,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -1648,44 +1838,46 @@ class _NavItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = selected ? AppColors.primary : AppColors.secondaryText;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            height: 30,
-            child: Center(
-              child: AnimatedSwitcher(
-                duration: MotionDuration.quick,
-                switchInCurve: MotionCurve.smoothOut,
-                switchOutCurve: MotionCurve.easeInOut,
-                transitionBuilder: (child, animation) => ScaleTransition(
-                  scale: animation,
-                  child: FadeTransition(opacity: animation, child: child),
-                ),
-                child: Icon(
-                  selected ? selectedIcon : icon,
-                  key: ValueKey(selected),
-                  size: 22,
-                  color: color,
+    return PressScale(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              height: 30,
+              child: Center(
+                child: AnimatedSwitcher(
+                  duration: MotionDuration.quick,
+                  switchInCurve: MotionCurve.smoothOut,
+                  switchOutCurve: MotionCurve.easeInOut,
+                  transitionBuilder: (child, animation) => ScaleTransition(
+                    scale: animation,
+                    child: FadeTransition(opacity: animation, child: child),
+                  ),
+                  child: Icon(
+                    selected ? selectedIcon : icon,
+                    key: ValueKey(selected),
+                    size: 22,
+                    color: color,
+                  ),
                 ),
               ),
             ),
-          ),
-          const SizedBox(height: 2),
-          AnimatedDefaultTextStyle(
-            duration: MotionDuration.quick,
-            curve: MotionCurve.smoothOut,
-            style: TextStyle(
-              color: color,
-              fontSize: 12,
-              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+            const SizedBox(height: 2),
+            AnimatedDefaultTextStyle(
+              duration: MotionDuration.quick,
+              curve: MotionCurve.smoothOut,
+              style: TextStyle(
+                color: color,
+                fontSize: 12,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+              ),
+              child: Text(label),
             ),
-            child: Text(label),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

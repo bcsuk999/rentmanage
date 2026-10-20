@@ -84,6 +84,9 @@ class RoomMember {
   /// 0..1 fraction of rent collected. Safe when rent is 0.
   double get progress => rent <= 0 ? 0 : (paid / rent).clamp(0.0, 1.0);
 
+  /// Everything still owed: the running cycle plus any ended-cycle carry-over.
+  double get totalDue => pending + (overdue?.amount ?? 0);
+
   factory RoomMember.fromJson(Map<String, dynamic> json) {
     double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
     final rawOverdue = json['overdue'];

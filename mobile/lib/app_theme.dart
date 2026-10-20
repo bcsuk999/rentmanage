@@ -39,6 +39,13 @@ ThemeData buildLightTheme() {
     colorScheme: scheme,
     useMaterial3: true,
     scaffoldBackgroundColor: AppColors.background,
+    // Interaction feedback is the press-scale animation only: no ripples,
+    // hover wash, focus tint or pressed-state colour anywhere in the app.
+    splashFactory: NoSplash.splashFactory,
+    splashColor: Colors.transparent,
+    highlightColor: Colors.transparent,
+    hoverColor: Colors.transparent,
+    focusColor: Colors.transparent,
     // Every MaterialPageRoute - including ones pushed by the SDK and by any
     // screen that forgets to opt in - gets the app's side-by-side slide.
     pageTransitionsTheme: const PageTransitionsTheme(
@@ -98,7 +105,7 @@ ThemeData buildLightTheme() {
         foregroundColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
-      ),
+      ).copyWith(overlayColor: WidgetStateProperty.all(Colors.transparent)),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
@@ -106,6 +113,16 @@ ThemeData buildLightTheme() {
         side: const BorderSide(color: AppColors.border),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+      ).copyWith(overlayColor: WidgetStateProperty.all(Colors.transparent)),
+    ),
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(
+        foregroundColor: AppColors.primary,
+      ).copyWith(overlayColor: WidgetStateProperty.all(Colors.transparent)),
+    ),
+    iconButtonTheme: IconButtonThemeData(
+      style: ButtonStyle(
+        overlayColor: WidgetStateProperty.all(Colors.transparent),
       ),
     ),
     floatingActionButtonTheme: const FloatingActionButtonThemeData(

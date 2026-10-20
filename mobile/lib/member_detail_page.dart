@@ -69,7 +69,8 @@ class _MemberDetailPageState extends State<MemberDetailPage> {
       setState(() {
         _loading = false;
         if (_profile == null) {
-          _error = 'Unable to load the latest data. Check your internet connection and try again.';
+          _error =
+              'Unable to load the latest data. Check your internet connection and try again.';
         }
       });
     } finally {
@@ -125,16 +126,20 @@ class _MemberDetailPageState extends State<MemberDetailPage> {
         scrolledUnderElevation: 8,
         shadowColor: AppColors.mainText.withValues(alpha: 0.16),
         surfaceTintColor: Colors.transparent,
-        leading: const BackButton(),
+        leading: const PressScale(child: BackButton()),
         centerTitle: true,
-        title: const Text('Member Details',
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+        title: const Text(
+          'Member Details',
+          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+        ),
         actions: [
           if (profile != null)
-            IconButton(
-              tooltip: 'Edit member',
-              icon: const Icon(Icons.edit_outlined),
-              onPressed: () => _edit(profile),
+            PressScale(
+              child: IconButton(
+                tooltip: 'Edit member',
+                icon: const Icon(Icons.edit_outlined),
+                onPressed: () => _edit(profile),
+              ),
             ),
           const SizedBox(width: 4),
         ],
@@ -160,7 +165,9 @@ class _MemberDetailPageState extends State<MemberDetailPage> {
     }
     final error = _error;
     if (error != null && _profile == null) {
-      return ListView(children: [ErrorPanel(message: error, onRetry: () => _load())]);
+      return ListView(
+        children: [ErrorPanel(message: error, onRetry: () => _load())],
+      );
     }
     final profile = _profile!;
     return RefreshIndicator(
@@ -181,12 +188,13 @@ class _MemberDetailPageState extends State<MemberDetailPage> {
           const SizedBox(height: 14),
           SizedBox(
             width: double.infinity,
-            child: Text('Payment records',
-                textAlign: TextAlign.center,
-                style: Theme.of(context)
-                    .textTheme
-                    .titleSmall
-                    ?.copyWith(fontWeight: FontWeight.w800)),
+            child: Text(
+              'Payment records',
+              textAlign: TextAlign.center,
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+            ),
           ),
           const SizedBox(height: 8),
           PaymentHistoryList(
@@ -218,8 +226,10 @@ class _MemberDetailPageState extends State<MemberDetailPage> {
               backgroundColor: soft,
               child: Text(
                 profile.name.isEmpty ? '?' : profile.name[0].toUpperCase(),
-                style: theme.textTheme.titleMedium
-                    ?.copyWith(color: color, fontWeight: FontWeight.w800),
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: color,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ),
             const SizedBox(width: 10),
@@ -228,18 +238,25 @@ class _MemberDetailPageState extends State<MemberDetailPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(profile.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleSmall
-                          ?.copyWith(fontWeight: FontWeight.w700, height: 1.15)),
+                  Text(
+                    profile.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      height: 1.15,
+                    ),
+                  ),
                   if (profile.mobile.isNotEmpty) ...[
                     const SizedBox(height: 2),
-                    Text('+91 ${profile.mobile}',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                            color: AppColors.secondaryText,
-                            fontSize: 10.5,
-                            height: 1.15)),
+                    Text(
+                      '+91 ${profile.mobile}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: AppColors.secondaryText,
+                        fontSize: 10.5,
+                        height: 1.15,
+                      ),
+                    ),
                   ],
                 ],
               ),
@@ -253,15 +270,21 @@ class _MemberDetailPageState extends State<MemberDetailPage> {
                 Container(
                   width: 8,
                   height: 8,
-                  decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
+                  ),
                 ),
                 const SizedBox(width: 5),
-                Text(active ? 'Active' : 'Vacated',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                        color: color,
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w600,
-                        height: 1.15)),
+                Text(
+                  active ? 'Active' : 'Vacated',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: color,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w600,
+                    height: 1.15,
+                  ),
+                ),
               ],
             ),
           ],
@@ -278,7 +301,10 @@ class _MemberDetailPageState extends State<MemberDetailPage> {
 
     Widget field(String label, String value, {Color? valueColor}) {
       return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        // Fixed height: a wrapped period or a long name must not make one tile
+        // taller than its neighbours.
+        height: 56,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
         decoration: BoxDecoration(
           color: AppColors.background,
           borderRadius: BorderRadius.circular(10),
@@ -287,20 +313,30 @@ class _MemberDetailPageState extends State<MemberDetailPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodySmall?.copyWith(
-                    color: AppColors.secondaryText, fontSize: 9.5, height: 1.1)),
-            const SizedBox(height: 3),
-            Text(value,
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: AppColors.secondaryText,
+                fontSize: 9,
+                height: 1.1,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Expanded(
+              child: Text(
+                value,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.bodySmall?.copyWith(
-                    fontSize: 12.5,
-                    height: 1.15,
-                    fontWeight: FontWeight.w700,
-                    color: valueColor ?? AppColors.mainText)),
+                  fontSize: 11.5,
+                  height: 1.15,
+                  fontWeight: FontWeight.w700,
+                  color: valueColor ?? AppColors.mainText,
+                ),
+              ),
+            ),
           ],
         ),
       );
@@ -310,24 +346,37 @@ class _MemberDetailPageState extends State<MemberDetailPage> {
       field('Name', profile.name),
       if (profile.mobile.isNotEmpty) field('Mobile', '+91 ${profile.mobile}'),
       field('Aadhaar no', profile.aadhaar.isEmpty ? '—' : profile.aadhaar),
-      field('Joined on',
-          profile.joiningDate == null
-              ? '—'
-              : fmtDateIso(profile.joiningDate!.toIso8601String())),
+      field(
+        'Joined on',
+        profile.joiningDate == null
+            ? '—'
+            : fmtDateIso(profile.joiningDate!.toIso8601String()),
+      ),
       field('Rent amount', '${inr(profile.monthlyRent)} / month'),
-      field('Rent period',
-          period == null
-              ? 'No period yet'
-              : '${fmtDateIso(period.startIso)} – ${fmtDateIso(period.endIso)}'),
+      field(
+        'Current rent period',
+        period == null
+            ? 'No period yet'
+            : '${fmtDateIso(period.startIso)} – ${fmtDateIso(period.endIso)}',
+      ),
       // Exactly three money figures, and they never double count: due and
       // overdue are disjoint cycles, and the total is their sum. A cycle whose
       // due date is still in the future is in none of them.
-      field('Due amt', inr(profile.due),
-          valueColor: profile.due > 0 ? AppColors.warning : AppColors.success),
-      field('Overdue amt', inr(profile.overdue),
-          valueColor: profile.overdue > 0 ? AppColors.danger : AppColors.success),
-      field('Total due amt', inr(profile.totalDue),
-          valueColor: profile.totalDue > 0 ? AppColors.danger : AppColors.success),
+      field(
+        'Due amt',
+        inr(profile.due),
+        valueColor: profile.due > 0 ? AppColors.warning : AppColors.success,
+      ),
+      field(
+        'Overdue amt',
+        inr(profile.overdue),
+        valueColor: profile.overdue > 0 ? AppColors.danger : AppColors.success,
+      ),
+      field(
+        'Total due amt',
+        inr(profile.totalDue),
+        valueColor: profile.totalDue > 0 ? AppColors.danger : AppColors.success,
+      ),
     ];
 
     return Card(
@@ -336,9 +385,12 @@ class _MemberDetailPageState extends State<MemberDetailPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Member facts',
-                style: theme.textTheme.titleSmall
-                    ?.copyWith(fontWeight: FontWeight.w800)),
+            Text(
+              'Member facts',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
             const SizedBox(height: 10),
             LayoutBuilder(
               builder: (context, constraints) {
@@ -379,13 +431,17 @@ class _MemberDetailPageState extends State<MemberDetailPage> {
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
           child: SizedBox(
             height: 50,
-            child: FilledButton.icon(
-              style: FilledButton.styleFrom(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            child: PressScale(
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                onPressed: () => _recordPayment(profile),
+                icon: const Icon(Icons.payments_outlined, size: 18),
+                label: const Text('Record Payment'),
               ),
-              onPressed: () => _recordPayment(profile),
-              icon: const Icon(Icons.payments_outlined, size: 18),
-              label: const Text('Record Payment'),
             ),
           ),
         ),

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui' as ui;
 
+import 'package:flutter/gestures.dart' show kTouchSlop;
 import 'package:flutter/material.dart';
 
 /// Motion system for the app, mirroring the transitions.dev motion tokens
@@ -164,19 +165,17 @@ class _RevealState extends State<Reveal> with SingleTickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
-    _c = AnimationController(
-      vsync: this,
-      duration: MotionDuration.verySlow,
-    );
-    final curved =
-        CurvedAnimation(parent: _c, curve: MotionCurve.smoothOut);
+    _c = AnimationController(vsync: this, duration: MotionDuration.verySlow);
+    final curved = CurvedAnimation(parent: _c, curve: MotionCurve.smoothOut);
     _opacity = curved;
     _slide = Tween<Offset>(
       begin: Offset(0, widget.offset / 100),
       end: Offset.zero,
     ).animate(curved);
-    _blur = Tween<double>(begin: widget.blur, end: 0)
-        .animate(CurvedAnimation(parent: _c, curve: MotionCurve.easeInOut));
+    _blur = Tween<double>(
+      begin: widget.blur,
+      end: 0,
+    ).animate(CurvedAnimation(parent: _c, curve: MotionCurve.easeInOut));
     if (widget.delay == Duration.zero) {
       _c.forward();
     } else {
@@ -203,8 +202,10 @@ class _RevealState extends State<Reveal> with SingleTickerProviderStateMixin {
         animation: _blur,
         child: child,
         builder: (context, inner) => ImageFiltered(
-          imageFilter:
-              ui.ImageFilter.blur(sigmaX: _blur.value, sigmaY: _blur.value),
+          imageFilter: ui.ImageFilter.blur(
+            sigmaX: _blur.value,
+            sigmaY: _blur.value,
+          ),
           child: inner,
         ),
       );
@@ -235,10 +236,22 @@ class _ShakeOnErrorState extends State<ShakeOnError>
     super.initState();
     _c = AnimationController(vsync: this, duration: MotionDuration.medium);
     _x = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 0, end: -MotionDistance.small), weight: 1),
-      TweenSequenceItem(tween: Tween(begin: -MotionDistance.small, end: MotionDistance.small), weight: 2),
-      TweenSequenceItem(tween: Tween(begin: MotionDistance.small, end: -MotionDistance.micro), weight: 2),
-      TweenSequenceItem(tween: Tween(begin: -MotionDistance.micro, end: 0), weight: 1),
+      TweenSequenceItem(
+        tween: Tween(begin: 0, end: -MotionDistance.small),
+        weight: 1,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: -MotionDistance.small, end: MotionDistance.small),
+        weight: 2,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: MotionDistance.small, end: -MotionDistance.micro),
+        weight: 2,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: -MotionDistance.micro, end: 0),
+        weight: 1,
+      ),
     ]).animate(CurvedAnimation(parent: _c, curve: MotionCurve.smoothOut));
   }
 
@@ -260,10 +273,8 @@ class _ShakeOnErrorState extends State<ShakeOnError>
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: _x,
-      builder: (context, child) => Transform.translate(
-        offset: Offset(_x.value, 0),
-        child: child,
-      ),
+      builder: (context, child) =>
+          Transform.translate(offset: Offset(_x.value, 0), child: child),
       child: widget.child,
     );
   }
@@ -296,11 +307,15 @@ class _PopInValueState extends State<PopInValue>
     duration: MotionDuration.verySlow,
   );
 
-  late final Animation<double> _scale = Tween<double>(begin: 0.8, end: 1.0)
-      .animate(CurvedAnimation(parent: _c, curve: MotionCurve.smoothOut));
+  late final Animation<double> _scale = Tween<double>(
+    begin: 0.8,
+    end: 1.0,
+  ).animate(CurvedAnimation(parent: _c, curve: MotionCurve.smoothOut));
 
-  late final Animation<double> _opacity =
-      CurvedAnimation(parent: _c, curve: MotionCurve.easeOut);
+  late final Animation<double> _opacity = CurvedAnimation(
+    parent: _c,
+    curve: MotionCurve.easeOut,
+  );
 
   @override
   void initState() {
@@ -362,12 +377,89 @@ class SwapText extends StatelessWidget {
           child: child,
         ),
       ),
-      child: Text(value,
-          key: ValueKey(value),
-          style: style,
-          textAlign: textAlign,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis),
+      child: Text(
+        value,
+        key: ValueKey(value),
+        style: style,
+        textAlign: textAlign,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+  }
+}
+
+/// The app's only pointer feedback: the child scales down to 90% while pressed
+/// and springs back on release. No colour, ripple or hover state is involved.
+class PressScale extends StatefulWidget {
+  const PressScale({
+    super.key,
+    required this.child,
+    this.enabled = true,
+    this.scale = 0.9,
+    this.duration = const Duration(milliseconds: 100),
+  });
+
+  final Widget child;
+  final bool enabled;
+  final double scale;
+  final Duration duration;
+
+  @override
+  State<PressScale> createState() => _PressScaleState();
+}
+
+class _PressScaleState extends State<PressScale> {
+  // Pointer events reach the deepest listener first, so if a nested PressScale
+  // already owns this pointer the ancestor stays still instead of scaling twice.
+  static final Map<int, _PressScaleState> _owners = <int, _PressScaleState>{};
+
+  final Set<int> _pointers = <int>{};
+  final Map<int, Offset> _origins = <int, Offset>{};
+
+  void _press(PointerDownEvent event) {
+    if (_owners.containsKey(event.pointer)) return;
+    _owners[event.pointer] = this;
+    _origins[event.pointer] = event.position;
+    setState(() => _pointers.add(event.pointer));
+  }
+
+  void _move(PointerMoveEvent event) {
+    final origin = _origins[event.pointer];
+    if (origin == null || (event.position - origin).distance <= kTouchSlop) {
+      return;
+    }
+    _release(event);
+  }
+
+  void _release(PointerEvent event) {
+    _origins.remove(event.pointer);
+    if (_owners[event.pointer] != this) return;
+    _owners.remove(event.pointer);
+    if (!_pointers.remove(event.pointer)) return;
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _owners.removeWhere((_, owner) => owner == this);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: widget.enabled ? _press : null,
+      onPointerMove: _move,
+      onPointerUp: _release,
+      onPointerCancel: _release,
+      child: AnimatedScale(
+        scale: _pointers.isEmpty ? 1 : widget.scale,
+        duration: widget.duration,
+        curve: MotionCurve.easeOut,
+        child: widget.child,
+      ),
     );
   }
 }

@@ -24,7 +24,8 @@ class LoginPage extends StatefulWidget {
   State<LoginPage> createState() => _LoginPageState();
 }
 
-class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMixin {
+class _LoginPageState extends State<LoginPage>
+    with SingleTickerProviderStateMixin {
   final _mobile = TextEditingController();
   final _name = TextEditingController();
   final _password = TextEditingController();
@@ -110,154 +111,186 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
         child: Transform.translate(
           offset: const Offset(0, -28),
           child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
-            child: FadeTransition(
-              opacity: _fade,
-              child: SlideTransition(
-                position: _slide,
-                child: Column(
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(24),
-                      child: Image.asset(
-                        'logo.png',
-                        width: 120,
-                        height: 120,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) => Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: const BoxDecoration(
-                            color: AppColors.primary,
-                            shape: BoxShape.circle,
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: FadeTransition(
+                opacity: _fade,
+                child: SlideTransition(
+                  position: _slide,
+                  child: Column(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(24),
+                        child: Image.asset(
+                          'logo.png',
+                          width: 120,
+                          height: 120,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) =>
+                              Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: const BoxDecoration(
+                              color: AppColors.primary,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.home_work_outlined,
+                              size: 36,
+                              color: Colors.white,
+                            ),
                           ),
-                          child: const Icon(Icons.home_work_outlined,
-                              size: 36, color: Colors.white),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    Text('Manage your rooms, collect rent, stay organized.',
+                      const SizedBox(height: 12),
+                      Text(
+                        'Manage your rooms, collect rent, stay organized.',
                         textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodyMedium
-                            ?.copyWith(color: AppColors.secondaryText)),
-                    const SizedBox(height: 20),
-                    Card(
-                      elevation: 8,
-                      shadowColor: AppColors.primary.withValues(alpha: 0.25),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20),
-                        side: const BorderSide(color: AppColors.border),
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: AppColors.secondaryText,
+                            ),
                       ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(20),
-                        child: AnimatedSize(
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeInOut,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              AnimatedSwitcher(
-                                duration: const Duration(milliseconds: 250),
-                                child: Text(
-                                  _registerMode ? 'Create account' : 'Sign in',
-                                  key: ValueKey(_registerMode),
-                                  style: Theme.of(context).textTheme.headlineSmall,
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              if (_error != null) ...[
-                                ShakeOnError(
-                                  trigger: _error,
-                                  child: Container(
-                                    padding: const EdgeInsets.all(10),
-                                    decoration: BoxDecoration(
-                                      color: Theme.of(context).colorScheme.errorContainer,
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Text(_error!),
+                      const SizedBox(height: 20),
+                      Card(
+                        elevation: 8,
+                        shadowColor: AppColors.primary.withValues(alpha: 0.25),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                          side: const BorderSide(color: AppColors.border),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: AnimatedSize(
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeInOut,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                AnimatedSwitcher(
+                                  duration: const Duration(milliseconds: 250),
+                                  child: Text(
+                                    _registerMode
+                                        ? 'Create account'
+                                        : 'Sign in',
+                                    key: ValueKey(_registerMode),
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.headlineSmall,
                                   ),
                                 ),
-                                const SizedBox(height: 12),
-                              ],
-                              if (_registerMode) ...[
-                                TextField(
-                                  controller: _name,
-                                  decoration:
-                                      const InputDecoration(labelText: 'Name (optional)'),
-                                  textInputAction: TextInputAction.next,
-                                  autofillHints: const [AutofillHints.name],
-                                ),
-                                const SizedBox(height: 12),
-                              ],
-                              TextField(
-                                controller: _mobile,
-                                decoration: const InputDecoration(
-                                  labelText: 'Mobile number',
-                                  hintText: 'Enter mobile number',
-                                  prefixText: '+91 ',
-                                ),
-                                keyboardType: TextInputType.phone,
-                                inputFormatters: [
-                                  FilteringTextInputFormatter.allow(RegExp(r'[0-9\s-]')),
-                                  LengthLimitingTextInputFormatter(14),
-                                ],
-                                textInputAction: TextInputAction.next,
-                                autofillHints: const [AutofillHints.telephoneNumber],
-                              ),
-                              const SizedBox(height: 12),
-                              TextField(
-                                controller: _password,
-                                decoration: InputDecoration(
-                                  labelText: 'Password',
-                                  helperText: _registerMode
-                                      ? '8+ characters with upper, lower case and a number'
-                                      : null,
-                                ),
-                                obscureText: true,
-                                textInputAction: TextInputAction.done,
-                                autofillHints: const [AutofillHints.password],
-                                onSubmitted: (_) => _submit(),
-                              ),
-                              const SizedBox(height: 20),
-                              FilledButton(
-                                onPressed: _busy ? null : _submit,
-                                child: _busy
-                                    ? const SizedBox(
-                                        height: 18,
-                                        width: 18,
-                                        child: CircularProgressIndicator(strokeWidth: 2),
-                                      )
-                                    : AnimatedSwitcher(
-                                        duration: const Duration(milliseconds: 250),
-                                        child: Text(
-                                          _registerMode ? 'Register' : 'Sign in',
-                                          key: ValueKey(_registerMode),
-                                        ),
+                                const SizedBox(height: 16),
+                                if (_error != null) ...[
+                                  ShakeOnError(
+                                    trigger: _error,
+                                    child: Container(
+                                      padding: const EdgeInsets.all(10),
+                                      decoration: BoxDecoration(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.errorContainer,
+                                        borderRadius: BorderRadius.circular(8),
                                       ),
-                              ),
-                              TextButton(
-                                onPressed: _busy
-                                    ? null
-                                    : () => setState(() {
-                                          _registerMode = !_registerMode;
-                                          _error = null;
-                                        }),
-                                child: Text(_registerMode
-                                    ? 'Already have an account? Sign in'
-                                    : 'New landlord? Create an account'),
-                              ),
-                            ],
+                                      child: Text(_error!),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                ],
+                                if (_registerMode) ...[
+                                  TextField(
+                                    controller: _name,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Name (optional)',
+                                    ),
+                                    textInputAction: TextInputAction.next,
+                                    autofillHints: const [AutofillHints.name],
+                                  ),
+                                  const SizedBox(height: 12),
+                                ],
+                                TextField(
+                                  controller: _mobile,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Mobile number',
+                                    hintText: 'Enter mobile number',
+                                    prefixText: '+91 ',
+                                  ),
+                                  keyboardType: TextInputType.phone,
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.allow(
+                                      RegExp(r'[0-9\s-]'),
+                                    ),
+                                    LengthLimitingTextInputFormatter(14),
+                                  ],
+                                  textInputAction: TextInputAction.next,
+                                  autofillHints: const [
+                                    AutofillHints.telephoneNumber,
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                TextField(
+                                  controller: _password,
+                                  decoration: InputDecoration(
+                                    labelText: 'Password',
+                                    helperText: _registerMode
+                                        ? '8+ characters with upper, lower case and a number'
+                                        : null,
+                                  ),
+                                  obscureText: true,
+                                  textInputAction: TextInputAction.done,
+                                  autofillHints: const [AutofillHints.password],
+                                  onSubmitted: (_) => _submit(),
+                                ),
+                                const SizedBox(height: 20),
+                                PressScale(
+                                  enabled: !_busy,
+                                  child: FilledButton(
+                                    onPressed: _busy ? null : _submit,
+                                    child: _busy
+                                        ? const SizedBox(
+                                            height: 18,
+                                            width: 18,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : AnimatedSwitcher(
+                                            duration: const Duration(
+                                              milliseconds: 250,
+                                            ),
+                                            child: Text(
+                                              _registerMode
+                                                  ? 'Register'
+                                                  : 'Sign in',
+                                              key: ValueKey(_registerMode),
+                                            ),
+                                          ),
+                                  ),
+                                ),
+                                PressScale(
+                                  enabled: !_busy,
+                                  child: TextButton(
+                                    onPressed: _busy
+                                        ? null
+                                        : () => setState(() {
+                                              _registerMode = !_registerMode;
+                                              _error = null;
+                                            }),
+                                    child: Text(
+                                      _registerMode
+                                          ? 'Already have an account? Sign in'
+                                          : 'New landlord? Create an account',
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
           ),
         ),
       ),

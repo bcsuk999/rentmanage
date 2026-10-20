@@ -101,7 +101,8 @@ class _MemberFormPageState extends State<MemberFormPage> {
       'mobile': _mobile.text.trim(),
       'monthlyRent': _rent.text.trim(),
       'rentStartDate': _dateInput(_start),
-      if (_aadhaar.text.trim().isNotEmpty) 'aadhaarNumber': _aadhaar.text.trim(),
+      if (_aadhaar.text.trim().isNotEmpty)
+        'aadhaarNumber': _aadhaar.text.trim(),
     };
     try {
       if (widget.isEdit) {
@@ -111,7 +112,10 @@ class _MemberFormPageState extends State<MemberFormPage> {
       } else {
         await widget.api.addMember(widget.roomId, payload);
         if (!mounted) return;
-        toastOk(context, '${_name.text.trim()} added to Room ${widget.roomNumber}.');
+        toastOk(
+          context,
+          '${_name.text.trim()} added to Room ${widget.roomNumber}.',
+        );
       }
       Navigator.of(context).pop(true);
     } on ApiException catch (e) {
@@ -131,9 +135,11 @@ class _MemberFormPageState extends State<MemberFormPage> {
         scrolledUnderElevation: 8,
         shadowColor: AppColors.mainText.withValues(alpha: 0.16),
         surfaceTintColor: Colors.transparent,
-        title: Text(widget.isEdit
-            ? 'Edit member · Room ${widget.roomNumber}'
-            : 'Add member to Room ${widget.roomNumber}'),
+        title: Text(
+          widget.isEdit
+              ? 'Edit member · Room ${widget.roomNumber}'
+              : 'Add member to Room ${widget.roomNumber}',
+        ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
@@ -168,14 +174,13 @@ class _MemberFormPageState extends State<MemberFormPage> {
                   padding: EdgeInsets.only(left: 12, right: 10),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _IndiaFlag(),
-                      SizedBox(width: 6),
-                      Text('+91'),
-                    ],
+                    children: [_IndiaFlag(), SizedBox(width: 6), Text('+91')],
                   ),
                 ),
-                prefixIconConstraints: BoxConstraints(minWidth: 0, minHeight: 0),
+                prefixIconConstraints: BoxConstraints(
+                  minWidth: 0,
+                  minHeight: 0,
+                ),
               ),
               keyboardType: TextInputType.number,
               maxLength: 10,
@@ -184,28 +189,39 @@ class _MemberFormPageState extends State<MemberFormPage> {
             const SizedBox(height: 12),
             TextField(
               controller: _rent,
-              decoration: const InputDecoration(labelText: 'Monthly rent (₹) *'),
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Monthly rent (₹) *',
+              ),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               textInputAction: TextInputAction.next,
             ),
             const SizedBox(height: 12),
             TextField(
               controller: _aadhaar,
-              decoration: const InputDecoration(labelText: 'Aadhaar (optional, 12 digits)'),
+              decoration: const InputDecoration(
+                labelText: 'Aadhaar (optional, 12 digits)',
+              ),
               keyboardType: TextInputType.number,
               maxLength: 12,
             ),
             const SizedBox(height: 12),
-            ListTile(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-                side: const BorderSide(color: AppColors.border),
+            PressScale(
+              child: ListTile(
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 2,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  side: const BorderSide(color: AppColors.border),
+                ),
+                title: const Text('Rent start date'),
+                subtitle: Text(_dateInput(_start)),
+                trailing: const Icon(Icons.calendar_month_outlined),
+                onTap: _pickDate,
               ),
-              title: const Text('Rent start date'),
-              subtitle: Text(_dateInput(_start)),
-              trailing: const Icon(Icons.calendar_month_outlined),
-              onTap: _pickDate,
             ),
           ],
         ),
@@ -227,21 +243,29 @@ class _MemberFormPageState extends State<MemberFormPage> {
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
             child: SizedBox(
               height: 50,
-              child: FilledButton(
-                style: FilledButton.styleFrom(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-                onPressed: _busy ? null : _submit,
-                child: AnimatedSwitcher(
-                  duration: MotionDuration.quick,
-                  child: _busy
-                      ? const SizedBox(
-                          key: ValueKey('busy'),
-                          height: 18,
-                          width: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2))
-                      : Text(widget.isEdit ? 'Save changes' : 'Add member',
-                          key: const ValueKey('idle')),
+              child: PressScale(
+                enabled: !_busy,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  onPressed: _busy ? null : _submit,
+                  child: AnimatedSwitcher(
+                    duration: MotionDuration.quick,
+                    child: _busy
+                        ? const SizedBox(
+                            key: ValueKey('busy'),
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Text(
+                            widget.isEdit ? 'Save changes' : 'Add member',
+                            key: const ValueKey('idle'),
+                          ),
+                  ),
                 ),
               ),
             ),

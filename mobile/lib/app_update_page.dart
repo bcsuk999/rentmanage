@@ -64,7 +64,11 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
   static List<int> _parts(String v) {
     final m = RegExp(r'(\d+)\.(\d+)\.(\d+)').firstMatch(v);
     if (m == null) return [0, 0, 0];
-    return [int.parse(m.group(1)!), int.parse(m.group(2)!), int.parse(m.group(3)!)];
+    return [
+      int.parse(m.group(1)!),
+      int.parse(m.group(2)!),
+      int.parse(m.group(3)!),
+    ];
   }
 
   /// >0 when [a] is newer than [b].
@@ -86,7 +90,9 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
   Future<_Release?> _fromReleasesApi() async {
     final res = await http
         .get(
-          Uri.parse('https://api.github.com/repos/$_owner/$_repo/releases/latest'),
+          Uri.parse(
+            'https://api.github.com/repos/$_owner/$_repo/releases/latest',
+          ),
           headers: _ghHeaders,
         )
         .timeout(const Duration(seconds: 15));
@@ -115,7 +121,9 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
   Future<_Release?> _fromRepoFolder() async {
     final res = await http
         .get(
-          Uri.parse('https://api.github.com/repos/$_owner/$_repo/contents/releases?ref=main'),
+          Uri.parse(
+            'https://api.github.com/repos/$_owner/$_repo/contents/releases?ref=main',
+          ),
           headers: _ghHeaders,
         )
         .timeout(const Duration(seconds: 15));
@@ -165,7 +173,8 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
         _checking = false;
         // Same rule for failures: only surface them when there is nothing to show.
         if (_latest == null) {
-          _error = 'Could not reach GitHub. Check your internet connection and try again.';
+          _error =
+              'Could not reach GitHub. Check your internet connection and try again.';
         }
       });
     } finally {
@@ -185,7 +194,8 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Text(
-                'Allow Rent Manager to install unknown apps, then tap Download & Install again.'),
+              'Allow Rent Manager to install unknown apps, then tap Download & Install again.',
+            ),
             action: status.isPermanentlyDenied
                 ? SnackBarAction(label: 'Settings', onPressed: openAppSettings)
                 : null,
@@ -226,15 +236,15 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
     } on DioException catch (e) {
       if (!mounted) return;
       setState(() => _downloading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Download failed: ${e.message}')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Download failed: ${e.message}')));
     } catch (e) {
       if (!mounted) return;
       setState(() => _downloading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
     }
   }
 
@@ -254,15 +264,17 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
       if (result.type != ResultType.done) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Could not open installer: ${result.message}')),
+            SnackBar(
+              content: Text('Could not open installer: ${result.message}'),
+            ),
           );
         }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Install failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Install failed: $e')));
       }
     }
   }
@@ -280,10 +292,12 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
         scrolledUnderElevation: 8,
         shadowColor: AppColors.mainText.withValues(alpha: 0.16),
         surfaceTintColor: Colors.transparent,
-        leading: const BackButton(),
+        leading: const PressScale(child: BackButton()),
         centerTitle: true,
-        title: const Text('App Updates',
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+        title: const Text(
+          'App Updates',
+          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+        ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -310,16 +324,20 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
                           ),
                         ),
                         const SizedBox(height: 12),
-                        Text('Rent Manager',
-                            style: theme.textTheme.titleLarge
-                                ?.copyWith(fontWeight: FontWeight.w800)),
+                        Text(
+                          'Rent Manager',
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
                         const SizedBox(height: 4),
                         Text(
                           _installed == null
                               ? 'Installed: …'
                               : 'Installed: v$_installed',
-                          style: theme.textTheme.bodySmall
-                              ?.copyWith(color: AppColors.secondaryText),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: AppColors.secondaryText,
+                          ),
                         ),
                       ],
                     ),
@@ -355,10 +373,11 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
                                       ? 'Update available: v${latest.version}'
                                       : 'You are up to date (v${latest.version})',
                                   style: theme.textTheme.titleSmall?.copyWith(
-                                      fontWeight: FontWeight.w800,
-                                      color: updateAvailable
-                                          ? AppColors.primary
-                                          : AppColors.success),
+                                    fontWeight: FontWeight.w800,
+                                    color: updateAvailable
+                                        ? AppColors.primary
+                                        : AppColors.success,
+                                  ),
                                 ),
                               ),
                               StatusPill(
@@ -379,18 +398,24 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
                                   ? '${latest.notes.substring(0, 300)}…'
                                   : latest.notes,
                               style: theme.textTheme.bodySmall?.copyWith(
-                                  color: AppColors.secondaryText),
+                                color: AppColors.secondaryText,
+                              ),
                             ),
                           ],
                           const SizedBox(height: 12),
                           if (_downloading)
                             Column(
                               children: [
-                                LinearProgressIndicator(value: _progress, minHeight: 6),
+                                LinearProgressIndicator(
+                                  value: _progress,
+                                  minHeight: 6,
+                                ),
                                 const SizedBox(height: 8),
                                 Text(
                                   'Downloading… ${(_progress * 100).toStringAsFixed(0)}%',
-                                  style: theme.textTheme.bodySmall?.copyWith(color: AppColors.secondaryText),
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: AppColors.secondaryText,
+                                  ),
                                   textAlign: TextAlign.center,
                                 ),
                               ],
@@ -398,7 +423,9 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
                           else if (_downloadedApkPath != null)
                             Text(
                               'APK saved to: $_downloadedApkPath',
-                              style: theme.textTheme.bodySmall?.copyWith(color: AppColors.secondaryText),
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: AppColors.secondaryText,
+                              ),
                               textAlign: TextAlign.center,
                             ),
                         ],
@@ -409,8 +436,9 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
                 Text(
                   'Updates come from the project GitHub. On Android, open the downloaded APK to install it.',
                   textAlign: TextAlign.center,
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: AppColors.secondaryText),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: AppColors.secondaryText,
+                  ),
                 ),
               ],
             ),
@@ -462,20 +490,26 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
           child: SizedBox(
             height: 50,
-            child: FilledButton(
-              style: FilledButton.styleFrom(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-              onPressed: onPressed,
-              child: AnimatedSwitcher(
-                duration: MotionDuration.quick,
-                child: busy
-                    ? const SizedBox(
-                        key: ValueKey('busy'),
-                        height: 18,
-                        width: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2))
-                    : Text(label, key: ValueKey(label)),
+            child: PressScale(
+              enabled: !busy,
+              child: FilledButton(
+                style: FilledButton.styleFrom(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                onPressed: onPressed,
+                child: AnimatedSwitcher(
+                  duration: MotionDuration.quick,
+                  child: busy
+                      ? const SizedBox(
+                          key: ValueKey('busy'),
+                          height: 18,
+                          width: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Text(label, key: ValueKey(label)),
+                ),
               ),
             ),
           ),

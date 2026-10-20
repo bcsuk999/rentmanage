@@ -17,12 +17,14 @@ class _MemberOption {
   const _MemberOption({
     required this.id,
     required this.name,
-    required this.pending,
+    required this.due,
   });
 
   final String id;
   final String name;
-  final double pending;
+
+  /// Full balance: this cycle plus anything carried over.
+  final double due;
 }
 
 /// Global record-payment drawer. Open it from anywhere: with no presets it
@@ -113,6 +115,20 @@ class _PaymentDrawerState extends State<PaymentDrawer> {
 
   double get _outstandingTotal => overdueTotal(_cycles) + currentTotal(_cycles);
 
+  String get _roomLabel {
+    for (final room in _rooms) {
+      if (room.id == _roomId) return 'Room ${room.roomNumber}';
+    }
+    return 'Select room';
+  }
+
+  String get _memberLabel {
+    for (final member in _members) {
+      if (member.id == _memberId) return member.name;
+    }
+    return _memberName.isEmpty ? 'Select member' : _memberName;
+  }
+
   Future<void> _loadRooms() async {
     setState(() {
       _roomsLoading = true;
@@ -170,9 +186,9 @@ class _PaymentDrawerState extends State<PaymentDrawer> {
       if (!mounted) return;
       final members = [
         for (final row in detail.rows)
-          _MemberOption(id: row.memberId, name: row.name, pending: row.pending),
+          _MemberOption(id: row.memberId, name: row.name, due: row.totalDue),
       ];
-      final owed = members.where((m) => m.pending > 0);
+      final owed = members.where((m) => m.due > 0);
       final first = owed.isNotEmpty ? owed.first : members.firstOrNull;
       setState(() {
         _members = members;
@@ -223,6 +239,161 @@ class _PaymentDrawerState extends State<PaymentDrawer> {
       _error = null;
     });
     _loadPeriods();
+  }
+
+  Future<void> _pickRoom() async {
+    if (_rooms.isEmpty) return;
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: AppColors.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) {
+        return ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.7,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _sheetHeader(sheetContext, 'Select room'),
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: _rooms.length,
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (sheetContext, index) {
+                    final room = _rooms[index];
+                    final selected = room.id == _roomId;
+                    return PressScale(
+                      child: ListTile(
+                        title: Text('Room ${room.roomNumber}'),
+                        trailing: selected
+                            ? const Icon(
+                                Icons.check_circle,
+                                color: AppColors.primary,
+                              )
+                            : null,
+                        onTap: () => Navigator.of(sheetContext).pop(room.id),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (picked != null && picked != _roomId) await _selectRoom(picked);
+  }
+
+  Future<void> _pickMember() async {
+    if (_members.isEmpty) return;
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: AppColors.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) {
+        return ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.7,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _sheetHeader(sheetContext, 'Select member'),
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: _members.length,
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (sheetContext, index) {
+                    final member = _members[index];
+                    final selected = member.id == _memberId;
+                    return PressScale(
+                      child: ListTile(
+                        title: Text(member.name),
+                        trailing: selected
+                            ? const Icon(
+                                Icons.check_circle,
+                                color: AppColors.primary,
+                              )
+                            : null,
+                        onTap: () => Navigator.of(sheetContext).pop(member.id),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (picked != null && picked != _memberId) _selectMember(picked);
+  }
+
+  Widget _sheetHeader(BuildContext context, String title) {
+    final theme = Theme.of(context);
+    return Column(
+      children: [
+        const SizedBox(height: 10),
+        Container(
+          width: 40,
+          height: 4,
+          decoration: BoxDecoration(
+            color: theme.dividerColor,
+            borderRadius: BorderRadius.circular(999),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 10),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              title,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _pickerField({
+    required ThemeData theme,
+    required String value,
+    required VoidCallback? onTap,
+  }) {
+    return PressScale(
+      enabled: onTap != null,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: InputDecorator(
+          decoration: InputDecoration(
+            suffixIcon: const Icon(Icons.keyboard_arrow_down),
+            enabled: onTap != null,
+          ),
+          child: Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodyLarge,
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _loadPeriods() async {
@@ -364,20 +535,23 @@ class _PaymentDrawerState extends State<PaymentDrawer> {
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
             child: SizedBox(
               height: 50,
-              child: FilledButton(
-                style: FilledButton.styleFrom(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+              child: PressScale(
+                enabled: !_busy,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
+                  onPressed: _busy ? null : _submit,
+                  child: _busy
+                      ? const SizedBox(
+                          height: 18,
+                          width: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Record Payment'),
                 ),
-                onPressed: _busy ? null : _submit,
-                child: _busy
-                    ? const SizedBox(
-                        height: 18,
-                        width: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Record Payment'),
               ),
             ),
           ),
@@ -407,12 +581,14 @@ class _PaymentDrawerState extends State<PaymentDrawer> {
             children: [
               Align(
                 alignment: Alignment.centerLeft,
-                child: IconButton(
-                  tooltip: 'Back',
-                  icon: const Icon(Icons.arrow_back),
-                  onPressed: _busy
-                      ? null
-                      : () => Navigator.of(context).pop(false),
+                child: PressScale(
+                  enabled: !_busy,
+                  child: IconButton(
+                    tooltip: 'Back',
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed:
+                        _busy ? null : () => Navigator.of(context).pop(false),
+                  ),
                 ),
               ),
               Padding(
@@ -503,23 +679,16 @@ class _PaymentDrawerState extends State<PaymentDrawer> {
                     ),
                   ),
                 ),
-                TextButton(onPressed: _loadRooms, child: const Text('Retry')),
+                PressScale(
+                  child: TextButton(
+                    onPressed: _loadRooms,
+                    child: const Text('Retry'),
+                  ),
+                ),
               ],
             )
           else
-            DropdownButtonFormField<String>(
-              initialValue: _roomId,
-              items: [
-                for (final r in _rooms)
-                  DropdownMenuItem(
-                    value: r.id,
-                    child: Text('Room ${r.roomNumber}'),
-                  ),
-              ],
-              onChanged: (v) {
-                if (v != null) _selectRoom(v);
-              },
-            ),
+            _pickerField(theme: theme, value: _roomLabel, onTap: _pickRoom),
           const SizedBox(height: 12),
         ],
         if (widget.memberId == null) ...[
@@ -528,20 +697,10 @@ class _PaymentDrawerState extends State<PaymentDrawer> {
           if (_membersLoading)
             const SkeletonBlock(height: 56)
           else
-            DropdownButtonFormField<String>(
-              initialValue: _memberId,
-              items: [
-                for (final m in _members)
-                  DropdownMenuItem(
-                    value: m.id,
-                    child: Text('${m.name} · due ${inr(m.pending)}'),
-                  ),
-              ],
-              onChanged: _members.isEmpty
-                  ? null
-                  : (v) {
-                      if (v != null && v != _memberId) _selectMember(v);
-                    },
+            _pickerField(
+              theme: theme,
+              value: _memberLabel,
+              onTap: _members.isEmpty ? null : _pickMember,
             ),
           const SizedBox(height: 12),
         ],
@@ -595,9 +754,10 @@ class _PaymentDrawerState extends State<PaymentDrawer> {
   }
 
   Widget _label(ThemeData theme, String text) => Text(
-    text,
-    style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-  );
+        text,
+        style:
+            theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+      );
 
   Widget _allocationPreview(ThemeData theme, double amount) {
     final lines = previewAllocation(_cycles, amount);
@@ -698,8 +858,8 @@ class _PaymentDrawerState extends State<PaymentDrawer> {
     final tag = line.cycle.overdue
         ? 'Overdue period'
         : line.cycle.advance
-        ? 'Advance period'
-        : 'Current period';
+            ? 'Advance period'
+            : 'Current period';
     return AllocationPeriodRow(
       label: line.cycle.label,
       amount: line.applied,

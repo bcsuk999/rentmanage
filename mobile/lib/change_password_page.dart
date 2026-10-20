@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'app_theme.dart';
+import 'motion.dart';
 import 'widgets.dart';
 
 /// Change the signed-in account password (backend enforces strength rules).
@@ -64,10 +65,12 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
         scrolledUnderElevation: 8,
         shadowColor: AppColors.mainText.withValues(alpha: 0.16),
         surfaceTintColor: Colors.transparent,
-        leading: const BackButton(),
+        leading: const PressScale(child: BackButton()),
         centerTitle: true,
-        title: const Text('Change Password',
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+        title: const Text(
+          'Change Password',
+          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+        ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
@@ -91,7 +94,9 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
                 ],
                 TextField(
                   controller: _current,
-                  decoration: const InputDecoration(labelText: 'Current password *'),
+                  decoration: const InputDecoration(
+                    labelText: 'Current password *',
+                  ),
                   obscureText: true,
                   textInputAction: TextInputAction.next,
                 ),
@@ -100,7 +105,8 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
                   controller: _next,
                   decoration: const InputDecoration(
                     labelText: 'New password *',
-                    helperText: '8+ characters with upper, lower case and a number',
+                    helperText:
+                        '8+ characters with upper, lower case and a number',
                   ),
                   obscureText: true,
                   textInputAction: TextInputAction.next,
@@ -108,7 +114,9 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
                 const SizedBox(height: 12),
                 TextField(
                   controller: _confirm,
-                  decoration: const InputDecoration(labelText: 'Confirm new password *'),
+                  decoration: const InputDecoration(
+                    labelText: 'Confirm new password *',
+                  ),
                   obscureText: true,
                   textInputAction: TextInputAction.done,
                   onSubmitted: (_) => _submit(),
@@ -135,15 +143,23 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
             child: SizedBox(
               height: 50,
-              child: FilledButton(
-                style: FilledButton.styleFrom(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              child: PressScale(
+                enabled: !_busy,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  onPressed: _busy ? null : _submit,
+                  child: _busy
+                      ? const SizedBox(
+                          height: 18,
+                          width: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Update Password'),
                 ),
-                onPressed: _busy ? null : _submit,
-                child: _busy
-                    ? const SizedBox(
-                        height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Text('Update Password'),
               ),
             ),
           ),
