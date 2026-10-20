@@ -266,8 +266,71 @@ async function listRooms({ status = 'All', paymentState = 'All', ownerId = null 
 }
 
 /**
- * Portfolio totals for one period. Query: from/to (YYYY-MM-DD), defaulting to
- * the current calendar month.
+ * Portfolio totals up to today ("till date"). This is what the home dashboard
+ * asks for now that it has no month picker:
+ *
+ *   totalRent  - rent billed on every cycle that has started, all time
+ *   collected  - rent paid on those cycles, all time
+ *   due        - unpaid on the cycles still running today
+ *   overdue    - unpaid on cycles that have already ended
+ *
+ * Invariant: totalRent = collected + due + overdue. `notYetDue` is 0 by
+ * definition here, because cycles that start after today are not billed yet.
+ */
+async function tillDateSummary({ owner }) {
+  const now = startOfDay(today());
+  await ensurePeriodsForActiveMembers({ reference: now, ownerId: owner });
+
+  const rooms = await Room.find({ ownerId: owner }).select('roomNumber status').lean();
+  const roomIds = rooms.map((r) => r._id);
+
+  const [members, periods, payments] = await Promise.all([
+    roomIds.length
+      ? Member.find({ ownerId: owner, roomId: { $in: roomIds }, status: 'active' })
+        .select('roomId')
+        .lean()
+      : [],
+    // Every cycle that has started. A cycle cannot be billed before it begins.
+    roomIds.length
+      ? RentPeriod.find({ ownerId: owner, roomId: { $in: roomIds }, startDate: { $lte: now } })
+        .select('startDate endDate rentAmount paidAmount pendingAmount')
+        .lean()
+      : [],
+    // Cash actually received, which is not the same as rent collected when one
+    // payment settles several cycles.
+    roomIds.length
+      ? Payment.find({ ownerId: owner, roomId: { $in: roomIds }, paymentDate: { $lte: now } })
+        .select('amount')
+        .lean()
+      : [],
+  ]);
+
+  const ended = periods.filter((p) => startOfDay(p.endDate) < now);
+  const running = periods.filter((p) => startOfDay(p.endDate) >= now);
+  const earliest = periods.reduce(
+    (min, p) => (!min || p.startDate < min ? p.startDate : min),
+    null
+  );
+
+  return {
+    from: toDateInput(earliest || now),
+    to: toDateInput(now),
+    totalRent: sum(periods, (p) => p.rentAmount),
+    collected: sum(periods, (p) => p.paidAmount),
+    due: sum(running, (p) => p.pendingAmount),
+    overdue: sum(ended.filter((p) => p.pendingAmount > 0), (p) => p.pendingAmount),
+    expense: 0,
+    totalRooms: rooms.length,
+    totalMembers: members.length,
+    notYetDue: 0,
+    receivedInRange: sum(payments, (p) => p.amount),
+    paymentCount: payments.length,
+  };
+}
+
+/**
+ * Portfolio totals. With from/to it describes that period; with neither it is a
+ * running total up to today, which is the dashboard default.
  *
  * Rent figures are read from one cycle per member - the one running on the
  * period being reported - so a member whose cycle straddles the month boundary
@@ -285,6 +348,11 @@ async function listRooms({ status = 'All', paymentState = 'All', ownerId = null 
  */
 async function summary({ from = null, to = null, ownerId = null } = {}) {
   const owner = requireOwnerId(ownerId);
+  // No range at all means "everything up to today"; a half range is still a
+  // caller mistake and resolveRange() rejects it.
+  if (!String(from || '').trim() && !String(to || '').trim()) {
+    return tillDateSummary({ owner });
+  }
   const range = resolveRange(from, to);
   const now = today();
   await ensurePeriodsForActiveMembers({ reference: range.to, ownerId: owner });

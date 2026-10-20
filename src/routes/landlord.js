@@ -46,8 +46,8 @@ router.get(
   })
 );
 
-/** Portfolio totals for one period. Query: ?from=&to= (YYYY-MM-DD), both or
- *  neither, defaulting to the current calendar month. */
+/** Portfolio totals. Query: ?from=&to= (YYYY-MM-DD, both or neither) for one
+ *  closed period; with neither, a running total up to today. */
 router.get(
   '/summary',
   wrap(async (req, res) => {
