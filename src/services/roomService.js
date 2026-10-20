@@ -6,7 +6,7 @@ const Member = require('../models/Member');
 const RentPeriod = require('../models/RentPeriod');
 const { ROOM_STATUSES } = require('../models/Room');
 const { ensurePeriodsForActiveMembers, summarise } = require('./rentService');
-const { startOfDay, today } = require('../utils/dates');
+const { MONTHS, startOfDay, today } = require('../utils/dates');
 const { requireOwnerId } = require('../utils/owner');
 const {
   ValidationError,
@@ -16,6 +16,27 @@ const {
   requireCapacity,
   requireText,
 } = require('../utils/validate');
+
+const round2 = (n) => Math.round(n * 100) / 100;
+
+/** '15 Sep' - day is not zero padded, it reads as a natural label. */
+function shortDay(value) {
+  const d = startOfDay(value);
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
+}
+
+/**
+ * Carry-over from cycles that have already ended, or null when nothing is
+ * overdue. The label spans the member's oldest and newest lapsed cycle, so one
+ * badge covers several months.
+ */
+function overdueSummary(lapsed) {
+  if (!lapsed.length) return null;
+  const start = lapsed.reduce((min, p) => (p.startDate < min ? p.startDate : min), lapsed[0].startDate);
+  const end = lapsed.reduce((max, p) => (p.endDate > max ? p.endDate : max), lapsed[0].endDate);
+  const amt = round2(lapsed.reduce((total, p) => total + (p.pendingAmount || 0), 0));
+  return { period: `${shortDay(start)} to ${shortDay(end)}`, amt };
+}
 
 /**
  * Public room payload. Never spread the raw document into a response: that
@@ -177,10 +198,18 @@ async function roomDetail(id, selectedRange, ownerId) {
           (p) => startOfDay(p.startDate) <= startOfDay(range.end) && startOfDay(p.endDate) >= startOfDay(range.start)
         ) || null
       : null;
+    // A member can owe money on ended cycles even when this cycle is settled,
+    // so carry-over is measured against today rather than the selected range.
+    // The selected cycle is excluded: its pending is already shown as due, and
+    // on an older range it would otherwise be counted twice.
+    const lapsed = own.filter(
+      (p) => p !== selected && startOfDay(p.endDate) < reference && (p.pendingAmount || 0) > 0
+    );
     return {
       member,
       period: selected,
       status: selected ? selected.status : 'No period',
+      overdue: overdueSummary(lapsed),
     };
   });
 
@@ -192,6 +221,7 @@ async function roomDetail(id, selectedRange, ownerId) {
       status: r.period.status,
     }))
   );
+  const totalOverdue = round2(rows.reduce((total, r) => total + (r.overdue ? r.overdue.amt : 0), 0));
 
   const historical = await Member.find({ ownerId: owner, roomId: room._id, status: 'inactive' })
     .sort({ vacatingDate: -1 })
@@ -200,7 +230,12 @@ async function roomDetail(id, selectedRange, ownerId) {
   return {
     room: publicRoom(room),
     members: rows,
-    summary: { ...summary, memberCount: members.length },
+    summary: {
+      ...summary,
+      memberCount: members.length,
+      totalOverdue,
+      totalDue: round2(summary.totalPending + totalOverdue),
+    },
     capacity: room.capacity || members.length,
     isFull: members.length >= (room.capacity || members.length),
     ranges,
