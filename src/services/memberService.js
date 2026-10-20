@@ -213,10 +213,15 @@ async function memberDetail(id, ownerId) {
   const live = await Member.findOne({ _id: member._id, ownerId: owner });
   await rentService.ensurePeriodsForMember(live);
 
-  const periods = await RentPeriod.find({ ownerId: owner, memberId: member._id })
-    .sort({ startDate: -1 })
-    .lean();
   const reference = today();
+  // Only cycles that have begun: rent due today or already due. A cycle is
+  // generated a month ahead, so a not-yet-started one is not money owed and
+  // must not be sent as a future due at all.
+  const periods = (
+    await RentPeriod.find({ ownerId: owner, memberId: member._id })
+      .sort({ startDate: -1 })
+      .lean()
+  ).filter((p) => startOfDay(p.startDate) <= reference);
   const current =
     periods.find((p) => startOfDay(p.startDate) <= reference && startOfDay(p.endDate) >= reference) ||
     periods.filter((p) => startOfDay(p.startDate) <= reference)[0] ||
@@ -232,26 +237,16 @@ async function memberDetail(id, ownerId) {
     if (!paymentsByPeriod.has(key)) paymentsByPeriod.set(key, []);
     paymentsByPeriod.get(key).push(p);
   }
-  // Split the money by where the cycle sits relative to today, so a cycle that
-  // has not begun yet is never reported as money owed now:
-  //   notStarted - starts after today, e.g. a 1 Nov cycle created on 17 Oct
-  //   lapsed     - ended before today, unpaid carry-over
-  //   running    - covers today, this is the rent owed right now
-  // Invariant: outstanding = due + overdue, and notYetDue is outside both.
-  const started = periods.filter((p) => startOfDay(p.startDate) <= reference);
-  const notStarted = periods.filter((p) => startOfDay(p.startDate) > reference);
-  const lapsed = started.filter((p) => startOfDay(p.endDate) < reference);
-  const running = started.filter((p) => startOfDay(p.endDate) >= reference);
+  // Every cycle left has begun, so split by whether it has ended:
+  //   lapsed  - ended before today, unpaid carry-over
+  //   running - covers today, this is the rent owed right now
+  // Invariant: outstanding = due + overdue.
+  const lapsed = periods.filter((p) => startOfDay(p.endDate) < reference);
+  const running = periods.filter((p) => startOfDay(p.endDate) >= reference);
   const money = (list) =>
     Math.round(list.reduce((sum, p) => sum + (p.pendingAmount || 0), 0) * 100) / 100;
 
-  // Serialise a not-yet-started cycle as 'Upcoming' rather than its stored
-  // 'Pending'. Clients render 'Pending' as "Due", which would put next month's
-  // rent on screen as money the landlord is owed today.
-  const decorated = periods.map((p) => {
-    const isStarted = startOfDay(p.startDate) <= reference;
-    return { ...p, started: isStarted, status: isStarted ? p.status : 'Upcoming' };
-  });
+  const decorated = periods.map((p) => ({ ...p, started: true }));
 
   return {
     member,
@@ -261,14 +256,11 @@ async function memberDetail(id, ownerId) {
     payments,
     paymentsByPeriod,
     // Everything owed on cycles that have begun: due + overdue.
-    outstanding: money(started),
+    outstanding: money(periods),
     // Rent owed right now, on the cycle running today.
     due: money(running),
     // Unpaid rent from cycles that already ended, carried into today.
     overdue: money(lapsed),
-    // Rent for a cycle that has not started. Reported so nothing is hidden,
-    // and deliberately excluded from due and overdue.
-    notYetDue: money(notStarted),
     paidTotal: Math.round(periods.reduce((sum, p) => sum + (p.paidAmount || 0), 0) * 100) / 100,
   };
 }
