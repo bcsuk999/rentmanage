@@ -712,6 +712,7 @@ class _ToastBanner extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(
                   toast.error
@@ -721,9 +722,12 @@ class _ToastBanner extends StatelessWidget {
                   size: 20,
                 ),
                 const SizedBox(width: 10),
-                Expanded(
+                Flexible(
                   child: Text(
                     toast.message,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: tint,
                       fontSize: 13.5,
@@ -732,6 +736,7 @@ class _ToastBanner extends StatelessWidget {
                     ),
                   ),
                 ),
+                if (toast.actionLabel != null) const SizedBox(width: 8),
                 if (toast.actionLabel != null)
                   TextButton(
                     onPressed: toast.onAction,

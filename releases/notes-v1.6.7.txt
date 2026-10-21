@@ -1,0 +1,2 @@
+- Toast messages centered and kept to a single line
+- Cleaner spacing between toast text and action buttons
