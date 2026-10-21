@@ -1,0 +1,6 @@
+{
+  "version": "1.6.6",
+  "build": 10,
+  "apkUrl": "https://raw.githubusercontent.com/bcsuk999/rentmanage/main/releases/rentmanage-arm64-v1.6.6.apk",
+  "message": "App Updates now uses a version manifest, shows live download speed and size, and includes the latest dashboard and account UI fixes."
+}

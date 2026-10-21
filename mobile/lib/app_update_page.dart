@@ -1,43 +1,12 @@
-import 'dart:convert';
-import 'dart:io';
-
-import 'package:dio/dio.dart';
-import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'package:open_filex/open_filex.dart';
-import 'package:package_info_plus/package_info_plus.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
+﻿import 'package:flutter/material.dart';
 
 import 'app_theme.dart';
 import 'motion.dart';
+import 'update_service.dart';
 import 'widgets.dart';
 
-const _owner = 'bcsuk999';
-const _repo = 'rentmanage';
-
-/// App update info resolved from GitHub.
-class _Release {
-  _Release({
-    required this.version,
-    required this.title,
-    required this.notes,
-    required this.downloadUrl,
-    required this.pageUrl,
-    required this.size,
-  });
-
-  final String version;
-  final String title;
-  final String notes;
-  final String downloadUrl;
-  final String pageUrl;
-  final int size;
-}
-
-/// In-app updater: compares the installed build with the newest APK
-/// published on GitHub (a formal Release when one exists, otherwise the
-/// highest `rentmanage-arm64-vX.Y.Z.apk` under `releases/` on main).
+/// In-app updater: compares the installed build with the newest published
+/// `version.json` manifest and installs the APK without leaving the app.
 class AppUpdatePage extends StatefulWidget {
   const AppUpdatePage({super.key});
 
@@ -46,14 +15,14 @@ class AppUpdatePage extends StatefulWidget {
 }
 
 class _AppUpdatePageState extends State<AppUpdatePage> {
-  String? _installed;
-  _Release? _latest;
+  final _service = AppUpdateService();
+  AppUpdateStatus? _status;
   bool _checking = true;
   bool _inFlight = false;
-  String? _error;
   bool _downloading = false;
-  double _progress = 0;
-  String? _downloadedApkPath;
+  DownloadProgress? _progress;
+  String? _error;
+  DateTime? _lastChecked;
 
   @override
   void initState() {
@@ -61,121 +30,27 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
     _check();
   }
 
-  static List<int> _parts(String v) {
-    final m = RegExp(r'(\d+)\.(\d+)\.(\d+)').firstMatch(v);
-    if (m == null) return [0, 0, 0];
-    return [
-      int.parse(m.group(1)!),
-      int.parse(m.group(2)!),
-      int.parse(m.group(3)!),
-    ];
-  }
-
-  /// >0 when [a] is newer than [b].
-  static int _compare(String a, String b) {
-    final pa = _parts(a);
-    final pb = _parts(b);
-    for (var i = 0; i < 3; i++) {
-      if (pa[i] != pb[i]) return pa[i].compareTo(pb[i]);
-    }
-    return 0;
-  }
-
-  Map<String, String> get _ghHeaders => const {
-        'User-Agent': 'rentmanage-app',
-        'Accept': 'application/vnd.github+json',
-      };
-
-  /// Formal GitHub Release with an .apk asset, or null when none is published.
-  Future<_Release?> _fromReleasesApi() async {
-    final res = await http
-        .get(
-          Uri.parse(
-            'https://api.github.com/repos/$_owner/$_repo/releases/latest',
-          ),
-          headers: _ghHeaders,
-        )
-        .timeout(const Duration(seconds: 15));
-    if (res.statusCode != 200) return null;
-    final body = jsonDecode(res.body) as Map<String, dynamic>;
-    Map<String, dynamic>? apk;
-    for (final a in (body['assets'] as List? ?? [])) {
-      final name = '${(a as Map)['name']}';
-      if (name.endsWith('.apk')) {
-        apk = a as Map<String, dynamic>;
-        break;
-      }
-    }
-    if (apk == null) return null;
-    return _Release(
-      version: '${body['tag_name'] ?? body['name'] ?? 'latest'}',
-      title: '${body['name'] ?? 'Update'}',
-      notes: '${body['body'] ?? ''}',
-      downloadUrl: '${apk['browser_download_url']}',
-      pageUrl: '${body['html_url']}',
-      size: (apk['size'] as num? ?? 0).toInt(),
-    );
-  }
-
-  /// Fallback: newest versioned APK committed under releases/ on main.
-  Future<_Release?> _fromRepoFolder() async {
-    final res = await http
-        .get(
-          Uri.parse(
-            'https://api.github.com/repos/$_owner/$_repo/contents/releases?ref=main',
-          ),
-          headers: _ghHeaders,
-        )
-        .timeout(const Duration(seconds: 15));
-    if (res.statusCode != 200) return null;
-    final files = (jsonDecode(res.body) as List).cast<Map>();
-    Map<String, dynamic>? best;
-    for (final f in files) {
-      final name = '${f['name']}';
-      if (!name.endsWith('.apk')) continue;
-      if (best == null || _compare(name, '${best['name']}') > 0) {
-        best = f.cast<String, dynamic>();
-      }
-    }
-    if (best == null) return null;
-    return _Release(
-      version: _parts('${best['name']}').join('.'),
-      title: '${best['name']}',
-      notes: 'Published in the releases folder on GitHub.',
-      downloadUrl: '${best['download_url']}',
-      pageUrl: 'https://github.com/$_owner/$_repo/tree/main/releases',
-      size: (best['size'] as num? ?? 0).toInt(),
-    );
-  }
-
   Future<void> _check() async {
     if (_inFlight) return;
     _inFlight = true;
     setState(() {
       _checking = true;
-      // Keep the release we already know about on screen while re-checking, so
-      // a manual check does not blank the page back to a spinner.
-      if (_latest != null) _error = null;
+      _error = null;
     });
     try {
-      final info = await PackageInfo.fromPlatform();
-      final latest = await _fromReleasesApi() ?? await _fromRepoFolder();
+      final status = await _service.checkStatus();
       if (!mounted) return;
       setState(() {
-        _installed = info.version;
-        _latest = latest;
+        _status = status;
         _checking = false;
-        if (latest == null) _error = 'No published updates found yet.';
+        _lastChecked = DateTime.now();
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _checking = false;
-        // Same rule for failures: only surface them when there is nothing to show.
-        if (_latest == null) {
-          _error =
-              'Could not reach GitHub. Check your internet connection and try again.';
-        }
+        _lastChecked = DateTime.now();
+        _error = 'Could not check for updates. Check your internet connection.';
       });
     } finally {
       _inFlight = false;
@@ -183,109 +58,35 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
   }
 
   Future<void> _downloadAndInstall() async {
-    final url = _latest?.downloadUrl;
-    if (url == null || url.isEmpty) return;
-
-    // Installing a downloaded APK needs the "Install unknown apps" special
-    // access (Android O+), not storage permission.
-    final status = await Permission.requestInstallPackages.request();
-    if (!status.isGranted) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text(
-              'Allow Rent Manager to install unknown apps, then tap Download & Install again.',
-            ),
-            action: status.isPermanentlyDenied
-                ? SnackBarAction(label: 'Settings', onPressed: openAppSettings)
-                : null,
-          ),
-        );
-      }
-      return;
-    }
+    final update = _status?.update;
+    if (update == null || _downloading) return;
 
     setState(() {
       _downloading = true;
-      _progress = 0;
+      _progress = null;
+      _error = null;
     });
 
     try {
-      final dir = await getExternalStorageDirectory();
-      final fileName = 'rentmanage_${_latest!.version}.apk';
-      final filePath = '${dir!.path}/$fileName';
-
-      await Dio().download(
-        url,
-        filePath,
-        onReceiveProgress: (received, total) {
-          if (total > 0 && mounted) {
-            setState(() => _progress = received / total);
-          }
+      await _service.downloadAndInstall(
+        update,
+        onProgress: (value) {
+          if (mounted) setState(() => _progress = value);
         },
       );
-
-      if (!mounted) return;
-
-      setState(() {
-        _downloading = false;
-        _downloadedApkPath = filePath;
-      });
-
-      await _installApk(filePath);
-    } on DioException catch (e) {
       if (!mounted) return;
       setState(() => _downloading = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Download failed: ${e.message}')));
-    } catch (e) {
+    } catch (_) {
       if (!mounted) return;
       setState(() => _downloading = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error: $e')));
-    }
-  }
-
-  Future<void> _installApk(String filePath) async {
-    final file = File(filePath);
-    if (!await file.exists()) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Downloaded file not found.')),
-        );
-      }
-      return;
-    }
-
-    try {
-      final result = await OpenFilex.open(filePath);
-      if (result.type != ResultType.done) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Could not open installer: ${result.message}'),
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Install failed: $e')));
-      }
+      toastError(context, 'Update failed. Please try again later.');
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final latest = _latest;
-    final updateAvailable = _installed != null &&
-        latest != null &&
-        _compare(latest.version, _installed!) > 0;
+    final status = _status;
+    final updateAvailable = status?.updateAvailable ?? false;
     return Scaffold(
       appBar: AppBar(
         elevation: 8,
@@ -300,174 +101,273 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
         ),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 480),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      children: [
-                        Image.asset(
-                          'logo.png',
-                          width: 96,
-                          height: 96,
-                          fit: BoxFit.contain,
-                          errorBuilder: (_, _, _) => const Icon(
-                            Icons.home_work_outlined,
-                            size: 48,
-                            color: AppColors.primary,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          'Rent Manager',
-                          style: theme.textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          _installed == null
-                              ? 'Installed: …'
-                              : 'Installed: v$_installed',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: AppColors.secondaryText,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                if (_checking && latest == null)
-                  const Card(
-                    child: Padding(
-                      padding: EdgeInsets.all(20),
-                      child: Center(child: CircularProgressIndicator()),
-                    ),
-                  )
-                else if (_error != null && latest == null)
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Text(_error!, textAlign: TextAlign.center),
-                    ),
-                  )
-                else if (latest != null)
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  updateAvailable
-                                      ? 'Update available: v${latest.version}'
-                                      : 'You are up to date (v${latest.version})',
-                                  style: theme.textTheme.titleSmall?.copyWith(
-                                    fontWeight: FontWeight.w800,
-                                    color: updateAvailable
-                                        ? AppColors.primary
-                                        : AppColors.success,
-                                  ),
-                                ),
-                              ),
-                              StatusPill(
-                                text: updateAvailable ? 'New' : 'Latest',
-                                color: updateAvailable
-                                    ? AppColors.primary
-                                    : AppColors.success,
-                                soft: updateAvailable
-                                    ? AppColors.primary.withValues(alpha: 0.12)
-                                    : AppColors.successSoft,
-                              ),
-                            ],
-                          ),
-                          if (latest.notes.isNotEmpty) ...[
-                            const SizedBox(height: 8),
-                            Text(
-                              latest.notes.length > 300
-                                  ? '${latest.notes.substring(0, 300)}…'
-                                  : latest.notes,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: AppColors.secondaryText,
-                              ),
-                            ),
-                          ],
-                          const SizedBox(height: 12),
-                          if (_downloading)
-                            Column(
-                              children: [
-                                LinearProgressIndicator(
-                                  value: _progress,
-                                  minHeight: 6,
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Downloading… ${(_progress * 100).toStringAsFixed(0)}%',
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: AppColors.secondaryText,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ],
-                            )
-                          else if (_downloadedApkPath != null)
-                            Text(
-                              'APK saved to: $_downloadedApkPath',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: AppColors.secondaryText,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                const SizedBox(height: 8),
-                Text(
-                  'Updates come from the project GitHub. On Android, open the downloaded APK to install it.',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: AppColors.secondaryText,
-                  ),
-                ),
-              ],
-            ),
+            child: _versionCard(status, updateAvailable),
           ),
         ),
       ),
-      bottomNavigationBar: _bottomAction(latest, updateAvailable),
+      bottomNavigationBar: _bottomAction(status, updateAvailable),
     );
   }
 
-  /// The page's primary action, pinned to a shadowed bar so it stays reachable
-  /// however long the release notes run.
-  Widget _bottomAction(_Release? latest, bool updateAvailable) {
+  Widget _versionCard(AppUpdateStatus? status, bool updateAvailable) {
+    final latestVersion = status?.latestVersion ?? '';
+    final showLatest = updateAvailable && latestVersion.isNotEmpty;
+    final message = status?.update?.message ?? '';
+    final notes = _notes(message);
+    return SizedBox(
+      width: double.infinity,
+      child: Card(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        clipBehavior: Clip.antiAlias,
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              _statusIcon(updateAvailable),
+              const SizedBox(height: 8),
+              Text(
+                _checking && status == null
+                    ? 'Checking for updates…'
+                    : updateAvailable
+                        ? 'Update available'
+                        : _error != null
+                            ? _error!
+                            : 'You are up to date',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: AppColors.mainText,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Wrap(
+                alignment: WrapAlignment.center,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  _versionBadge(
+                    label: 'Current',
+                    version: status?.currentVersion,
+                    highlighted: false,
+                  ),
+                  if (showLatest) ...[
+                    const Icon(
+                      Icons.arrow_forward_rounded,
+                      size: 16,
+                      color: AppColors.secondaryText,
+                    ),
+                    _versionBadge(
+                      label: 'Latest',
+                      version: latestVersion,
+                      highlighted: true,
+                    ),
+                  ],
+                ],
+              ),
+              if (updateAvailable && notes.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: AppColors.neutralChip,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        "WHAT'S NEW",
+                        style: TextStyle(
+                          color: AppColors.secondaryText,
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.1,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      ...notes.map(
+                        (line) => Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Padding(
+                                padding: EdgeInsets.only(top: 6),
+                                child: CircleAvatar(
+                                  radius: 2.5,
+                                  backgroundColor: AppColors.primary,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  line,
+                                  style: const TextStyle(
+                                    color: AppColors.mainText,
+                                    fontSize: 12,
+                                    height: 1.4,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              if (_downloading) ...[
+                const SizedBox(height: 16),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(99),
+                  child: LinearProgressIndicator(
+                    value: _progress?.value,
+                    minHeight: 8,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '${_downloadSpeed(_progress)} · ${_downloadSize(_progress)}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: AppColors.secondaryText,
+                    fontSize: 10.5,
+                  ),
+                ),
+              ],
+              if (_lastChecked != null) ...[
+                const SizedBox(height: 14),
+                Text(
+                  'Last checked · ${_checkedAt(_lastChecked!)}',
+                  style: const TextStyle(
+                    color: AppColors.secondaryText,
+                    fontSize: 10.5,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  static List<String> _notes(String raw) {
+    final lines = raw
+        .split(RegExp(r'[\r\n]+'))
+        .map((l) => l.replaceFirst(RegExp(r'^\s*[-*•]\s*'), '').trim())
+        .where((l) => l.isNotEmpty)
+        .toList();
+    return lines.length > 8 ? lines.sublist(0, 8) : lines;
+  }
+
+  static String _downloadSize(DownloadProgress? progress) {
+    if (progress == null) return 'Starting download…';
+    final downloaded = _mb(progress.receivedBytes);
+    final total =
+        progress.totalBytes == null ? '?' : _mb(progress.totalBytes!);
+    return '$downloaded / $total';
+  }
+
+  static String _downloadSpeed(DownloadProgress? progress) {
+    if (progress == null || progress.bytesPerSecond == 0) {
+      return 'Calculating speed…';
+    }
+    return '${_mb(progress.bytesPerSecond)}/s';
+  }
+
+  static String _mb(int bytes) => '${(bytes / 1048576).toStringAsFixed(1)} MB';
+
+  static String _checkedAt(DateTime t) {
+    final hour = t.hour % 12 == 0 ? 12 : t.hour % 12;
+    final minute = t.minute.toString().padLeft(2, '0');
+    return '$hour:$minute ${t.hour < 12 ? 'AM' : 'PM'}';
+  }
+
+  Widget _statusIcon(bool updateAvailable) {
+    if (_checking && _status == null) {
+      return const Icon(
+        Icons.cloud_sync_outlined,
+        size: 30,
+        color: AppColors.primary,
+      );
+    }
+    if (updateAvailable) {
+      return const Icon(
+        Icons.rocket_launch_outlined,
+        size: 30,
+        color: AppColors.primary,
+      );
+    }
+    if (_error != null) {
+      return const Icon(
+        Icons.info_outline,
+        size: 30,
+        color: AppColors.danger,
+      );
+    }
+    return Container(
+      width: 36,
+      height: 36,
+      decoration: const BoxDecoration(
+        color: AppColors.success,
+        shape: BoxShape.circle,
+      ),
+      child: const Icon(Icons.check_rounded, size: 22, color: Colors.white),
+    );
+  }
+
+  Widget _versionBadge({
+    required String label,
+    required String? version,
+    required bool highlighted,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+      decoration: BoxDecoration(
+        color: highlighted
+            ? AppColors.primary.withValues(alpha: 0.12)
+            : AppColors.neutralChip,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        version == null ? '$label version' : '$label · v$version',
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          color: highlighted ? AppColors.primary : AppColors.secondaryText,
+          fontSize: 11.5,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+  /// The page's primary action, pinned to a shadowed bar. While a request is
+  /// running the button is muted instead of showing a spinner.
+  Widget _bottomAction(AppUpdateStatus? status, bool updateAvailable) {
     late final VoidCallback? onPressed;
     late final String label;
     var busy = false;
-    if (latest == null) {
+    if (status == null) {
       onPressed = _checking ? null : _check;
-      label = 'Check Again';
+      label = 'Check for Updates';
       busy = _checking;
     } else if (updateAvailable) {
       onPressed = _downloading ? null : _downloadAndInstall;
       label = _downloading
-          ? 'Downloading…'
-          : 'Download & Install v${latest.version} (${_mb(latest.size)})';
+          ? 'Downloading… ${((_progress?.value ?? 0) * 100).toStringAsFixed(0)}%'
+          : 'Download & Install v${status.latestVersion}';
       busy = _downloading;
-    } else if (_downloadedApkPath != null) {
-      onPressed = () => _installApk(_downloadedApkPath!);
-      label = 'Install Downloaded APK';
     } else {
       onPressed = _checking ? null : _check;
       label = 'Check Again';
@@ -490,25 +390,19 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
           child: SizedBox(
             height: 50,
-            child: PressScale(
-              enabled: !busy,
-              child: FilledButton(
-                style: FilledButton.styleFrom(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+            child: AnimatedOpacity(
+              opacity: busy ? 0.45 : 1,
+              duration: MotionDuration.quick,
+              child: PressScale(
+                enabled: !busy,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
-                ),
-                onPressed: onPressed,
-                child: AnimatedSwitcher(
-                  duration: MotionDuration.quick,
-                  child: busy
-                      ? const SizedBox(
-                          key: ValueKey('busy'),
-                          height: 18,
-                          width: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Text(label, key: ValueKey(label)),
+                  onPressed: onPressed,
+                  child: Text(label),
                 ),
               ),
             ),
@@ -516,10 +410,5 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
         ),
       ),
     );
-  }
-
-  static String _mb(int bytes) {
-    if (bytes <= 0) return '';
-    return '${(bytes / 1048576).toStringAsFixed(1)} MB';
   }
 }

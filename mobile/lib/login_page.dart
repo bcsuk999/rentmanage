@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'api.dart';
 import 'app_theme.dart';
 import 'motion.dart';
+import 'widgets.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({
@@ -31,7 +32,6 @@ class _LoginPageState extends State<LoginPage>
   final _password = TextEditingController();
   bool _registerMode = false;
   bool _busy = false;
-  String? _error;
 
   late final AnimationController _enter;
   late final Animation<double> _fade;
@@ -69,16 +69,15 @@ class _LoginPageState extends State<LoginPage>
   Future<void> _submit() async {
     final mobile = _digits(_mobile.text.trim());
     if (!RegExp(r'^[0-9]{10}$').hasMatch(mobile)) {
-      setState(() => _error = 'Enter your 10 digit mobile number.');
+      toastError(context, 'Enter your 10 digit mobile number.');
       return;
     }
     if (_password.text.isEmpty) {
-      setState(() => _error = 'Enter your password.');
+      toastError(context, 'Enter your password.');
       return;
     }
     setState(() {
       _busy = true;
-      _error = null;
     });
     try {
       final user = _registerMode
@@ -90,9 +89,11 @@ class _LoginPageState extends State<LoginPage>
           : await widget.api.login(mobile, _password.text);
       widget.onSignedIn(user);
     } on ApiException catch (e) {
-      setState(() => _error = e.message);
+      if (mounted) toastError(context, e.message);
     } catch (_) {
-      setState(() => _error = 'Could not reach the server. Check the API URL.');
+      if (mounted) {
+        toastError(context, 'Could not reach the server. Check the API URL.');
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -179,22 +180,6 @@ class _LoginPageState extends State<LoginPage>
                                   ),
                                 ),
                                 const SizedBox(height: 16),
-                                if (_error != null) ...[
-                                  ShakeOnError(
-                                    trigger: _error,
-                                    child: Container(
-                                      padding: const EdgeInsets.all(10),
-                                      decoration: BoxDecoration(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.errorContainer,
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Text(_error!),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 12),
-                                ],
                                 if (_registerMode) ...[
                                   TextField(
                                     controller: _name,
@@ -272,7 +257,6 @@ class _LoginPageState extends State<LoginPage>
                                         ? null
                                         : () => setState(() {
                                               _registerMode = !_registerMode;
-                                              _error = null;
                                             }),
                                     child: Text(
                                       _registerMode

@@ -44,28 +44,30 @@ class _MemberDetailPageState extends State<MemberDetailPage> {
 
   /// [soft] keeps the current profile on screen: no skeleton, just a quiet
   /// background refresh that replaces the numbers when it lands.
-  Future<void> _load({bool soft = false}) async {
-    if (_inFlight) return;
+  Future<bool> _load({bool soft = false}) async {
+    if (_inFlight) return false;
     _inFlight = true;
     if (!soft && mounted) {
       setState(() => _loading = true);
     }
     try {
       final profile = await widget.api.memberProfile(widget.memberId);
-      if (!mounted) return;
+      if (!mounted) return false;
       setState(() {
         _profile = profile;
         _loading = false;
         _error = null;
       });
+      return true;
     } on ApiException catch (e) {
-      if (!mounted) return;
+      if (!mounted) return false;
       setState(() {
         _loading = false;
         if (_profile == null) _error = e.message;
       });
+      return false;
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted) return false;
       setState(() {
         _loading = false;
         if (_profile == null) {
@@ -73,6 +75,7 @@ class _MemberDetailPageState extends State<MemberDetailPage> {
               'Unable to load the latest data. Check your internet connection and try again.';
         }
       });
+      return false;
     } finally {
       _inFlight = false;
     }
@@ -80,7 +83,7 @@ class _MemberDetailPageState extends State<MemberDetailPage> {
 
   void _reload() => _load(soft: _profile != null);
 
-  Future<void> _refresh() => _load(soft: _profile != null);
+  Future<bool> _refresh() => _load(soft: _profile != null);
 
   Future<void> _edit(MemberProfile profile) async {
     final updated = await Navigator.of(context).push<bool>(
@@ -171,7 +174,10 @@ class _MemberDetailPageState extends State<MemberDetailPage> {
     }
     final profile = _profile!;
     return RefreshIndicator(
-      onRefresh: _refresh,
+      onRefresh: () async {
+        final ok = await _refresh();
+        if (ok && context.mounted) toastOk(context, 'Member updated.');
+      },
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
         children: [

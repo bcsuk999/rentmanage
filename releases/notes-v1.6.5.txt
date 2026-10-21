@@ -1,0 +1,5 @@
+- Redesigned App Updates page with a cleaner, more premium layout
+- New update prompt when the app opens, with a shortcut to the update page
+- Release notes now tell you what changed in each update
+- Account page shows role and account status as separate badges
+- Buttons no longer spin while checking or downloading; they simply mute

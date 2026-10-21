@@ -1,6 +1,13 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Launch window background. Kept as a plain app-colored surface (no logo)
-     so the only splash the user sees is the animated one Flutter draws. -->
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!-- Cold-start window: app-colored surface with the logo centred, so the very
+     first frame already shows branding instead of a blank flash before the
+     animated Flutter splash takes over. splash_logo.png ships at every
+     density so it is drawn at ~120dp on all devices. -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:drawable="@color/launch_background" />
+    <item>
+        <bitmap
+            android:gravity="center"
+            android:src="@drawable/splash_logo" />
+    </item>
 </layer-list>

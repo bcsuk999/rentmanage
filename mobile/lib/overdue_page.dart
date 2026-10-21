@@ -71,32 +71,30 @@ class OverduePageState extends State<OverduePage> {
 
   /// Fetches fresh data. When a report is already on screen this is silent:
   /// no skeleton, no spinner, just an in-place swap once the data arrives.
-  Future<void> _load() async {
-    if (_inFlight) return;
+  Future<bool> _load() async {
+    if (_inFlight) return false;
     _inFlight = true;
     try {
       final report = await _fetch();
-      if (!mounted) return;
+      if (!mounted) return false;
       setState(() {
         _report = report;
         _loading = false;
         _error = null;
       });
       widget.onLoaded?.call(report);
+      return true;
     } catch (e) {
-      if (!mounted) return;
-      if (e is ApiException && e.statusCode == 401) return; // signed out above
+      if (!mounted) return false;
+      if (e is ApiException && e.statusCode == 401) return false; // signed out above
       setState(() {
         _loading = false;
         if (_report == null) _error = e;
       });
       if (_report != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Offline — showing saved overdue data.'),
-          ),
-        );
+        toastError(context, 'Offline — showing saved overdue data.');
       }
+      return false;
     } finally {
       _inFlight = false;
     }
@@ -154,7 +152,13 @@ class OverduePageState extends State<OverduePage> {
 
   @override
   Widget build(BuildContext context) {
-    return RefreshIndicator(onRefresh: _load, child: _body(context));
+    return RefreshIndicator(
+      onRefresh: () async {
+        final ok = await _load();
+        if (ok && context.mounted) toastOk(context, 'Overdue list updated.');
+      },
+      child: _body(context),
+    );
   }
 
   Widget _body(BuildContext context) {

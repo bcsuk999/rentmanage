@@ -1,0 +1,4 @@
+- App Updates now reads a version.json manifest and compares build numbers
+- Live download progress with speed and size
+- Reliable update check on launch with a shortcut to the update page
+- Latest dashboard, account and payment UI fixes

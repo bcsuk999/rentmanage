@@ -214,15 +214,16 @@ class _HomePageState extends State<HomePage>
 
   /// Loads the room list and the month tiles together, for the cases that want
   /// both: first paint, pull-to-refresh and returning to the tab.
-  Future<void> _refresh({
+  Future<bool> _refresh({
     bool silent = false,
     bool keepList = false,
     bool quiet = false,
   }) async {
-    await Future.wait([
-      _refreshList(silent: silent, keepList: keepList, quiet: quiet),
-      _refreshSummary(),
-    ]);
+    final list = _refreshList(silent: silent, keepList: keepList, quiet: quiet);
+    final summary = _refreshSummary();
+    final ok = await list;
+    await summary;
+    return ok;
   }
 
   /// Loads the room list, or search hits when the search box has a term.
@@ -237,7 +238,7 @@ class _HomePageState extends State<HomePage>
   ///
   /// Every call bumps [_roomsRequestId]; responses from superseded requests are
   /// dropped, so rapid typing can't race or overwrite newer data.
-  Future<void> _refreshList({
+  Future<bool> _refreshList({
     bool silent = false,
     bool keepList = false,
     bool quiet = false,
@@ -260,9 +261,9 @@ class _HomePageState extends State<HomePage>
       // a non-empty one searches. [_rooms] is deliberately left intact while
       // searching so clearing the box again does not need another round trip.
       final results = term.isEmpty ? null : await _loadSearch(term);
-      if (!mounted || id != _roomsRequestId) return;
+      if (!mounted || id != _roomsRequestId) return false;
       final rooms = term.isEmpty ? await _loadRooms() : null;
-      if (!mounted || id != _roomsRequestId) return;
+      if (!mounted || id != _roomsRequestId) return false;
       setState(() {
         if (rooms != null) _rooms = rooms;
         _hits = results?.results;
@@ -271,18 +272,17 @@ class _HomePageState extends State<HomePage>
         _roomsLoading = false;
         _searching = false;
       });
+      return true;
     } catch (e) {
-      if (!mounted || id != _roomsRequestId) return;
-      if (e is ApiException && e.statusCode == 401) return; // signed out above
+      if (!mounted || id != _roomsRequestId) return false;
+      if (e is ApiException && e.statusCode == 401) return false; // signed out above
       setState(() {
         _roomsLoading = false;
         _searching = false;
       });
       if (silent && !quiet) {
         // Cached list stays on screen; mention the stale data quietly.
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Offline — showing saved rooms.')),
-        );
+        toastError(context, 'Offline — showing saved rooms.');
       } else if (!silent) {
         setState(() {
           _roomsError = e;
@@ -291,6 +291,7 @@ class _HomePageState extends State<HomePage>
           _hitsFor = null;
         });
       }
+      return false;
     }
   }
 
@@ -561,7 +562,8 @@ class _HomePageState extends State<HomePage>
   Widget _roomsTab(BuildContext context) {
     return RefreshIndicator(
       onRefresh: () async {
-        await _refresh(keepList: true);
+        final ok = await _refresh(keepList: true);
+        if (ok && context.mounted) toastOk(context, 'Rooms updated.');
       },
       child: AnimatedSwitcher(
         duration: MotionDuration.slow,
@@ -614,10 +616,6 @@ class _HomePageState extends State<HomePage>
               _summaryGrid(context),
               const SizedBox(height: 12),
               _searchRow(context),
-              if (_searching) ...[
-                const SizedBox(height: 12),
-                const LinearProgressIndicator(),
-              ],
               const SizedBox(height: 12),
               if (hits != null)
                 _searchResults(context, hits)
@@ -680,36 +678,42 @@ class _HomePageState extends State<HomePage>
       childAspectRatio: 1.9,
       children: [
         SummaryMetric(
+          compact: true,
           icon: Icons.wallet_outlined,
           value: inr(s.collected),
           label: 'Collected',
           color: AppColors.success,
         ),
         SummaryMetric(
+          compact: true,
           icon: Icons.schedule_outlined,
           value: inr(s.due),
           label: 'Due',
           color: AppColors.warning,
         ),
         SummaryMetric(
+          compact: true,
           icon: Icons.error_outline,
           value: inr(s.overdue),
           label: 'Overdue',
           color: AppColors.danger,
         ),
         SummaryMetric(
+          compact: true,
           icon: Icons.receipt_long_outlined,
           value: inr(s.expense),
           label: 'Expenses',
           color: AppColors.secondaryText,
         ),
         SummaryMetric(
+          compact: true,
           icon: Icons.meeting_room_outlined,
           value: '${s.totalRooms}',
           label: 'Total rooms',
           color: AppColors.primary,
         ),
         SummaryMetric(
+          compact: true,
           icon: Icons.people_outline,
           value: '${s.totalMembers}',
           label: 'Total members',
@@ -878,9 +882,11 @@ class _HomePageState extends State<HomePage>
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
-              child: Stack(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       CircleAvatar(
                         radius: 26,
@@ -918,16 +924,13 @@ class _HomePageState extends State<HomePage>
                           ],
                         ),
                       ),
+                      const SizedBox(width: 8),
+                      StatusPill(
+                        text: 'Landlord',
+                        color: AppColors.primary,
+                        soft: AppColors.primary.withValues(alpha: 0.12),
+                      ),
                     ],
-                  ),
-                  Positioned(
-                    top: 0,
-                    right: 0,
-                    child: StatusPill(
-                      text: 'Landlord · Active',
-                      color: AppColors.primary,
-                      soft: AppColors.primary.withValues(alpha: 0.12),
-                    ),
                   ),
                 ],
               ),
@@ -968,23 +971,21 @@ class _HomePageState extends State<HomePage>
           Center(
             child: SizedBox(
               width: 200,
-              child: PressScale(
-                child: OutlinedButton.icon(
-                  onPressed: _signOut,
-                  icon: const Icon(
-                    Icons.logout,
-                    color: AppColors.danger,
-                    size: 18,
-                  ),
-                  label: const Text(
-                    'Log out',
-                    style: TextStyle(color: AppColors.danger),
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: AppColors.danger, width: 1.5),
-                    backgroundColor: Colors.transparent,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
+              child: OutlinedButton.icon(
+                onPressed: _signOut,
+                icon: const Icon(
+                  Icons.logout,
+                  color: AppColors.danger,
+                  size: 18,
+                ),
+                label: const Text(
+                  'Log out',
+                  style: TextStyle(color: AppColors.danger),
+                ),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: AppColors.danger, width: 1.5),
+                  backgroundColor: Colors.transparent,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
                 ),
               ),
             ),
@@ -1002,39 +1003,37 @@ class _HomePageState extends State<HomePage>
     required VoidCallback onTap,
   }) {
     final theme = Theme.of(context);
-    return PressScale(
-      child: Card(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        child: ListTile(
-          onTap: onTap,
-          leading: Container(
-            padding: const EdgeInsets.all(9),
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(14),
-                bottomRight: Radius.circular(14),
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: ListTile(
+        onTap: onTap,
+        leading: Container(
+          padding: const EdgeInsets.all(9),
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(14),
+              bottomRight: Radius.circular(14),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: color.withValues(alpha: 0.32),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: color.withValues(alpha: 0.32),
-                  blurRadius: 8,
-                  offset: const Offset(0, 3),
-                ),
-              ],
-            ),
-            child: Icon(icon, color: Colors.white, size: 20),
+            ],
           ),
-          title: Text(
-            title,
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
+          child: Icon(icon, color: Colors.white, size: 20),
+        ),
+        title: Text(
+          title,
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w700,
           ),
-          trailing: const Icon(
-            Icons.chevron_right,
-            color: AppColors.secondaryText,
-          ),
+        ),
+        trailing: const Icon(
+          Icons.chevron_right,
+          color: AppColors.secondaryText,
         ),
       ),
     );

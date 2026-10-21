@@ -44,23 +44,24 @@ router.post(
       const mobile = looksMobile ? rawId.replace(/[\s-]/g, '') : null;
 
       let account = null;
-      let isLandlord = false;
+      let AccountModel = null;
       if (mobile && /^[0-9]{10}$/.test(mobile)) {
-        account = await Landlord.findOne({ mobile });
-        isLandlord = true;
+        account = await Landlord.findOne({ mobile }).lean();
+        AccountModel = Landlord;
       }
       if (!account && !looksMobile) {
         const username = rawId.toLowerCase();
-        account = await Admin.findOne({ username });
-        isLandlord = false;
+        account = await Admin.findOne({ username }).lean();
+        AccountModel = Admin;
       }
       const ok = account ? await bcrypt.compare(password, account.passwordHash) : false;
       if (!account || !ok) {
         return res.status(401).json({ error: 'Invalid mobile number or password' });
       }
-      account.lastLoginAt = new Date();
-      await account.save();
-      void isLandlord;
+      // Record the sign-in without holding the response on an extra write.
+      AccountModel.updateOne({ _id: account._id }, { $set: { lastLoginAt: new Date() } }).catch(
+        () => {}
+      );
       return res.json({ token: signToken(account), user: publicAccount(account) });
     } catch (err) {
       return sendApiError(res, err);
@@ -97,9 +98,8 @@ router.post(
         name,
         mobile,
         passwordHash: await bcrypt.hash(password, 12),
+        lastLoginAt: new Date(),
       });
-      account.lastLoginAt = new Date();
-      await account.save();
       return res.status(201).json({ token: signToken(account), user: publicAccount(account) });
     } catch (err) {
       return sendApiError(res, err);

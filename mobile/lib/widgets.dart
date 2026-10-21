@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'app_theme.dart';
@@ -107,7 +109,9 @@ class MemberRow extends StatelessWidget {
     final amountColor = empty
         ? AppColors.secondaryText
         : (pending > 0 ? color : AppColors.success);
-    final caption = empty ? 'No period' : displayStatus(status);
+    final caption = empty
+        ? 'No period'
+        : (pending <= 0 ? '' : displayStatus(status));
     // No "paid of rent" line: the amount on the right already says what is
     // owed, so the row keeps only the phone number (when given) and the date.
     final meta = [
@@ -183,18 +187,22 @@ class MemberRow extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text(
-                    caption,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: AppColors.secondaryText,
-                      fontSize: 9.5,
-                      height: 1.1,
-                      letterSpacing: 0.1,
+                  if (caption.isNotEmpty) ...[
+                    Text(
+                      caption,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: AppColors.secondaryText,
+                        fontSize: 9.5,
+                        height: 1.1,
+                        letterSpacing: 0.1,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 1),
+                    const SizedBox(height: 1),
+                  ],
                   Text(
-                    empty ? '—' : inr(pending),
+                    empty
+                        ? '—'
+                        : (pending <= 0 ? 'Paid' : inr(pending)),
                     style: theme.textTheme.titleSmall?.copyWith(
                       color: amountColor,
                       fontWeight: FontWeight.w800,
@@ -227,6 +235,7 @@ class SummaryMetric extends StatelessWidget {
     required this.value,
     required this.label,
     required this.color,
+    this.compact = false,
   });
 
   final IconData icon;
@@ -234,46 +243,75 @@ class SummaryMetric extends StatelessWidget {
   final String label;
   final Color color;
 
+  /// Small corner icon with lighter, tighter text (home page tiles).
+  final bool compact;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final text = Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.center,
+          child: PopInValue(
+            value: value,
+            style: (compact
+                    ? theme.textTheme.bodyMedium
+                    : theme.textTheme.titleSmall)
+                ?.copyWith(
+              fontWeight: compact ? FontWeight.w500 : FontWeight.w800,
+              fontSize: compact ? 14 : null,
+              color: AppColors.mainText,
+            ),
+          ),
+        ),
+        Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: AppColors.secondaryText,
+            fontSize: 10,
+            fontWeight: FontWeight.w400,
+          ),
+        ),
+      ],
+    );
+
+    if (!compact) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: Row(
+            children: [
+              Icon(icon, size: 20, color: color),
+              const SizedBox(width: 8),
+              Expanded(
+                // Value + label centred on both axes inside the card.
+                child: text,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Card(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        child: Row(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+        child: Stack(
           children: [
-            Icon(icon, size: 20, color: color),
-            const SizedBox(width: 8),
-            Expanded(
-              // Value + label centred on both axes inside the card.
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.center,
-                    child: PopInValue(
-                      value: value,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.mainText,
-                      ),
-                    ),
-                  ),
-                  Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: AppColors.secondaryText,
-                      fontSize: 10,
-                    ),
-                  ),
-                ],
-              ),
+            Positioned(
+              top: 0,
+              left: 0,
+              child: Icon(icon, size: 20, color: color),
             ),
+            Center(child: text),
           ],
         ),
       ),
@@ -519,19 +557,204 @@ class ErrorPanel extends StatelessWidget {
   }
 }
 
-/// Short green success toast, only after server-confirmed writes.
-void toastOk(BuildContext context, String message) {
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(
-      content: Row(
-        children: [
-          const Icon(Icons.check_circle, color: Colors.white, size: 20),
-          const SizedBox(width: 10),
-          Expanded(child: Text(message)),
-        ],
-      ),
-      backgroundColor: AppColors.success,
-      duration: const Duration(seconds: 2),
-    ),
+/// App-wide toast. It paints above the navigator (see [TopToastHost] in
+/// main.dart), so a message raised on any page — including sign-in — drops in
+/// from the top of the screen instead of appearing under the page chrome.
+class _Toast {
+  const _Toast({
+    required this.message,
+    required this.error,
+    required this.seq,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  final String message;
+  final bool error;
+  final int seq;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+}
+
+final ValueNotifier<_Toast?> _toast = ValueNotifier<_Toast?>(null);
+int _toastSeq = 0;
+
+void _showToast(
+  BuildContext context,
+  String message, {
+  required bool error,
+  String? actionLabel,
+  VoidCallback? onAction,
+}) {
+  _toast.value = _Toast(
+    message: message,
+    error: error,
+    seq: ++_toastSeq,
+    actionLabel: actionLabel,
+    onAction: onAction,
   );
+}
+
+/// Green success toast, only after server-confirmed writes.
+void toastOk(BuildContext context, String message) {
+  _showToast(context, message, error: false);
+}
+
+/// Red toast for failed requests and blocked actions.
+void toastError(
+  BuildContext context,
+  String message, {
+  String? actionLabel,
+  VoidCallback? onAction,
+}) {
+  _showToast(
+    context,
+    message,
+    error: true,
+    actionLabel: actionLabel,
+    onAction: onAction,
+  );
+}
+
+/// Sits above the app's navigator and renders the current toast as a black
+/// banner that slides and fades in from the top, then fades out again.
+class TopToastHost extends StatefulWidget {
+  const TopToastHost({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  State<TopToastHost> createState() => _TopToastHostState();
+}
+
+class _TopToastHostState extends State<TopToastHost> {
+  Timer? _hideTimer;
+  _Toast? _visible;
+
+  @override
+  void initState() {
+    super.initState();
+    _toast.addListener(_onToast);
+  }
+
+  void _onToast() {
+    final next = _toast.value;
+    if (next == null) return;
+    _hideTimer?.cancel();
+    setState(() => _visible = next);
+    _hideTimer = Timer(const Duration(milliseconds: 2600), () {
+      if (mounted) setState(() => _visible = null);
+    });
+  }
+
+  @override
+  void dispose() {
+    _hideTimer?.cancel();
+    _toast.removeListener(_onToast);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final toast = _visible;
+    return Stack(
+      children: [
+        widget.child,
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: SafeArea(
+            bottom: false,
+            child: AnimatedSwitcher(
+              duration: MotionDuration.fast,
+              switchInCurve: MotionCurve.smoothOut,
+              switchOutCurve: MotionCurve.easeOut,
+              transitionBuilder: (child, animation) => FadeTransition(
+                opacity: animation,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0, -0.45),
+                    end: Offset.zero,
+                  ).animate(animation),
+                  child: child,
+                ),
+              ),
+              child: toast == null
+                  ? const SizedBox.shrink()
+                  : _ToastBanner(key: ValueKey(toast.seq), toast: toast),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ToastBanner extends StatelessWidget {
+  const _ToastBanner({super.key, required this.toast});
+
+  final _Toast toast;
+
+  @override
+  Widget build(BuildContext context) {
+    final tint = toast.error
+        ? const Color(0xFFFF6B6B)
+        : const Color(0xFF4ADE80);
+    // Material gives the banner text a proper ancestor (no debug yellow
+    // underline) and paints the full-width black band flush with the top edge.
+    return Material(
+      color: const Color(0xF2000000),
+      child: SafeArea(
+        bottom: false,
+        child: SizedBox(
+          height: kToolbarHeight,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                Icon(
+                  toast.error
+                      ? Icons.error_outline
+                      : Icons.check_circle_outline,
+                  color: tint,
+                  size: 20,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    toast.message,
+                    style: TextStyle(
+                      color: tint,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w600,
+                      height: 1.3,
+                    ),
+                  ),
+                ),
+                if (toast.actionLabel != null)
+                  TextButton(
+                    onPressed: toast.onAction,
+                    style: TextButton.styleFrom(
+                      foregroundColor: tint,
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: Text(
+                      toast.actionLabel!,
+                      style: TextStyle(
+                        color: tint,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

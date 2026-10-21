@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'app_theme.dart';
-import 'motion.dart';
 import 'payment_allocation.dart';
 import 'status_colors.dart';
 import 'widgets.dart';
@@ -46,7 +45,7 @@ class _PaymentHistoryPageState extends State<PaymentHistoryPage> {
         scrolledUnderElevation: 8,
         shadowColor: AppColors.mainText.withValues(alpha: 0.16),
         surfaceTintColor: Colors.transparent,
-        leading: const PressScale(child: BackButton()),
+        leading: const BackButton(),
         centerTitle: true,
         title: const Text(
           'Payment Records',
@@ -165,7 +164,7 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
     _load(reset: true, soft: _rows.isNotEmpty);
   }
 
-  Future<void> _load({bool reset = false, bool soft = false}) async {
+  Future<bool> _load({bool reset = false, bool soft = false}) async {
     if (reset) {
       setState(() {
         // Keep the current rows on screen when soft: no skeleton flashes over
@@ -188,7 +187,7 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
         to: _dateInput(_to),
         page: reset ? 1 : _page + 1,
       );
-      if (!mounted) return;
+      if (!mounted) return false;
       var filtered = result.rows;
       if (_searchQuery.isNotEmpty) {
         final q = _searchQuery.toLowerCase();
@@ -214,21 +213,24 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
       if (reset && _cacheableQuery) {
         _cache[_cacheKey] = List<PaymentRecord>.of(_rows);
       }
+      return true;
     } on ApiException catch (e) {
-      if (!mounted) return;
+      if (!mounted) return false;
       setState(() {
         _error = e.message;
         _loading = false;
         _loadingMore = false;
       });
+      return false;
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted) return false;
       setState(() {
         _error =
             'Could not reach the server. Check your internet connection and try again.';
         _loading = false;
         _loadingMore = false;
       });
+      return false;
     }
   }
 
@@ -243,15 +245,11 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
     if (picked == null) return;
     if (!mounted) return;
     if (isFrom && _to != null && picked.isAfter(_to!)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Start date cannot be after end date.')),
-      );
+      toastError(context, 'Start date cannot be after end date.');
       return;
     }
     if (!isFrom && _from != null && picked.isBefore(_from!)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('End date cannot be before start date.')),
-      );
+      toastError(context, 'End date cannot be before start date.');
       return;
     }
     setState(() {
@@ -299,30 +297,26 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
             ),
             const SizedBox(height: 4),
             for (final m in ['All', ...paymentMethods])
-              PressScale(
-                child: ListTile(
-                  dense: true,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 20),
-                  title: Text(
-                    m,
-                    style: TextStyle(
-                      fontWeight: m == _method
-                          ? FontWeight.w700
-                          : FontWeight.w500,
-                      color: m == _method
-                          ? AppColors.primary
-                          : AppColors.mainText,
-                    ),
+              ListTile(
+                dense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+                title: Text(
+                  m,
+                  style: TextStyle(
+                    fontWeight: m == _method ? FontWeight.w700 : FontWeight.w500,
+                    color: m == _method
+                        ? AppColors.primary
+                        : AppColors.mainText,
                   ),
-                  trailing: m == _method
-                      ? const Icon(
-                          Icons.check_circle,
-                          color: AppColors.primary,
-                          size: 20,
-                        )
-                      : null,
-                  onTap: () => Navigator.of(context).pop(m),
                 ),
+                trailing: m == _method
+                    ? const Icon(
+                        Icons.check_circle,
+                        color: AppColors.primary,
+                        size: 20,
+                      )
+                    : null,
+                onTap: () => Navigator.of(context).pop(m),
               ),
             const SizedBox(height: 8),
           ],
@@ -393,15 +387,13 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
                       prefixIcon: const Icon(Icons.search),
                       suffixIcon: _searchController.text.isEmpty
                           ? null
-                          : PressScale(
-                              child: IconButton(
-                                tooltip: 'Clear',
-                                icon: const Icon(Icons.clear),
-                                onPressed: () {
-                                  _searchController.clear();
-                                  _runSearch('');
-                                },
-                              ),
+                          : IconButton(
+                              tooltip: 'Clear',
+                              icon: const Icon(Icons.clear),
+                              onPressed: () {
+                                _searchController.clear();
+                                _runSearch('');
+                              },
                             ),
                     ),
                   ),
@@ -470,18 +462,16 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
               alignment: Alignment.centerRight,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 2, 16, 0),
-                child: PressScale(
-                  child: TextButton.icon(
-                    onPressed: _clearFilters,
-                    icon: const Icon(Icons.restart_alt, size: 16),
-                    label: const Text('Clear', style: TextStyle(fontSize: 12)),
-                    style: TextButton.styleFrom(
-                      foregroundColor: AppColors.danger,
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                      minimumSize: const Size(0, 30),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      visualDensity: VisualDensity.compact,
-                    ),
+                child: TextButton.icon(
+                  onPressed: _clearFilters,
+                  icon: const Icon(Icons.restart_alt, size: 16),
+                  label: const Text('Clear', style: TextStyle(fontSize: 12)),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.danger,
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    minimumSize: const Size(0, 30),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
                   ),
                 ),
               ),
@@ -501,66 +491,63 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
     required VoidCallback onTap,
   }) {
     final theme = Theme.of(context);
-    return PressScale(
-      child: Card(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide(
-            color: active ? AppColors.primary : AppColors.border,
-            width: active ? 1.4 : 1,
-          ),
+    return Card(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: active ? AppColors.primary : AppColors.border,
+          width: active ? 1.4 : 1,
         ),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  children: [
-                    Icon(
-                      icon,
-                      size: 13,
-                      color: active
-                          ? AppColors.primary
-                          : AppColors.secondaryText,
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          fontSize: 10,
-                          color: AppColors.secondaryText,
-                        ),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    icon,
+                    size: 13,
+                    color:
+                        active ? AppColors.primary : AppColors.secondaryText,
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontSize: 10,
+                        color: AppColors.secondaryText,
                       ),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 2),
-                // The chosen value reads as the card's headline, so it sits in
-                // the middle of the card rather than hugging the left edge.
-                Align(
-                  alignment: Alignment.center,
-                  child: Text(
-                    value,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                      color: active ? AppColors.primary : AppColors.mainText,
-                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 2),
+              // The chosen value reads as the card's headline, so it sits in
+              // the middle of the card rather than hugging the left edge.
+              Align(
+                alignment: Alignment.center,
+                child: Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                    color: active ? AppColors.primary : AppColors.mainText,
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -619,15 +606,12 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
             child: Center(
               child: _loadingMore
                   ? const CircularProgressIndicator()
-                  : PressScale(
-                      enabled: !_loadingMore,
-                      child: OutlinedButton(
-                        onPressed: () {
-                          setState(() => _loadingMore = true);
-                          _load();
-                        },
-                        child: const Text('Load more'),
-                      ),
+                  : OutlinedButton(
+                      onPressed: () {
+                        setState(() => _loadingMore = true);
+                        _load();
+                      },
+                      child: const Text('Load more'),
                     ),
             ),
           );
@@ -645,7 +629,10 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
     );
     if (widget.embedded) return list;
     return RefreshIndicator(
-      onRefresh: () => _load(reset: true, soft: true),
+      onRefresh: () async {
+        final ok = await _load(reset: true, soft: true);
+        if (ok && context.mounted) toastOk(context, 'Payments updated.');
+      },
       child: list,
     );
   }
@@ -659,18 +646,16 @@ class _SearchButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return PressScale(
-      child: Material(
-        color: AppColors.primary,
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(10),
-          onTap: () => onPressed(),
-          child: const SizedBox(
-            height: 38,
-            width: 38,
-            child: Icon(Icons.search, color: Colors.white, size: 20),
-          ),
+    return Material(
+      color: AppColors.primary,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: () => onPressed(),
+        child: const SizedBox(
+          height: 38,
+          width: 38,
+          child: Icon(Icons.search, color: Colors.white, size: 20),
         ),
       ),
     );
@@ -734,12 +719,11 @@ class _PaymentCardState extends State<_PaymentCard> {
         ],
       ),
     );
-    return PressScale(
-      child: Card(
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: _toggle,
-          child: Column(
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: _toggle,
+        child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Ribbon sits flush against the card's top-left corner.
@@ -822,19 +806,15 @@ class _PaymentCardState extends State<_PaymentCard> {
                             ),
                           ),
                         ),
-                        PressScale(
-                          child: IconButton(
-                            tooltip: _expanded
-                                ? 'Hide details'
-                                : 'Show details',
-                            visualDensity: VisualDensity.compact,
-                            icon: Icon(
-                              _expanded ? Icons.expand_less : Icons.expand_more,
-                              size: 20,
-                              color: AppColors.secondaryText,
-                            ),
-                            onPressed: _toggle,
+                        IconButton(
+                          tooltip: _expanded ? 'Hide details' : 'Show details',
+                          visualDensity: VisualDensity.compact,
+                          icon: Icon(
+                            _expanded ? Icons.expand_less : Icons.expand_more,
+                            size: 20,
+                            color: AppColors.secondaryText,
                           ),
+                          onPressed: _toggle,
                         ),
                       ],
                     ),
@@ -865,7 +845,6 @@ class _PaymentCardState extends State<_PaymentCard> {
             ],
           ),
         ),
-      ),
     );
   }
 

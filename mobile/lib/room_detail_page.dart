@@ -45,28 +45,30 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
 
   /// [soft] keeps the current detail on screen: no skeleton, no spinner, the
   /// new numbers simply replace the old ones when they arrive.
-  Future<void> _load({bool soft = false}) async {
-    if (_inFlight) return;
+  Future<bool> _load({bool soft = false}) async {
+    if (_inFlight) return false;
     _inFlight = true;
     if (!soft && mounted) {
       setState(() => _loading = true);
     }
     try {
       final detail = await widget.api.roomDetail(widget.roomId);
-      if (!mounted) return;
+      if (!mounted) return false;
       setState(() {
         _detail = detail;
         _loading = false;
         _error = null;
       });
+      return true;
     } on ApiException catch (e) {
-      if (!mounted) return;
+      if (!mounted) return false;
       setState(() {
         _loading = false;
         if (_detail == null) _error = e.message;
       });
+      return false;
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted) return false;
       setState(() {
         _loading = false;
         if (_detail == null) {
@@ -74,12 +76,13 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
               'Unable to load the latest data. Check your internet connection and try again.';
         }
       });
+      return false;
     } finally {
       _inFlight = false;
     }
   }
 
-  Future<void> _refresh() => _load(soft: _detail != null);
+  Future<bool> _refresh() => _load(soft: _detail != null);
 
   Future<void> _openAddMember() async {
     final created = await Navigator.of(context).push<bool>(
@@ -110,9 +113,7 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
 
   Future<void> _openRecordFlow(RoomDetail detail) async {
     if (detail.rows.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No active members to collect from.')),
-      );
+      toastError(context, 'No active members to collect from.');
       return;
     }
     final recorded = await showPaymentDrawer(
@@ -346,7 +347,10 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
     }
     final detail = _detail!;
     return RefreshIndicator(
-      onRefresh: _refresh,
+      onRefresh: () async {
+        final ok = await _refresh();
+        if (ok && context.mounted) toastOk(context, 'Room updated.');
+      },
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
         children: [
