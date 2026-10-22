@@ -54,7 +54,8 @@ app.use('/api/overdue', requireAuth, overdueRoutes);
 app.use('/api/settings', requireAuth, settingsRoutes);
 
 app.use((req, res) => {
-  res.status(404).json({ error: 'Not found.' });
+  const message = `Route ${req.method} ${req.originalUrl} not found.`;
+  res.status(404).json({ error: message, message });
 });
 
 app.use((err, req, res, _next) => {
