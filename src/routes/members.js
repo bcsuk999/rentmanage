@@ -29,6 +29,18 @@ router.get(
   })
 );
 
+/** Former tenants with their billed/collected/waived/outstanding totals. */
+router.get(
+  '/vacated',
+  wrap(async (req, res) => {
+    try {
+      return res.json(await memberService.vacatedMembers(req.user._id));
+    } catch (err) {
+      return sendApiError(res, err);
+    }
+  })
+);
+
 router.patch(
   '/:id',
   wrap(async (req, res) => {
@@ -63,6 +75,23 @@ router.post(
         member: result.member,
         outstanding: result.outstanding,
         message: `${result.member.name} marked vacated. History kept. Outstanding: ${result.outstanding}.`,
+      });
+    } catch (err) {
+      return sendApiError(res, err);
+    }
+  })
+);
+
+router.post(
+  '/:id/waive',
+  wrap(async (req, res) => {
+    try {
+      const result = await memberService.waiveMemberDebt(req.params.id, req.body, req.user._id);
+      return res.json({
+        member: result.member,
+        waivedAmount: result.waivedAmount,
+        outstanding: result.outstanding,
+        message: `${result.member.name}: waived ${result.waivedAmount}. Still to collect: ${result.outstanding}.`,
       });
     } catch (err) {
       return sendApiError(res, err);

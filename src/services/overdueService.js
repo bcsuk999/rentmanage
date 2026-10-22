@@ -27,7 +27,9 @@ async function overdueReport(ownerId) {
   }
 
   const memberIds = [...new Set(periods.map((p) => p.memberId.toString()))];
-  const members = await Member.find({ ownerId: owner, _id: { $in: memberIds } })
+  // Vacated members keep their history and dues, but they belong on the
+  // Vacated Members page rather than the live overdue list.
+  const members = await Member.find({ ownerId: owner, _id: { $in: memberIds }, status: 'active' })
     .select('name mobile roomId status')
     .lean();
   const memberById = new Map(members.map((m) => [m._id.toString(), m]));
@@ -73,7 +75,7 @@ async function overdueReport(ownerId) {
     members: rows,
     summary: {
       memberCount: rows.length,
-      periodCount: periods.length,
+      periodCount: rows.reduce((sum, r) => sum + r.periods.length, 0),
       totalOverdue: round(rows.reduce((s, r) => s + r.totalOverdue, 0)),
     },
   };

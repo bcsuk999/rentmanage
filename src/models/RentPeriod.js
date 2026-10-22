@@ -26,6 +26,7 @@ const rentPeriodSchema = new mongoose.Schema(
     endDate: { type: Date, required: true },
     rentAmount: { type: Number, required: true, min: 0 },
     paidAmount: { type: Number, default: 0, min: 0 },
+    waivedAmount: { type: Number, default: 0, min: 0 },
     pendingAmount: { type: Number, default: 0, min: 0 },
     status: { type: String, enum: RENT_STATUSES, default: 'Pending' },
     isClosed: { type: Boolean, default: false },

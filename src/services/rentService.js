@@ -11,12 +11,13 @@ const FUTURE_CYCLES = 1;
 
 /**
  * Derive paid/pending/status from server-side values only.
- * Pending = rent - paid. Zero pending => Paid. Ended with pending => Overdue.
+ * Pending = rent - paid - waived. Zero pending => Paid. Ended with pending => Overdue.
  */
-function deriveTotals(rentAmount, paidAmount, endDate, reference = today()) {
+function deriveTotals(rentAmount, paidAmount, endDate, reference = today(), waivedAmount = 0) {
   const rent = Number(rentAmount) || 0;
   const paid = Math.max(0, Number(paidAmount) || 0);
-  const pending = Math.max(0, Math.round((rent - paid) * 100) / 100);
+  const waived = Math.max(0, Number(waivedAmount) || 0);
+  const pending = Math.max(0, Math.round((rent - paid - waived) * 100) / 100);
   let status;
   if (pending <= 0) {
     status = 'Paid';
@@ -234,7 +235,7 @@ async function recalcPeriod(periodId, reference = today()) {
   const period = await RentPeriod.findById(periodId);
   if (!period) return null;
   const paid = await paidForPeriod(period._id);
-  const next = deriveTotals(period.rentAmount, paid, period.endDate, reference);
+  const next = deriveTotals(period.rentAmount, paid, period.endDate, reference, period.waivedAmount);
   period.paidAmount = next.paidAmount;
   period.pendingAmount = next.pendingAmount;
   period.status = next.status;
