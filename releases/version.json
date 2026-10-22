@@ -1,6 +1,6 @@
 {
-  "version": "1.6.7",
-  "build": 11,
-  "apkUrl": "https://raw.githubusercontent.com/bcsuk999/rentmanage/main/releases/rentmanage-arm64-v1.6.7.apk",
-  "message": "Toast messages are now centered and single-line with cleaner spacing."
+  "version": "1.6.8",
+  "build": 12,
+  "apkUrl": "https://raw.githubusercontent.com/bcsuk999/rentmanage/main/releases/rentmanage-arm64-v1.6.8.apk",
+  "message": "Vacated Members with payments and waivers, full-page Vacate/Waive forms, room edit page, and UI fixes."
 }

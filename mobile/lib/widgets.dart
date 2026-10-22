@@ -21,16 +21,16 @@ class StatusPill extends StatelessWidget {
   final Color soft;
 
   factory StatusPill.member(String status) => StatusPill(
-        text: displayStatus(status),
-        color: memberStatusColor(status),
-        soft: memberStatusSoft(status),
-      );
+    text: displayStatus(status),
+    color: memberStatusColor(status),
+    soft: memberStatusSoft(status),
+  );
 
   factory StatusPill.room(String status) => StatusPill(
-        text: status,
-        color: roomStatusColor(status),
-        soft: roomStatusSoft(status),
-      );
+    text: status,
+    color: roomStatusColor(status),
+    soft: roomStatusSoft(status),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -89,6 +89,7 @@ class MemberRow extends StatelessWidget {
     required this.pending,
     this.subtitle,
     this.dueDate,
+    this.dateLabel = 'Due date',
     this.onTap,
   });
 
@@ -99,6 +100,7 @@ class MemberRow extends StatelessWidget {
   final double pending;
   final String? subtitle;
   final DateTime? dueDate;
+  final String dateLabel;
   final VoidCallback? onTap;
 
   @override
@@ -169,7 +171,7 @@ class MemberRow extends StatelessWidget {
                     if (dueDate != null) ...[
                       const SizedBox(height: 2),
                       Text(
-                        'Due date : ${fmtDateMedium(dueDate!)}',
+                        '$dateLabel : ${fmtDateMedium(dueDate!)}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.bodySmall?.copyWith(
@@ -200,9 +202,7 @@ class MemberRow extends StatelessWidget {
                     const SizedBox(height: 1),
                   ],
                   Text(
-                    empty
-                        ? '—'
-                        : (pending <= 0 ? 'Paid' : inr(pending)),
+                    empty ? '—' : (pending <= 0 ? 'Paid' : inr(pending)),
                     style: theme.textTheme.titleSmall?.copyWith(
                       color: amountColor,
                       fontWeight: FontWeight.w800,
@@ -259,14 +259,15 @@ class SummaryMetric extends StatelessWidget {
           alignment: Alignment.center,
           child: PopInValue(
             value: value,
-            style: (compact
-                    ? theme.textTheme.bodyMedium
-                    : theme.textTheme.titleSmall)
-                ?.copyWith(
-              fontWeight: compact ? FontWeight.w500 : FontWeight.w800,
-              fontSize: compact ? 14 : null,
-              color: AppColors.mainText,
-            ),
+            style:
+                (compact
+                        ? theme.textTheme.bodyMedium
+                        : theme.textTheme.titleSmall)
+                    ?.copyWith(
+                      fontWeight: compact ? FontWeight.w500 : FontWeight.w800,
+                      fontSize: compact ? 14 : null,
+                      color: AppColors.mainText,
+                    ),
           ),
         ),
         Text(
@@ -304,14 +305,41 @@ class SummaryMetric extends StatelessWidget {
     return Card(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
-        child: Stack(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Positioned(
-              top: 0,
-              left: 0,
-              child: Icon(icon, size: 20, color: color),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.center,
+              child: PopInValue(
+                value: value,
+                style: (theme.textTheme.bodyMedium)?.copyWith(
+                  fontWeight: FontWeight.w500,
+                  fontSize: 14,
+                  color: AppColors.mainText,
+                ),
+              ),
             ),
-            Center(child: text),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 10, color: color),
+                const SizedBox(width: 3),
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: AppColors.secondaryText,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
       ),
@@ -698,19 +726,16 @@ class _ToastBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tint = toast.error
-        ? const Color(0xFFFF6B6B)
-        : const Color(0xFF4ADE80);
     // Material gives the banner text a proper ancestor (no debug yellow
     // underline) and paints the full-width black band flush with the top edge.
     return Material(
       color: const Color(0xF2000000),
       child: SafeArea(
         bottom: false,
-        child: SizedBox(
-          height: kToolbarHeight,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: kToolbarHeight),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -718,7 +743,9 @@ class _ToastBanner extends StatelessWidget {
                   toast.error
                       ? Icons.error_outline
                       : Icons.check_circle_outline,
-                  color: tint,
+                  color: toast.error
+                      ? const Color(0xFFF87171)
+                      : const Color(0xFF4ADE80),
                   size: 20,
                 ),
                 const SizedBox(width: 10),
@@ -726,10 +753,8 @@ class _ToastBanner extends StatelessWidget {
                   child: Text(
                     toast.message,
                     textAlign: TextAlign.center,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: tint,
+                      color: Colors.white,
                       fontSize: 13.5,
                       fontWeight: FontWeight.w600,
                       height: 1.3,
@@ -741,7 +766,7 @@ class _ToastBanner extends StatelessWidget {
                   TextButton(
                     onPressed: toast.onAction,
                     style: TextButton.styleFrom(
-                      foregroundColor: tint,
+                      foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(horizontal: 6),
                       minimumSize: Size.zero,
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -749,7 +774,7 @@ class _ToastBanner extends StatelessWidget {
                     child: Text(
                       toast.actionLabel!,
                       style: TextStyle(
-                        color: tint,
+                        color: Colors.white,
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
                       ),

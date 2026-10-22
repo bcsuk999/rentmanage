@@ -35,8 +35,12 @@ class MemberOverdue {
   final double amount;
 
   factory MemberOverdue.fromJson(Map<String, dynamic> json) {
-    double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
-    return MemberOverdue(period: '${json['period']}', amount: asDouble(json['amt']));
+    double asDouble(dynamic v) =>
+        v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
+    return MemberOverdue(
+      period: '${json['period']}',
+      amount: asDouble(json['amt']),
+    );
   }
 
   Map<String, dynamic> toJson() => {'period': period, 'amt': amount};
@@ -88,7 +92,8 @@ class RoomMember {
   double get totalDue => pending + (overdue?.amount ?? 0);
 
   factory RoomMember.fromJson(Map<String, dynamic> json) {
-    double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
+    double asDouble(dynamic v) =>
+        v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
     final rawOverdue = json['overdue'];
     return RoomMember(
       id: '${json['id']}',
@@ -100,32 +105,37 @@ class RoomMember {
       mobile: '${json['mobile'] ?? ''}',
       aadhaarNumber: '${json['aadhaarNumber'] ?? ''}',
       monthlyRent: asDouble(json['monthlyRent']),
-      rentStartDate:
-          json['rentStartDate'] == null ? null : DateTime.tryParse('${json['rentStartDate']}'),
-      joiningDate:
-          json['joiningDate'] == null ? null : DateTime.tryParse('${json['joiningDate']}'),
+      rentStartDate: json['rentStartDate'] == null
+          ? null
+          : DateTime.tryParse('${json['rentStartDate']}'),
+      joiningDate: json['joiningDate'] == null
+          ? null
+          : DateTime.tryParse('${json['joiningDate']}'),
       overdue: rawOverdue is Map
           ? MemberOverdue.fromJson(rawOverdue.cast<String, dynamic>())
           : null,
-      dueDate: json['dueDate'] == null ? null : DateTime.tryParse('${json['dueDate']}'),
+      dueDate: json['dueDate'] == null
+          ? null
+          : DateTime.tryParse('${json['dueDate']}'),
     );
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'rent': rent,
-        'paid': paid,
-        'pending': pending,
-        'status': status,
-        'mobile': mobile,
-        'aadhaarNumber': aadhaarNumber,
-        'monthlyRent': monthlyRent,
-        if (rentStartDate != null) 'rentStartDate': rentStartDate!.toIso8601String(),
-        if (joiningDate != null) 'joiningDate': joiningDate!.toIso8601String(),
-        if (overdue != null) 'overdue': overdue!.toJson(),
-        if (dueDate != null) 'dueDate': dueDate!.toIso8601String(),
-      };
+    'id': id,
+    'name': name,
+    'rent': rent,
+    'paid': paid,
+    'pending': pending,
+    'status': status,
+    'mobile': mobile,
+    'aadhaarNumber': aadhaarNumber,
+    'monthlyRent': monthlyRent,
+    if (rentStartDate != null)
+      'rentStartDate': rentStartDate!.toIso8601String(),
+    if (joiningDate != null) 'joiningDate': joiningDate!.toIso8601String(),
+    if (overdue != null) 'overdue': overdue!.toJson(),
+    if (dueDate != null) 'dueDate': dueDate!.toIso8601String(),
+  };
 }
 
 class Room {
@@ -159,7 +169,8 @@ class Room {
 
   factory Room.fromJson(Map<String, dynamic> json) {
     int asInt(dynamic v) => v is int ? v : int.tryParse('$v') ?? 0;
-    double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
+    double asDouble(dynamic v) =>
+        v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
     final rawMembers = (json['members'] as List? ?? []);
     return Room(
       id: '${json['_id']}',
@@ -173,24 +184,26 @@ class Room {
       totalRent: asDouble(json['totalRent']),
       totalPaid: asDouble(json['totalPaid']),
       notes: json['notes'] == null ? null : '${json['notes']}',
-      members: rawMembers.map((e) => RoomMember.fromJson((e as Map).cast<String, dynamic>())).toList(),
+      members: rawMembers
+          .map((e) => RoomMember.fromJson((e as Map).cast<String, dynamic>()))
+          .toList(),
     );
   }
 
   Map<String, dynamic> toJson() => {
-        '_id': id,
-        'roomNumber': roomNumber,
-        'status': status,
-        'capacity': capacity,
-        'memberCount': memberCount,
-        'isFull': isFull,
-        'paymentState': paymentState,
-        'totalPending': totalPending,
-        'totalRent': totalRent,
-        'totalPaid': totalPaid,
-        'notes': notes,
-        'members': members.map((m) => m.toJson()).toList(),
-      };
+    '_id': id,
+    'roomNumber': roomNumber,
+    'status': status,
+    'capacity': capacity,
+    'memberCount': memberCount,
+    'isFull': isFull,
+    'paymentState': paymentState,
+    'totalPending': totalPending,
+    'totalRent': totalRent,
+    'totalPaid': totalPaid,
+    'notes': notes,
+    'members': members.map((m) => m.toJson()).toList(),
+  };
 }
 
 /// One row of the room details screen: member + their period for the range.
@@ -231,7 +244,8 @@ class RoomDetailRow {
   double get progress => rent <= 0 ? 0 : (paid / rent).clamp(0.0, 1.0);
 
   factory RoomDetailRow.fromJson(Map<String, dynamic> json) {
-    double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
+    double asDouble(dynamic v) =>
+        v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
     DateTime? asDate(dynamic v) => v == null ? null : DateTime.tryParse('$v');
     final member = (json['member'] as Map? ?? {}).cast<String, dynamic>();
     final period = (json['period'] as Map?)?.cast<String, dynamic>();
@@ -284,10 +298,13 @@ class RoomDetail {
   double get totalDue => totalPending + totalOverdue;
 
   factory RoomDetail.fromJson(Map<String, dynamic> json, Room room) {
-    double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
+    double asDouble(dynamic v) =>
+        v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
     int asInt(dynamic v) => v is int ? v : int.tryParse('$v') ?? 0;
     final summary = (json['summary'] as Map? ?? {}).cast<String, dynamic>();
-    final rows = ((json['members'] as List? ?? []).cast<Map>()).map((e) => RoomDetailRow.fromJson(e.cast<String, dynamic>())).toList();
+    final rows = ((json['members'] as List? ?? []).cast<Map>())
+        .map((e) => RoomDetailRow.fromJson(e.cast<String, dynamic>()))
+        .toList();
     return RoomDetail(
       room: room,
       rows: rows,
@@ -319,9 +336,9 @@ class ApiClient {
   void Function()? onAuthExpired;
 
   Map<String, String> get _headers => {
-        'Content-Type': 'application/json',
-        if (token != null) 'Authorization': 'Bearer $token',
-      };
+    'Content-Type': 'application/json',
+    if (token != null) 'Authorization': 'Bearer $token',
+  };
 
   /// Every request fails fast after this long. Without it a cold backend
   /// (Render spins down when idle) leaves the UI stuck on skeletons with the
@@ -335,9 +352,12 @@ class ApiClient {
       return await run().timeout(_requestTimeout);
     } on TimeoutException {
       throw ApiException(
-          'The server is taking too long to respond. Check your connection and try again.');
+        'The server is taking too long to respond. Check your connection and try again.',
+      );
     } on http.ClientException {
-      throw ApiException('Could not reach the server. Check your connection and try again.');
+      throw ApiException(
+        'Could not reach the server. Check your connection and try again.',
+      );
     }
   }
 
@@ -354,7 +374,9 @@ class ApiClient {
     String message = 'Request failed (${res.statusCode}).';
     try {
       final body = jsonDecode(res.body);
-      if (body is Map && body['error'] is String) message = body['error'] as String;
+      if (body is Map && body['error'] is String) {
+        message = body['error'] as String;
+      }
     } catch (_) {
       // Keep the default message when the body is not JSON.
     }
@@ -414,7 +436,9 @@ class ApiClient {
     if (res.statusCode != 200) _throw(res);
     final body = jsonDecode(res.body) as Map<String, dynamic>;
     final list = (body['rooms'] as List? ?? []);
-    final rooms = list.map((e) => Room.fromJson((e as Map).cast<String, dynamic>())).toList();
+    final rooms = list
+        .map((e) => Room.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
     // Best-effort cache; never fail the request because of storage.
     try {
       await SessionCache.saveRooms(rooms);
@@ -431,11 +455,14 @@ class ApiClient {
     final params = <String, String>{};
     if (from != null && from.isNotEmpty) params['from'] = from;
     if (to != null && to.isNotEmpty) params['to'] = to;
-    final uri = Uri.parse('$baseUrl/api/landlord/summary')
-        .replace(queryParameters: params.isEmpty ? null : params);
+    final uri = Uri.parse(
+      '$baseUrl/api/landlord/summary',
+    ).replace(queryParameters: params.isEmpty ? null : params);
     final res = await _get(uri);
     if (res.statusCode != 200) _throw(res);
-    return LandlordSummary.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+    return LandlordSummary.fromJson(
+      jsonDecode(res.body) as Map<String, dynamic>,
+    );
   }
 
   /// Find rooms and members by one term, with no period: every hit carries
@@ -446,7 +473,9 @@ class ApiClient {
     final q = term.trim();
     final params = <String, String>{'search': q};
     if (limit != null) params['limit'] = '$limit';
-    final uri = Uri.parse('$baseUrl/api/landlord/search').replace(queryParameters: params);
+    final uri = Uri.parse(
+      '$baseUrl/api/landlord/search',
+    ).replace(queryParameters: params);
     final res = await _get(uri);
     if (res.statusCode != 200) _throw(res);
     return SearchResults.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
@@ -484,7 +513,11 @@ class ApiClient {
   }) async {
     final res = await _post(
       Uri.parse('$baseUrl/api/rooms'),
-      body: jsonEncode({'roomNumber': roomNumber, 'capacity': capacity, 'status': status}),
+      body: jsonEncode({
+        'roomNumber': roomNumber,
+        'capacity': capacity,
+        'status': status,
+      }),
     );
     if (res.statusCode != 201) _throw(res);
     return (jsonDecode(res.body) as Map).cast<String, dynamic>();
@@ -512,7 +545,10 @@ class ApiClient {
   }
 
   /// Add a member to a room (admin only). Throws [ApiException] when full.
-  Future<Map<String, dynamic>> addMember(String roomId, Map<String, dynamic> data) async {
+  Future<Map<String, dynamic>> addMember(
+    String roomId,
+    Map<String, dynamic> data,
+  ) async {
     final res = await _post(
       Uri.parse('$baseUrl/api/rooms/$roomId/members'),
       body: jsonEncode(data),
@@ -522,13 +558,59 @@ class ApiClient {
   }
 
   /// Update a member (name, mobile, rent, aadhaar, dates, notes).
-  Future<Map<String, dynamic>> updateMember(String memberId, Map<String, dynamic> data) async {
+  Future<Map<String, dynamic>> updateMember(
+    String memberId,
+    Map<String, dynamic> data,
+  ) async {
     final res = await _patch(
       Uri.parse('$baseUrl/api/members/$memberId'),
       body: jsonEncode(data),
     );
     if (res.statusCode != 200) _throw(res);
     return (jsonDecode(res.body) as Map).cast<String, dynamic>();
+  }
+
+  /// Vacate a member on [vacatingDate] (YYYY-MM-DD), keeping their history.
+  Future<Map<String, dynamic>> vacateMember(
+    String memberId, {
+    required String vacatingDate,
+    String? notes,
+  }) async {
+    final res = await _post(
+      Uri.parse('$baseUrl/api/members/$memberId/vacate'),
+      body: jsonEncode({
+        'vacatingDate': vacatingDate,
+        if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
+      }),
+    );
+    if (res.statusCode != 200) _throw(res);
+    return (jsonDecode(res.body) as Map).cast<String, dynamic>();
+  }
+
+  /// Write off unpaid rent for a vacated member, oldest cycle first.
+  Future<Map<String, dynamic>> waiveMemberDebt(
+    String memberId, {
+    required String amount,
+    String? notes,
+  }) async {
+    final res = await _post(
+      Uri.parse('$baseUrl/api/members/$memberId/waive'),
+      body: jsonEncode({
+        'amount': amount,
+        if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
+      }),
+    );
+    if (res.statusCode != 200) _throw(res);
+    return (jsonDecode(res.body) as Map).cast<String, dynamic>();
+  }
+
+  /// Former tenants with billed, collected, waived and outstanding totals.
+  Future<VacatedMembersReport> vacatedMembers() async {
+    final res = await _get(Uri.parse('$baseUrl/api/members/vacated'));
+    if (res.statusCode != 200) _throw(res);
+    return VacatedMembersReport.fromJson(
+      jsonDecode(res.body) as Map<String, dynamic>,
+    );
   }
 
   /// Record a payment against a rent period (admin only).
@@ -547,7 +629,8 @@ class ApiClient {
         'amount': amount,
         'paymentDate': paymentDate,
         'paymentMethod': paymentMethod,
-        if (reference != null && reference.trim().isNotEmpty) 'reference': reference.trim(),
+        if (reference != null && reference.trim().isNotEmpty)
+          'reference': reference.trim(),
         if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
       }),
     );
@@ -574,10 +657,14 @@ class ApiClient {
     final params = <String, String>{'page': '$page'};
     if (roomId != null && roomId.isNotEmpty) params['roomId'] = roomId;
     if (memberId != null && memberId.isNotEmpty) params['memberId'] = memberId;
-    if (paymentMethod != null && paymentMethod.isNotEmpty) params['paymentMethod'] = paymentMethod;
+    if (paymentMethod != null && paymentMethod.isNotEmpty) {
+      params['paymentMethod'] = paymentMethod;
+    }
     if (from != null && from.isNotEmpty) params['from'] = from;
     if (to != null && to.isNotEmpty) params['to'] = to;
-    final uri = Uri.parse('$baseUrl/api/payments').replace(queryParameters: params);
+    final uri = Uri.parse(
+      '$baseUrl/api/payments',
+    ).replace(queryParameters: params);
     final res = await _get(uri);
     if (res.statusCode != 200) _throw(res);
     return PaymentsPage.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
@@ -589,7 +676,9 @@ class ApiClient {
     if (res.statusCode != 200) _throw(res);
     final body = jsonDecode(res.body) as Map<String, dynamic>;
     final list = (body['periods'] as List? ?? []);
-    return list.map((e) => MemberPeriod.fromJson((e as Map).cast<String, dynamic>())).toList();
+    return list
+        .map((e) => MemberPeriod.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
   }
 
   /// Full member profile (info + periods + totals) for the Member Details page.
@@ -639,11 +728,16 @@ class OverduePeriod {
   final double pending;
 
   factory OverduePeriod.fromJson(Map<String, dynamic> json) {
-    double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
+    double asDouble(dynamic v) =>
+        v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
     return OverduePeriod(
       id: '${json['id']}',
-      start: json['startDate'] == null ? null : DateTime.tryParse('${json['startDate']}'),
-      end: json['endDate'] == null ? null : DateTime.tryParse('${json['endDate']}'),
+      start: json['startDate'] == null
+          ? null
+          : DateTime.tryParse('${json['startDate']}'),
+      end: json['endDate'] == null
+          ? null
+          : DateTime.tryParse('${json['endDate']}'),
       rent: asDouble(json['rentAmount']),
       paid: asDouble(json['paidAmount']),
       pending: asDouble(json['pendingAmount']),
@@ -673,7 +767,8 @@ class OverdueMember {
 
   factory OverdueMember.fromJson(Map<String, dynamic> json) {
     int asInt(dynamic v) => v is int ? v : int.tryParse('$v') ?? 0;
-    double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
+    double asDouble(dynamic v) =>
+        v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
     final rows = (json['periods'] as List? ?? []);
     return OverdueMember(
       memberId: '${json['memberId']}',
@@ -682,13 +777,21 @@ class OverdueMember {
       roomNumber: '${json['roomNumber'] ?? '-'}',
       periodCount: asInt(json['periodCount']),
       totalOverdue: asDouble(json['totalOverdue']),
-      periods: rows.map((e) => OverduePeriod.fromJson((e as Map).cast<String, dynamic>())).toList(),
+      periods: rows
+          .map(
+            (e) => OverduePeriod.fromJson((e as Map).cast<String, dynamic>()),
+          )
+          .toList(),
     );
   }
 }
 
 class OverdueReport {
-  OverdueReport({required this.members, required this.memberCount, required this.totalOverdue});
+  OverdueReport({
+    required this.members,
+    required this.memberCount,
+    required this.totalOverdue,
+  });
 
   final List<OverdueMember> members;
   final int memberCount;
@@ -697,10 +800,15 @@ class OverdueReport {
   factory OverdueReport.fromJson(Map<String, dynamic> json) {
     final summary = (json['summary'] as Map? ?? {}).cast<String, dynamic>();
     final rows = (json['members'] as List? ?? []);
-    double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
+    double asDouble(dynamic v) =>
+        v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
     int asInt(dynamic v) => v is int ? v : int.tryParse('$v') ?? 0;
     return OverdueReport(
-      members: rows.map((e) => OverdueMember.fromJson((e as Map).cast<String, dynamic>())).toList(),
+      members: rows
+          .map(
+            (e) => OverdueMember.fromJson((e as Map).cast<String, dynamic>()),
+          )
+          .toList(),
       memberCount: asInt(summary['memberCount']),
       totalOverdue: asDouble(summary['totalOverdue']),
     );
@@ -743,7 +851,9 @@ class SearchRoomHit extends SearchHit {
   factory SearchRoomHit.fromJson(Map<String, dynamic> json) {
     int asInt(dynamic v) => v is int ? v : int.tryParse('$v') ?? 0;
     final members = (json['members'] as List? ?? [])
-        .map((e) => SearchRoomMember.fromJson((e as Map).cast<String, dynamic>()))
+        .map(
+          (e) => SearchRoomMember.fromJson((e as Map).cast<String, dynamic>()),
+        )
         .toList();
     return SearchRoomHit(
       matchedOn: '${json['matchedOn'] ?? ''}',
@@ -774,7 +884,8 @@ class SearchRoomMember {
   /// 'active' or 'inactive'.
   final String status;
 
-  factory SearchRoomMember.fromJson(Map<String, dynamic> json) => SearchRoomMember(
+  factory SearchRoomMember.fromJson(Map<String, dynamic> json) =>
+      SearchRoomMember(
         id: '${json['id']}',
         name: '${json['name']}',
         mobile: '${json['mobile'] ?? ''}',
@@ -839,7 +950,8 @@ class SearchMemberHit extends SearchHit {
   double get progress => rent <= 0 ? 0 : (paid / rent).clamp(0.0, 1.0);
 
   factory SearchMemberHit.fromJson(Map<String, dynamic> json) {
-    double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
+    double asDouble(dynamic v) =>
+        v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
     final cycle = (json['currentCycle'] as Map?)?.cast<String, dynamic>();
     final room = (json['room'] as Map?)?.cast<String, dynamic>();
     final overdue = (json['overdue'] as Map?)?.cast<String, dynamic>();
@@ -969,10 +1081,12 @@ class LandlordSummary {
   double get outstanding => due + notYetDue;
 
   /// Collection progress for this period, 0..1. Safe when rent is 0.
-  double get collectedFraction => totalRent <= 0 ? 0 : (collected / totalRent).clamp(0.0, 1.0);
+  double get collectedFraction =>
+      totalRent <= 0 ? 0 : (collected / totalRent).clamp(0.0, 1.0);
 
   factory LandlordSummary.fromJson(Map<String, dynamic> json) {
-    double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
+    double asDouble(dynamic v) =>
+        v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
     int asInt(dynamic v) => v is int ? v : int.tryParse('$v') ?? 0;
     return LandlordSummary(
       from: '${json['from'] ?? ''}',
@@ -1037,9 +1151,11 @@ class PaymentRecord {
   final List<PaymentAllocation> allocations;
 
   factory PaymentRecord.fromJson(Map<String, dynamic> json) {
-    double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
+    double asDouble(dynamic v) =>
+        v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
     // Populated docs are Maps; dangling refs arrive as id strings.
-    Map<String, dynamic>? asMap(dynamic v) => v is Map ? v.cast<String, dynamic>() : null;
+    Map<String, dynamic>? asMap(dynamic v) =>
+        v is Map ? v.cast<String, dynamic>() : null;
     final member = asMap(json['memberId']);
     final room = asMap(json['roomId']);
     final period = asMap(json['rentPeriodId']);
@@ -1056,10 +1172,17 @@ class PaymentRecord {
       periodStartIso: period == null ? '' : '${period['startDate'] ?? ''}',
       periodEndIso: period == null ? '' : '${period['endDate'] ?? ''}',
       createdAtIso: '${json['createdAt'] ?? ''}',
-      allocOverdue: json['allocOverdue'] == null ? null : asDouble(json['allocOverdue']),
-      allocCurrent: json['allocCurrent'] == null ? null : asDouble(json['allocCurrent']),
+      allocOverdue: json['allocOverdue'] == null
+          ? null
+          : asDouble(json['allocOverdue']),
+      allocCurrent: json['allocCurrent'] == null
+          ? null
+          : asDouble(json['allocCurrent']),
       allocations: (json['allocations'] as List? ?? [])
-          .map((e) => PaymentAllocation.fromJson((e as Map).cast<String, dynamic>()))
+          .map(
+            (e) =>
+                PaymentAllocation.fromJson((e as Map).cast<String, dynamic>()),
+          )
           .toList(),
     );
   }
@@ -1080,7 +1203,8 @@ class PaymentAllocation {
   final String periodEndIso;
 
   factory PaymentAllocation.fromJson(Map<String, dynamic> json) {
-    double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
+    double asDouble(dynamic v) =>
+        v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
     return PaymentAllocation(
       amount: asDouble(json['amount']),
       overdue: json['overdue'] == true,
@@ -1106,11 +1230,16 @@ class PaymentsPage {
   final double totalAmount;
 
   factory PaymentsPage.fromJson(Map<String, dynamic> json) {
-    double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
+    double asDouble(dynamic v) =>
+        v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
     int asInt(dynamic v) => v is int ? v : int.tryParse('$v') ?? 0;
     final rows = (json['rows'] as List? ?? []);
     return PaymentsPage(
-      rows: rows.map((e) => PaymentRecord.fromJson((e as Map).cast<String, dynamic>())).toList(),
+      rows: rows
+          .map(
+            (e) => PaymentRecord.fromJson((e as Map).cast<String, dynamic>()),
+          )
+          .toList(),
       total: asInt(json['total']),
       page: asInt(json['page']),
       pages: asInt(json['pages']),
@@ -1153,7 +1282,8 @@ class MemberPeriod {
   bool get isUpcoming => !started;
 
   factory MemberPeriod.fromJson(Map<String, dynamic> json) {
-    double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
+    double asDouble(dynamic v) =>
+        v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
     return MemberPeriod(
       id: '${json['_id']}',
       startIso: '${json['startDate']}',
@@ -1180,6 +1310,9 @@ class MemberProfile {
     required this.overdue,
     required this.notYetDue,
     required this.paidTotal,
+    required this.totalBilled,
+    required this.totalCollected,
+    required this.waivedAmount,
     required this.roomNumber,
   });
 
@@ -1201,6 +1334,16 @@ class MemberProfile {
   final double notYetDue;
 
   final double paidTotal;
+
+  /// Original rent billed across the member's whole stay.
+  final double totalBilled;
+
+  /// Cash collected from this member.
+  final double totalCollected;
+
+  /// Debt written off by the landlord.
+  final double waivedAmount;
+
   final String roomNumber;
 
   /// Everything owed right now: [due] + [overdue]. Derived rather than read, so
@@ -1214,6 +1357,7 @@ class MemberProfile {
   String get aadhaar => '${member['aadhaarNumber'] ?? ''}';
   String get status => '${member['status'] ?? 'active'}';
   bool get isActive => status.toLowerCase() == 'active';
+  DateTime? get vacatingDate => _asDate(member['vacatingDate']);
 
   double get monthlyRent {
     final v = member['monthlyRent'];
@@ -1223,7 +1367,8 @@ class MemberProfile {
   DateTime? get rentStartDate => _asDate(member['rentStartDate']);
   DateTime? get joiningDate => _asDate(member['joiningDate']) ?? rentStartDate;
 
-  static DateTime? _asDate(dynamic v) => v == null ? null : DateTime.tryParse('$v');
+  static DateTime? _asDate(dynamic v) =>
+      v == null ? null : DateTime.tryParse('$v');
 
   /// The period covering today, else the latest started one. Never a cycle
   /// that has not begun, which would report next month's rent as current.
@@ -1248,7 +1393,8 @@ class MemberProfile {
   }
 
   factory MemberProfile.fromJson(Map<String, dynamic> json) {
-    double asDouble(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
+    double asDouble(dynamic v) =>
+        v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
     final member = (json['member'] as Map? ?? {}).cast<String, dynamic>();
     final periods = ((json['periods'] as List? ?? []).cast<Map>())
         .map((e) => MemberPeriod.fromJson(e.cast<String, dynamic>()))
@@ -1256,13 +1402,13 @@ class MemberProfile {
     final room = (json['room'] as Map?)?.cast<String, dynamic>();
     // Before the server sent the split, it sent only outstanding and
     // futurePending. Fall back to those so an older response still reads right.
-    final notYetDue = asDouble(
-      json['notYetDue'] ?? json['futurePending'],
-    );
+    final notYetDue = asDouble(json['notYetDue'] ?? json['futurePending']);
     final due = asDouble(json['due']);
     final overdue = asDouble(json['overdue']);
-    final outstanding =
-        asDouble(json['outstanding']) > 0 ? asDouble(json['outstanding']) : due + overdue;
+    final outstanding = asDouble(json['outstanding']) > 0
+        ? asDouble(json['outstanding'])
+        : due + overdue;
+    final paidTotal = asDouble(json['paidTotal']);
     return MemberProfile(
       member: member,
       periods: periods,
@@ -1270,8 +1416,97 @@ class MemberProfile {
       due: due,
       overdue: overdue,
       notYetDue: notYetDue,
-      paidTotal: asDouble(json['paidTotal']),
+      paidTotal: paidTotal,
+      totalBilled: asDouble(json['totalBilled']),
+      totalCollected: asDouble(json['totalCollected'] ?? json['paidTotal']),
+      waivedAmount: asDouble(json['waivedAmount']),
       roomNumber: '${room?['roomNumber'] ?? ''}',
+    );
+  }
+}
+
+/// One former tenant in the Account > Vacated Members list.
+class VacatedMember {
+  VacatedMember({
+    required this.id,
+    required this.name,
+    required this.mobile,
+    required this.roomId,
+    required this.roomNumber,
+    required this.vacatingDate,
+    required this.monthlyRent,
+    required this.totalBilled,
+    required this.totalCollected,
+    required this.waivedAmount,
+    required this.stillToCollect,
+  });
+
+  final String id;
+  final String name;
+  final String mobile;
+  final String roomId;
+  final String roomNumber;
+  final DateTime? vacatingDate;
+  final double monthlyRent;
+  final double totalBilled;
+  final double totalCollected;
+  final double waivedAmount;
+  final double stillToCollect;
+
+  factory VacatedMember.fromJson(Map<String, dynamic> json) {
+    double asDouble(dynamic v) =>
+        v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
+    return VacatedMember(
+      id: '${json['_id']}',
+      name: '${json['name'] ?? ''}',
+      mobile: '${json['mobile'] ?? ''}',
+      roomId: '${json['roomId'] ?? ''}',
+      roomNumber: '${json['roomNumber'] ?? '-'}',
+      vacatingDate: json['vacatingDate'] == null
+          ? null
+          : DateTime.tryParse('${json['vacatingDate']}'),
+      monthlyRent: asDouble(json['monthlyRent']),
+      totalBilled: asDouble(json['totalBilled']),
+      totalCollected: asDouble(json['totalCollected']),
+      waivedAmount: asDouble(json['waivedAmount']),
+      stillToCollect: asDouble(json['stillToCollect']),
+    );
+  }
+}
+
+/// Payload for the Vacated Members page.
+class VacatedMembersReport {
+  VacatedMembersReport({
+    required this.members,
+    required this.memberCount,
+    required this.totalBilled,
+    required this.totalCollected,
+    required this.waivedAmount,
+    required this.totalStillToCollect,
+  });
+
+  final List<VacatedMember> members;
+  final int memberCount;
+  final double totalBilled;
+  final double totalCollected;
+  final double waivedAmount;
+  final double totalStillToCollect;
+
+  factory VacatedMembersReport.fromJson(Map<String, dynamic> json) {
+    double asDouble(dynamic v) =>
+        v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
+    int asInt(dynamic v) => v is int ? v : int.tryParse('$v') ?? 0;
+    final summary = (json['summary'] as Map? ?? {}).cast<String, dynamic>();
+    final rows = (json['members'] as List? ?? [])
+        .map((e) => VacatedMember.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+    return VacatedMembersReport(
+      members: rows,
+      memberCount: asInt(summary['memberCount']),
+      totalBilled: asDouble(summary['totalBilled']),
+      totalCollected: asDouble(summary['totalCollected']),
+      waivedAmount: asDouble(summary['waivedAmount']),
+      totalStillToCollect: asDouble(summary['totalStillToCollect']),
     );
   }
 }

@@ -12,6 +12,7 @@ import 'payment_history_page.dart';
 import 'room_detail_page.dart';
 import 'session_cache.dart';
 import 'status_colors.dart';
+import 'vacated_members_page.dart';
 import 'widgets.dart';
 
 class HomePage extends StatefulWidget {
@@ -61,22 +62,9 @@ class _HomePageState extends State<HomePage>
     curve: MotionCurve.smoothOut,
   );
 
-  /// Incoming tab: parked a full width to the right, slides home.
-  late final Animation<Offset> _inSlide = Tween<Offset>(
-    begin: const Offset(1, 0),
-    end: Offset.zero,
-  ).animate(_bandCurve);
-
-  /// Outgoing tab: rides the band off to the left.
-  late final Animation<Offset> _outSlide = Tween<Offset>(
-    begin: Offset.zero,
-    end: const Offset(-1, 0),
-  ).animate(_bandCurve);
-
-  /// Parked tab: holds at the centre (hidden by [Offstage] in the slot).
-  static final Animation<Offset> _parked = AlwaysStoppedAnimation<Offset>(
-    Offset.zero,
-  );
+  /// Which way the band travels: +1 when moving to a higher tab (the new page
+  /// enters from the right), -1 when moving back (it enters from the left).
+  int _navDirection = 1;
 
   /// Lets the shell ask a parked tab to refresh itself in the background.
   final _overdueKey = GlobalKey<OverduePageState>();
@@ -112,6 +100,11 @@ class _HomePageState extends State<HomePage>
 
   /// True while the box holds a term, which is what narrows the list.
   bool get _filtered => _search.text.trim().isNotEmpty;
+
+  /// True when the landlord has any overdue rent to chase, used for the red
+  /// dot on the header bell.
+  bool get _hasOverdue =>
+      (_summary?.overdue ?? 0) > 0 || (_overdueCache?.totalOverdue ?? 0) > 0;
 
   @override
   void initState() {
@@ -173,7 +166,7 @@ class _HomePageState extends State<HomePage>
   /// Search fetch that keeps the current content on screen with an inline
   /// loader, and ignores responses that a newer search has superseded.
   /// Searching never touches the month tiles, so only the body is re-fetched.
-  Future<void> _runSearch(String value) => _refreshList(keepList: true);
+  Future<bool> _runSearch(String value) => _refreshList(keepList: true);
 
   /// The current search term, or '' when the box is empty.
   String get _term => _search.text.trim();
@@ -275,14 +268,19 @@ class _HomePageState extends State<HomePage>
       return true;
     } catch (e) {
       if (!mounted || id != _roomsRequestId) return false;
-      if (e is ApiException && e.statusCode == 401) return false; // signed out above
+      if (e is ApiException && e.statusCode == 401) {
+        return false; // signed out above
+      }
       setState(() {
         _roomsLoading = false;
         _searching = false;
       });
       if (silent && !quiet) {
-        // Cached list stays on screen; mention the stale data quietly.
-        toastError(context, 'Offline — showing saved rooms.');
+        // Cached list stays on screen; tell the user the network is down.
+        toastError(
+          context,
+          'No internet connection. Please check your internet connection.',
+        );
       } else if (!silent) {
         setState(() {
           _roomsError = e;
@@ -314,12 +312,14 @@ class _HomePageState extends State<HomePage>
     }
   }
 
-  /// Single entry point for tab changes. The band always runs the same way -
-  /// whatever the index, the new page enters from the right and the old one
-  /// leaves to the left - so every switch looks identical to the thumb.
+  /// Single entry point for tab changes. The band follows the tab order: going
+  /// forward (e.g. Rooms -> Account) the new page enters from the right, while
+  /// going back (Account -> Rooms) it enters from the left, the way a pager
+  /// would move.
   void _goToTab(int next) {
     if (next == _tab) return;
     setState(() {
+      _navDirection = next > _tab ? 1 : -1;
       _prevTab = _tab;
       _tab = next;
     });
@@ -454,38 +454,14 @@ class _HomePageState extends State<HomePage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        // Soft shadow under the header so the scrolling list reads as content
-        // passing beneath it instead of blending into the bar.
-        elevation: 8,
-        scrolledUnderElevation: 8,
-        shadowColor: AppColors.mainText.withValues(alpha: 0.16),
-        surfaceTintColor: Colors.transparent,
-        leadingWidth: 56,
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 12, top: 8, bottom: 8),
-          child: Image.asset(
-            'logo.png',
-            fit: BoxFit.contain,
-            errorBuilder: (_, _, _) =>
-                const Icon(Icons.home_work_outlined, color: AppColors.primary),
-          ),
+      appBar: PreferredSize(
+        preferredSize: Size.fromHeight(
+          kToolbarHeight + MediaQuery.of(context).padding.top,
         ),
-        centerTitle: true,
-        title: const Text(
-          'Dashboard',
-          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [_headerSlot(0), _headerSlot(1), _headerSlot(2)],
         ),
-        actions: [
-          PressScale(
-            child: IconButton(
-              tooltip: 'Overdue dues',
-              icon: const Icon(Icons.notifications_outlined),
-              onPressed: () => _goToTab(1),
-            ),
-          ),
-          const SizedBox(width: 4),
-        ],
       ),
       body: Stack(
         fit: StackFit.expand,
@@ -524,36 +500,124 @@ class _HomePageState extends State<HomePage>
   /// the slot, throwing away the parked tab's State and refetching it.
   Widget _bandSlot(int tab) {
     final outgoing = tab == _prevTab && _prevTab != _tab;
-    final Animation<Offset> position = tab == _tab
-        ? _inSlide
-        : outgoing
-            ? _outSlide
-            : _parked;
     return Offstage(
       offstage: tab != _tab && !outgoing,
       child: AnimatedBuilder(
-        animation: position,
+        animation: _bandCurve,
         // Passed as `child` so the tab subtree is built once per home-page
         // build instead of once per animation frame.
         child: _tabBody(context, tab),
-        builder: (context, child) =>
-            FractionalTranslation(translation: position.value, child: child),
+        builder: (context, child) => FractionalTranslation(
+          translation: Offset(_tabOffset(tab), 0),
+          child: child,
+        ),
       ),
+    );
+  }
+
+  /// Horizontal position of [tab] for the current band value. The incoming tab
+  /// starts a full width away on the side matching [_navDirection]; the
+  /// outgoing tab rides off the opposite side.
+  double _tabOffset(int tab) {
+    final value = _bandCurve.value;
+    return tab == _tab ? _navDirection * (1 - value) : -_navDirection * value;
+  }
+
+  /// Header counterpart of [_bandSlot]: every tab owns a full app bar, and the
+  /// header travels with its page so the title, logo and bell slide in and out
+  /// on the same band instead of swapping statically.
+  Widget _headerSlot(int tab) {
+    final outgoing = tab == _prevTab && _prevTab != _tab;
+    return Offstage(
+      offstage: tab != _tab && !outgoing,
+      child: AnimatedBuilder(
+        animation: _bandCurve,
+        child: _tabAppBar(tab),
+        builder: (context, child) => FractionalTranslation(
+          translation: Offset(_tabOffset(tab), 0),
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  AppBar _tabAppBar(int tab) {
+    return AppBar(
+      // Soft shadow under the header so the scrolling list reads as content
+      // passing beneath it instead of blending into the bar.
+      elevation: 8,
+      scrolledUnderElevation: 8,
+      shadowColor: AppColors.mainText.withValues(alpha: 0.16),
+      surfaceTintColor: Colors.transparent,
+      leadingWidth: tab == 0 ? 56 : null,
+      leading: tab == 0
+          ? Padding(
+              padding: const EdgeInsets.only(left: 12, top: 8, bottom: 8),
+              child: Image.asset(
+                'logo.png',
+                fit: BoxFit.contain,
+                errorBuilder: (_, _, _) => const Icon(
+                  Icons.home_work_outlined,
+                  color: AppColors.primary,
+                ),
+              ),
+            )
+          : null,
+      centerTitle: true,
+      title: Text(switch (tab) {
+        1 => 'Overdue',
+        2 => 'Account',
+        _ => 'Dashboard',
+      }, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 20)),
+      actions: tab == 0
+          ? [
+              PressScale(
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    IconButton(
+                      tooltip: 'Overdue dues',
+                      icon: const Icon(Icons.notifications_outlined),
+                      onPressed: () => _goToTab(1),
+                    ),
+                    if (_hasOverdue)
+                      Positioned(
+                        top: 10,
+                        right: 10,
+                        child: Container(
+                          width: 9,
+                          height: 9,
+                          decoration: BoxDecoration(
+                            color: AppColors.danger,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: AppColors.card,
+                              width: 1.5,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 4),
+            ]
+          : null,
     );
   }
 
   Widget _tabBody(BuildContext context, int tab) {
     return switch (tab) {
       1 => OverduePage(
-          key: _overdueKey,
-          api: widget.api,
-          isAdmin: _isAdmin,
-          onAuthExpired: _signOut,
-          initialReport: _overdueCache,
-          onLoaded: (report) {
-            if (mounted) setState(() => _overdueCache = report);
-          },
-        ),
+        key: _overdueKey,
+        api: widget.api,
+        isAdmin: _isAdmin,
+        onAuthExpired: _signOut,
+        initialReport: _overdueCache,
+        onLoaded: (report) {
+          if (mounted) setState(() => _overdueCache = report);
+        },
+      ),
       2 => _accountTab(context),
       _ => _roomsTab(context),
     };
@@ -760,9 +824,22 @@ class _HomePageState extends State<HomePage>
 
   /// Fires the search for whatever is in the box right now. Nothing is sent
   /// while typing - this (or the keyboard's search key) is the trigger.
-  void _submitSearch() {
+  Future<void> _submitSearch() async {
     FocusScope.of(context).unfocus();
-    _runSearch(_search.text);
+    final term = _term;
+    if (term.isEmpty) return;
+    final ok = await _runSearch(term);
+    if (!ok || !mounted) return;
+    final hits = _hitsFor == term ? _hits : null;
+    if (hits == null) return;
+    if (hits.isEmpty) {
+      toastError(context, 'No matches for "$term".');
+    } else {
+      toastOk(
+        context,
+        '${hits.length} result${hits.length == 1 ? '' : 's'} for "$term".',
+      );
+    }
   }
 
   /// Search results as one flat list, in the order the server sends them:
@@ -814,15 +891,15 @@ class _HomePageState extends State<HomePage>
             delay: MotionDuration.stagger * (i % 8),
             child: switch (hits[i]) {
               final SearchRoomHit r => _RoomHitCard(
-                  hit: r,
-                  matchedLabel: _matchedLabel(r.matchedOn),
-                  onOpen: () => _openRoom(r.id, r.roomNumber),
-                ),
+                hit: r,
+                matchedLabel: _matchedLabel(r.matchedOn),
+                onOpen: () => _openRoom(r.id, r.roomNumber),
+              ),
               final SearchMemberHit m => _MemberHitCard(
-                  hit: m,
-                  matchedLabel: _matchedLabel(m.matchedOn),
-                  onOpen: m.roomId == null ? null : () => _openMember(m),
-                ),
+                hit: m,
+                matchedLabel: _matchedLabel(m.matchedOn),
+                onOpen: m.roomId == null ? null : () => _openMember(m),
+              ),
             },
           ),
           const SizedBox(height: 10),
@@ -833,13 +910,13 @@ class _HomePageState extends State<HomePage>
 
   /// 'roomNumber' -> 'room number', for display.
   static String _matchedLabel(String field) => switch (field) {
-        'roomNumber' => 'room name',
-        'aadhaarNumber' => 'aadhaar number',
-        'notes' => 'room notes',
-        'mobile' => 'mobile',
-        'name' => 'name',
-        _ => field,
-      };
+    'roomNumber' => 'room name',
+    'aadhaarNumber' => 'aadhaar number',
+    'notes' => 'room notes',
+    'mobile' => 'mobile',
+    'name' => 'name',
+    _ => field,
+  };
 
   Widget _emptyState(BuildContext context) {
     if (_filtered) {
@@ -872,13 +949,6 @@ class _HomePageState extends State<HomePage>
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
         children: [
-          Text(
-            'Account',
-            style: theme.textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 12),
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -947,6 +1017,16 @@ class _HomePageState extends State<HomePage>
                 PaymentHistoryPage(api: widget.api, isAdmin: isAdmin),
               ),
             ),
+          ),
+          const SizedBox(height: 8),
+          _menuTile(
+            context,
+            icon: Icons.person_off_outlined,
+            color: AppColors.secondaryText,
+            title: 'Vacated Members',
+            onTap: () => Navigator.of(
+              context,
+            ).push(smoothRoute(VacatedMembersPage(api: widget.api))),
           ),
           const SizedBox(height: 8),
           _menuTile(
@@ -1346,8 +1426,9 @@ class _MemberHitCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final vacated = hit.isVacated;
-    final color =
-        vacated ? AppColors.secondaryText : memberStatusColor(hit.cycleStatus);
+    final color = vacated
+        ? AppColors.secondaryText
+        : memberStatusColor(hit.cycleStatus);
     final overdue = hit.overdue;
     return PressScale(
       enabled: onOpen != null,

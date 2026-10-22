@@ -7,6 +7,8 @@ import 'motion.dart';
 import 'payment_drawer.dart';
 import 'payment_history_page.dart';
 import 'status_colors.dart';
+import 'vacate_member_page.dart';
+import 'waive_member_page.dart';
 import 'widgets.dart';
 
 /// Member details: profile, rent facts, action buttons and payment records.
@@ -119,6 +121,24 @@ class _MemberDetailPageState extends State<MemberDetailPage> {
     if (recorded && mounted) _reload();
   }
 
+  Future<void> _vacate(MemberProfile profile) async {
+    final vacated = await Navigator.of(context).push<bool>(
+      smoothRoute(VacateMemberPage(api: widget.api, profile: profile)),
+    );
+    if (vacated == true && mounted) await _load(soft: true);
+  }
+
+  Future<void> _waive(MemberProfile profile) async {
+    if (profile.outstanding <= 0) {
+      toastError(context, 'This member has no outstanding balance.');
+      return;
+    }
+    final waived = await Navigator.of(context).push<bool>(
+      smoothRoute(WaiveMemberPage(api: widget.api, profile: profile)),
+    );
+    if (waived == true && mounted) await _load(soft: true);
+  }
+
   @override
   Widget build(BuildContext context) {
     final profile = _profile;
@@ -131,17 +151,27 @@ class _MemberDetailPageState extends State<MemberDetailPage> {
         surfaceTintColor: Colors.transparent,
         leading: const PressScale(child: BackButton()),
         centerTitle: true,
-        title: const Text(
-          'Member Details',
-          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+        title: Text(
+          profile != null && !profile.isActive
+              ? 'Vacated Member'
+              : 'Member Details',
+          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
         ),
         actions: [
-          if (profile != null)
+          if (profile != null && profile.isActive)
             PressScale(
               child: IconButton(
                 tooltip: 'Edit member',
                 icon: const Icon(Icons.edit_outlined),
                 onPressed: () => _edit(profile),
+              ),
+            ),
+          if (profile != null && profile.isActive)
+            PressScale(
+              child: IconButton(
+                tooltip: 'Vacate member',
+                icon: const Icon(Icons.logout, color: AppColors.danger),
+                onPressed: () => _vacate(profile),
               ),
             ),
           const SizedBox(width: 4),
@@ -304,6 +334,7 @@ class _MemberDetailPageState extends State<MemberDetailPage> {
   Widget _infoCard(BuildContext context, MemberProfile profile) {
     final theme = Theme.of(context);
     final period = profile.current;
+    final active = profile.isActive;
 
     Widget field(String label, String value, {Color? valueColor}) {
       return Container(
@@ -358,31 +389,65 @@ class _MemberDetailPageState extends State<MemberDetailPage> {
             ? '—'
             : fmtDateIso(profile.joiningDate!.toIso8601String()),
       ),
+      if (!active)
+        field(
+          'Vacate on',
+          profile.vacatingDate == null
+              ? '—'
+              : fmtDateIso(profile.vacatingDate!.toIso8601String()),
+        ),
       field('Rent amount', '${inr(profile.monthlyRent)} / month'),
       field(
-        'Current rent period',
+        active ? 'Current rent period' : 'Last rent period',
         period == null
             ? 'No period yet'
             : '${fmtDateIso(period.startIso)} – ${fmtDateIso(period.endIso)}',
       ),
-      // Exactly three money figures, and they never double count: due and
-      // overdue are disjoint cycles, and the total is their sum. A cycle whose
-      // due date is still in the future is in none of them.
-      field(
-        'Due amt',
-        inr(profile.due),
-        valueColor: profile.due > 0 ? AppColors.warning : AppColors.success,
-      ),
-      field(
-        'Overdue amt',
-        inr(profile.overdue),
-        valueColor: profile.overdue > 0 ? AppColors.danger : AppColors.success,
-      ),
-      field(
-        'Total due amt',
-        inr(profile.totalDue),
-        valueColor: profile.totalDue > 0 ? AppColors.danger : AppColors.success,
-      ),
+      // Active: due + overdue are disjoint cycles, never double counted.
+      // Vacated: billed is the original obligation; collected and waived are
+      // what cleared it, so all three reconcile with still-to-collect.
+      if (active) ...[
+        field(
+          'Due amt',
+          inr(profile.due),
+          valueColor: profile.due > 0 ? AppColors.warning : AppColors.success,
+        ),
+        field(
+          'Overdue amt',
+          inr(profile.overdue),
+          valueColor: profile.overdue > 0
+              ? AppColors.danger
+              : AppColors.success,
+        ),
+        field(
+          'Total due amt',
+          inr(profile.totalDue),
+          valueColor: profile.totalDue > 0
+              ? AppColors.danger
+              : AppColors.success,
+        ),
+      ] else ...[
+        field('Total due', inr(profile.totalBilled)),
+        field(
+          'Total collected',
+          inr(profile.totalCollected),
+          valueColor: AppColors.success,
+        ),
+        field(
+          'Waived amount',
+          inr(profile.waivedAmount),
+          valueColor: profile.waivedAmount > 0
+              ? AppColors.warning
+              : AppColors.secondaryText,
+        ),
+        field(
+          'Still need to collect',
+          inr(profile.outstanding),
+          valueColor: profile.outstanding > 0
+              ? AppColors.danger
+              : AppColors.success,
+        ),
+      ],
     ];
 
     return Card(
@@ -417,9 +482,11 @@ class _MemberDetailPageState extends State<MemberDetailPage> {
     );
   }
 
-  /// Bottom bar matching the header: white surface, upward shadow, square
-  /// full-width action.
+  /// Bottom bar matching the header: white surface, upward shadow and the
+  /// actions that apply to the member. Vacate lives in the header instead.
   Widget _bottomActions(MemberProfile profile) {
+    final canPay = profile.outstanding > 0;
+    final active = profile.isActive;
     return Container(
       decoration: BoxDecoration(
         color: AppColors.card,
@@ -437,17 +504,47 @@ class _MemberDetailPageState extends State<MemberDetailPage> {
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
           child: SizedBox(
             height: 50,
-            child: PressScale(
-              child: FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: PressScale(
+                    enabled: canPay,
+                    child: FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      onPressed: canPay ? () => _recordPayment(profile) : null,
+                      icon: const Icon(Icons.payments_outlined, size: 18),
+                      label: const Text('Record Payment'),
+                    ),
                   ),
                 ),
-                onPressed: () => _recordPayment(profile),
-                icon: const Icon(Icons.payments_outlined, size: 18),
-                label: const Text('Record Payment'),
-              ),
+                if (!active) ...[
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: PressScale(
+                      enabled: canPay,
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          foregroundColor: AppColors.warning,
+                          side: const BorderSide(color: AppColors.warning),
+                        ),
+                        onPressed: canPay ? () => _waive(profile) : null,
+                        icon: const Icon(
+                          Icons.money_off_csred_outlined,
+                          size: 18,
+                        ),
+                        label: const Text('Waive'),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
         ),

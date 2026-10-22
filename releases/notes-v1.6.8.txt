@@ -1,0 +1,9 @@
+- New Vacated Members page with outstanding totals and payment history
+- Vacate members with a chosen date and optional note
+- Record payments or waive remaining debt from vacated member details
+- Full-page Vacate and Waive forms with centered headers
+- Vacate action moved to the member header as an icon
+- Vacated list uses the same gray member panel as home room cards
+- Room editing now opens a full page like member editing
+- Login mobile field accepts exactly 10 digits
+- Clearer API route-not-found error messages

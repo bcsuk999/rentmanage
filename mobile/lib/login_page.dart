@@ -198,12 +198,10 @@ class _LoginPageState extends State<LoginPage>
                                     hintText: 'Enter mobile number',
                                     prefixText: '+91 ',
                                   ),
-                                  keyboardType: TextInputType.phone,
+                                  keyboardType: TextInputType.number,
                                   inputFormatters: [
-                                    FilteringTextInputFormatter.allow(
-                                      RegExp(r'[0-9\s-]'),
-                                    ),
-                                    LengthLimitingTextInputFormatter(14),
+                                    FilteringTextInputFormatter.digitsOnly,
+                                    LengthLimitingTextInputFormatter(10),
                                   ],
                                   textInputAction: TextInputAction.next,
                                   autofillHints: const [

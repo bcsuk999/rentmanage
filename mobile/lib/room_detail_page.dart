@@ -6,6 +6,7 @@ import 'member_detail_page.dart';
 import 'member_form_page.dart';
 import 'motion.dart';
 import 'payment_drawer.dart';
+import 'room_form_page.dart';
 import 'status_colors.dart';
 import 'widgets.dart';
 
@@ -125,132 +126,11 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
     if (recorded && mounted) _refresh();
   }
 
-  Future<void> _showEditRoomDialog(RoomDetail detail) async {
-    final room = detail.room;
-    final roomNumber = TextEditingController(text: room.roomNumber);
-    final capacity = TextEditingController(text: room.capacity.toString());
-    final notes = TextEditingController(text: room.notes ?? '');
-    String status = room.status;
-    bool busy = false;
-    String? error;
-
-    await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setState) => AlertDialog(
-          title: const Text('Edit Room'),
-          content: SizedBox(
-            width: 360,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (error != null) ...[
-                  ShakeOnError(
-                    trigger: error,
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: AppColors.dangerSoft,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(error!),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                ],
-                TextField(
-                  controller: roomNumber,
-                  decoration: const InputDecoration(labelText: 'Room name'),
-                  textInputAction: TextInputAction.next,
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: capacity,
-                  decoration: const InputDecoration(labelText: 'Capacity'),
-                  keyboardType: TextInputType.number,
-                  textInputAction: TextInputAction.next,
-                ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  initialValue: status,
-                  decoration: const InputDecoration(labelText: 'Status'),
-                  items: const ['Empty', 'Occupied', 'Maintenance']
-                      .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                      .toList(),
-                  onChanged: (v) => setState(() => status = v ?? 'Empty'),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: notes,
-                  decoration: const InputDecoration(
-                    labelText: 'Notes (optional)',
-                  ),
-                  maxLines: 2,
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            PressScale(
-              enabled: !busy,
-              child: TextButton(
-                onPressed: busy ? null : () => Navigator.of(ctx).pop(false),
-                child: const Text('Cancel'),
-              ),
-            ),
-            PressScale(
-              enabled: !busy,
-              child: FilledButton(
-                onPressed: busy
-                    ? null
-                    : () async {
-                        final cap = int.tryParse(capacity.text.trim()) ?? 0;
-                        if (roomNumber.text.trim().isEmpty || cap < 1) {
-                          setState(
-                            () => error =
-                                'Enter a room name and a capacity of at least 1.',
-                          );
-                          return;
-                        }
-                        setState(() {
-                          busy = true;
-                          error = null;
-                        });
-                        try {
-                          await widget.api.updateRoom(
-                            roomId: widget.roomId,
-                            roomNumber: roomNumber.text.trim(),
-                            capacity: cap,
-                            status: status,
-                            notes: notes.text.trim().isEmpty
-                                ? null
-                                : notes.text.trim(),
-                          );
-                          if (!ctx.mounted) return;
-                          Navigator.of(ctx).pop(true);
-                        } on ApiException catch (e) {
-                          setState(() => error = e.message);
-                        } catch (_) {
-                          setState(() => error = 'Could not reach the server.');
-                        } finally {
-                          if (ctx.mounted) setState(() => busy = false);
-                        }
-                      },
-                child: busy
-                    ? const SizedBox(
-                        height: 18,
-                        width: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Save'),
-              ),
-            ),
-          ],
-        ),
-      ),
+  Future<void> _editRoom(RoomDetail detail) async {
+    final updated = await Navigator.of(context).push<bool>(
+      smoothRoute(RoomFormPage(api: widget.api, room: detail.room)),
     );
-    await _refresh();
+    if (updated == true && mounted) _refresh();
   }
 
   @override
@@ -309,7 +189,7 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
               child: IconButton(
                 tooltip: 'Edit room',
                 icon: const Icon(Icons.edit_outlined),
-                onPressed: () => _showEditRoomDialog(detail),
+                onPressed: () => _editRoom(detail),
               ),
             ),
           const SizedBox(width: 4),
@@ -483,18 +363,21 @@ class _MoneyCards extends StatelessWidget {
       childAspectRatio: 1.9,
       children: [
         SummaryMetric(
+          compact: true,
           icon: Icons.receipt_outlined,
           value: inr(detail.totalRent),
           label: 'Expected',
           color: AppColors.mainText,
         ),
         SummaryMetric(
+          compact: true,
           icon: Icons.wallet_outlined,
           value: inr(detail.totalPaid),
           label: 'Collected',
           color: AppColors.success,
         ),
         SummaryMetric(
+          compact: true,
           icon: Icons.pending_actions_outlined,
           value: inr(detail.totalDue),
           label: 'Remaining',

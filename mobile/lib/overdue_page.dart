@@ -92,7 +92,10 @@ class OverduePageState extends State<OverduePage> {
         if (_report == null) _error = e;
       });
       if (_report != null) {
-        toastError(context, 'Offline — showing saved overdue data.');
+        toastError(
+          context,
+          'No internet connection. Please check your internet connection.',
+        );
       }
       return false;
     } finally {
@@ -272,23 +275,21 @@ class OverduePageState extends State<OverduePage> {
             for (final b in buckets)
               Padding(
                 padding: const EdgeInsets.only(right: 8),
-                child: PressScale(
-                  child: FilterChip(
-                    label: Text(b),
-                    selected: _bucket == b,
-                    onSelected: (_) => setState(() => _bucket = b),
-                    selectedColor: AppColors.danger.withValues(alpha: 0.15),
-                    checkmarkColor: AppColors.danger,
-                    labelStyle: TextStyle(
-                      color: _bucket == b
-                          ? AppColors.danger
-                          : AppColors.secondaryText,
-                      fontWeight:
-                          _bucket == b ? FontWeight.w700 : FontWeight.w500,
-                    ),
-                    side: BorderSide(
-                      color: _bucket == b ? AppColors.danger : AppColors.border,
-                    ),
+                child: FilterChip(
+                  label: Text(b),
+                  selected: _bucket == b,
+                  showCheckmark: false,
+                  onSelected: (_) => setState(() => _bucket = b),
+                  selectedColor: AppColors.danger.withValues(alpha: 0.15),
+                  checkmarkColor: AppColors.danger,
+                  labelStyle: TextStyle(
+                    color: _bucket == b
+                        ? AppColors.danger
+                        : AppColors.secondaryText,
+                    fontWeight: _bucket == b ? FontWeight.w700 : FontWeight.w500,
+                  ),
+                  side: BorderSide(
+                    color: _bucket == b ? AppColors.danger : AppColors.border,
                   ),
                 ),
               ),
@@ -358,12 +359,11 @@ class _OverdueCardState extends State<_OverdueCard> {
             ],
           ),
         );
-    return PressScale(
-      child: Card(
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: _toggle,
-          child: Column(
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: GestureDetector(
+        onTap: _toggle,
+        child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Ribbon sits flush against the card's top-left corner.
@@ -543,7 +543,6 @@ class _OverdueCardState extends State<_OverdueCard> {
             ],
           ),
         ),
-      ),
     );
   }
 }
