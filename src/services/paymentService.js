@@ -31,15 +31,15 @@ function dateFilter(value, field) {
 
 /**
  * Record a payment against a rent period.
- * Server-side guards: period must exist, must not be closed, the payment date
- * must fall inside the period, and the amount cannot exceed the member's total
- * outstanding balance. The amount is allocated oldest-overdue-first, then to
- * the selected cycle, and each cleared cycle is credited via `allocations`.
+ * The server sets paymentDate to today's India calendar date; clients cannot
+ * backdate it to a rent-period boundary. createdAt retains the exact timestamp.
+ * The period must exist and be open, and the amount cannot exceed the member's
+ * total outstanding balance. The amount is allocated oldest-overdue-first,
+ * then to the selected cycle, and each cleared cycle is credited via allocations.
  */
 async function addPayment({
   rentPeriodId,
   amount,
-  paymentDate,
   paymentMethod,
   reference,
   notes,
@@ -60,17 +60,7 @@ async function addPayment({
   if (!member) {
     throw new ValidationError([{ field: 'rentPeriod', message: 'Member not found for this period' }]);
   }
-  const on = parseDateInput(paymentDate) || startOfDay(new Date());
-  // The date may be today even when the selected cycle already ended (that is
-  // exactly the overdue case); it just cannot predate the cycle.
-  if (startOfDay(on) < startOfDay(period.startDate)) {
-    throw new ValidationError([
-      {
-        field: 'paymentDate',
-        message: 'Payment date cannot be before the selected rent period',
-      },
-    ]);
-  }
+  const on = today();
   const amountValue = Number(amount);
   if (!Number.isFinite(amountValue) || amountValue <= 0) {
     throw new ValidationError([{ field: 'amount', message: 'Amount must be greater than 0' }]);

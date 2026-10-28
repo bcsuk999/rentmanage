@@ -28,7 +28,8 @@ const paymentSchema = new mongoose.Schema(
       required: true,
     },
     amount: { type: Number, required: [true, 'Amount is required'], min: [1, 'Amount must be greater than 0'] },
-    paymentDate: { type: Date, required: true, default: Date.now },
+    // India calendar day when money was recorded; createdAt stores exact time.
+    paymentDate: { type: Date, required: true },
     paymentMethod: { type: String, enum: PAYMENT_METHODS, required: true },
     // How this payment was split: oldest dues first, then the current cycle.
     // Absent on payments recorded before the split was tracked.

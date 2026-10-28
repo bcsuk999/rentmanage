@@ -42,12 +42,12 @@ class OverduePageState extends State<OverduePage> {
 
   /// Guards against overlapping fetches (silent refresh on top of a pull).
   bool _inFlight = false;
+  bool _refreshAfterCurrentLoad = false;
 
   /// Re-fetches in the background when the tab is revisited. Silent by design:
   /// the report already on screen stays visible and is swapped in place, so the
   /// skeleton never comes back. The first load is left to initState.
   Future<void> refreshSilently() async {
-    if (_report == null) return;
     await _load();
   }
 
@@ -57,6 +57,22 @@ class OverduePageState extends State<OverduePage> {
     _report = widget.initialReport;
     // Skeleton only when there is nothing cached to show yet.
     _loading = _report == null;
+    globalConnectionRestored.addListener(_onConnectionRestored);
+    _load();
+  }
+
+  @override
+  void dispose() {
+    globalConnectionRestored.removeListener(_onConnectionRestored);
+    super.dispose();
+  }
+
+  void _onConnectionRestored() {
+    if (!mounted) return;
+    if (_inFlight) {
+      _refreshAfterCurrentLoad = true;
+      return;
+    }
     _load();
   }
 
@@ -74,6 +90,12 @@ class OverduePageState extends State<OverduePage> {
   Future<bool> _load() async {
     if (_inFlight) return false;
     _inFlight = true;
+    if (_report == null && mounted) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
       final report = await _fetch();
       if (!mounted) return false;
@@ -86,20 +108,26 @@ class OverduePageState extends State<OverduePage> {
       return true;
     } catch (e) {
       if (!mounted) return false;
-      if (e is ApiException && e.statusCode == 401) return false; // signed out above
+      if (e is ApiException && e.statusCode == 401) {
+        return false; // signed out above
+      }
       setState(() {
         _loading = false;
         if (_report == null) _error = e;
       });
-      if (_report != null) {
+      if (_report != null && (e is! ApiException || e.statusCode != null)) {
         toastError(
           context,
-          'No internet connection. Please check your internet connection.',
+          e is ApiException ? e.message : 'Unable to refresh the overdue list.',
         );
       }
       return false;
     } finally {
       _inFlight = false;
+      if (_refreshAfterCurrentLoad && mounted) {
+        _refreshAfterCurrentLoad = false;
+        _load();
+      }
     }
   }
 
@@ -186,6 +214,13 @@ class OverduePageState extends State<OverduePage> {
         );
       }
       if (_error != null) {
+        if (_error is ApiException &&
+            (_error as ApiException).statusCode == null) {
+          return ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            children: const [SizedBox(height: 220)],
+          );
+        }
         final message = _error is ApiException
             ? (_error as ApiException).message
             : 'Unable to load the latest data. Check your internet connection and try again.';
@@ -329,220 +364,220 @@ class _OverdueCardState extends State<_OverdueCard> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     Widget detail(String label, String value) => Padding(
-          padding: const EdgeInsets.only(bottom: 6),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Text(
-                  label,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: AppColors.secondaryText,
-                  ),
-                ),
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: AppColors.secondaryText,
               ),
-              Text(
-                ':',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: AppColors.secondaryText,
-                ),
-              ),
-              Expanded(
-                child: Text(
-                  value,
-                  textAlign: TextAlign.right,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
-        );
+          Text(
+            ':',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: AppColors.secondaryText,
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
     return Card(
       clipBehavior: Clip.antiAlias,
       child: GestureDetector(
         onTap: _toggle,
         child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Ribbon sits flush against the card's top-left corner.
-              Row(
-                children: [
-                  // Expanded (not Flexible + Spacer) so the ribbon slot takes all
-                  // the leftover width and the amount stays pinned to the right edge.
-                  Expanded(
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 6,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Ribbon sits flush against the card's top-left corner.
+            Row(
+              children: [
+                // Expanded (not Flexible + Spacer) so the ribbon slot takes all
+                // the leftover width and the amount stays pinned to the right edge.
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            AppColors.danger,
+                            AppColors.danger.withValues(alpha: 0.7),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
                         ),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              AppColors.danger,
-                              AppColors.danger.withValues(alpha: 0.7),
-                            ],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          borderRadius: const BorderRadius.only(
-                            bottomRight: Radius.circular(20),
-                          ),
+                        borderRadius: const BorderRadius.only(
+                          bottomRight: Radius.circular(20),
                         ),
-                        child: Text(
-                          member.name.isEmpty ? '?' : member.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
-                          ),
+                      ),
+                      child: Text(
+                        member.name.isEmpty ? '?' : member.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
                         ),
                       ),
                     ),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.only(right: 14),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'Overdue :',
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(right: 14),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Overdue :',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.secondaryText,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        inr(member.totalOverdue),
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.danger,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 8, 8, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Room ${member.roomNumber} · $days day${days == 1 ? '' : 's'} overdue',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodySmall?.copyWith(
-                            fontWeight: FontWeight.w600,
                             color: AppColors.secondaryText,
                           ),
                         ),
-                        const SizedBox(width: 4),
-                        Text(
-                          inr(member.totalOverdue),
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.danger,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(14, 8, 8, 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            'Room ${member.roomNumber} · $days day${days == 1 ? '' : 's'} overdue',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: AppColors.secondaryText,
-                            ),
-                          ),
-                        ),
-                        PressScale(
-                          child: IconButton(
+                      ),
+                      PressScale(
+                        child: IconButton(
                             tooltip:
                                 _expanded ? 'Hide details' : 'Show details',
-                            visualDensity: VisualDensity.compact,
-                            icon: Icon(
-                              _expanded ? Icons.expand_less : Icons.expand_more,
-                              size: 20,
-                              color: AppColors.secondaryText,
-                            ),
-                            onPressed: _toggle,
+                          visualDensity: VisualDensity.compact,
+                          icon: Icon(
+                            _expanded ? Icons.expand_less : Icons.expand_more,
+                            size: 20,
+                            color: AppColors.secondaryText,
                           ),
+                          onPressed: _toggle,
                         ),
-                      ],
-                    ),
-                    if (_expanded) ...[
-                      const SizedBox(height: 8),
-                      const Divider(height: 1),
-                      const SizedBox(height: 10),
-                      detail('Room', member.roomNumber),
-                      if (member.mobile.isNotEmpty)
-                        detail('Phone', member.mobile),
+                      ),
+                    ],
+                  ),
+                  if (_expanded) ...[
+                    const SizedBox(height: 8),
+                    const Divider(height: 1),
+                    const SizedBox(height: 10),
+                    detail('Room', member.roomNumber),
+                    if (member.mobile.isNotEmpty)
+                      detail('Phone', member.mobile),
                       detail(
                         'Days overdue',
                         '$days day${days == 1 ? '' : 's'}',
                       ),
-                      const SizedBox(height: 6),
-                      for (final p in member.periods)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 6),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  const Icon(
-                                    Icons.calendar_month_outlined,
-                                    size: 16,
-                                    color: AppColors.secondaryText,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Expanded(
-                                    child: Text(
-                                      '${p.start == null ? '?' : fmtDateShort(p.start!)} – ${p.end == null ? '?' : fmtDateShort(p.end!)}',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
+                    const SizedBox(height: 6),
+                    for (final p in member.periods)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.calendar_month_outlined,
+                                  size: 16,
+                                  color: AppColors.secondaryText,
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    '${p.start == null ? '?' : fmtDateShort(p.start!)} – ${p.end == null ? '?' : fmtDateShort(p.end!)}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                       style:
                                           theme.textTheme.bodySmall?.copyWith(
-                                        fontWeight: FontWeight.w600,
-                                      ),
+                                      fontWeight: FontWeight.w600,
                                     ),
-                                  ),
-                                  Text(
-                                    inr(p.pending),
-                                    style: const TextStyle(
-                                      color: AppColors.danger,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                  if (widget.isAdmin && p.pending > 0)
-                                    PressScale(
-                                      child: TextButton(
-                                        onPressed: () =>
-                                            widget.onRecord(member, p),
-                                        style: TextButton.styleFrom(
-                                          visualDensity: VisualDensity.compact,
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                          ),
-                                          minimumSize: const Size(0, 30),
-                                          tapTargetSize:
-                                              MaterialTapTargetSize.shrinkWrap,
-                                        ),
-                                        child: const Text('Record'),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                              Padding(
-                                padding: const EdgeInsets.only(left: 22),
-                                child: Text(
-                                  'Rent ${inr(p.rent)} · Paid ${inr(p.paid)}',
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: AppColors.secondaryText,
                                   ),
                                 ),
+                                Text(
+                                  inr(p.pending),
+                                  style: const TextStyle(
+                                    color: AppColors.danger,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                if (widget.isAdmin && p.pending > 0)
+                                  PressScale(
+                                    child: TextButton(
+                                      onPressed: () =>
+                                          widget.onRecord(member, p),
+                                      style: TextButton.styleFrom(
+                                        visualDensity: VisualDensity.compact,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                        ),
+                                        minimumSize: const Size(0, 30),
+                                        tapTargetSize:
+                                            MaterialTapTargetSize.shrinkWrap,
+                                      ),
+                                      child: const Text('Record'),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.only(left: 22),
+                              child: Text(
+                                'Rent ${inr(p.rent)} · Paid ${inr(p.paid)}',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: AppColors.secondaryText,
+                                ),
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
-                    ],
+                      ),
                   ],
-                ),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
+      ),
     );
   }
 }

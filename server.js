@@ -1,5 +1,7 @@
 'use strict';
 
+require('./src/config/timezone');
+
 const express = require('express');
 const cors = require('cors');
 require('dotenv').config();

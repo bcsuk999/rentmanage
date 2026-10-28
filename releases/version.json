@@ -1,6 +1,6 @@
 {
-  "version": "1.6.9",
-  "build": 13,
-  "apkUrl": "https://raw.githubusercontent.com/bcsuk999/rentmanage/main/releases/rentmanage-arm64-v1.6.9.apk",
-  "message": "Improved offline reconnection notices, 15-minute frontend cache expiry, and secure remembered sign-in with password visibility toggle."
+  "version": "1.6.10",
+  "build": 14,
+  "apkUrl": "https://raw.githubusercontent.com/bcsuk999/rentmanage/main/releases/rentmanage-arm64-v1.6.10.apk",
+  "message": "Improved payment date handling and India timezone consistency."
 }

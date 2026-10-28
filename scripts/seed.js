@@ -5,6 +5,7 @@
  * Usage: npm run seed            -> landlord (+ legacy admin) only
  *        npm run seed -- --demo  -> admin + sample rooms, members and payments
  */
+require('../src/config/timezone');
 require('dotenv').config();
 
 const bcrypt = require('bcryptjs');

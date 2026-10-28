@@ -109,6 +109,7 @@ class _RentManageAppState extends State<RentManageApp>
     _connectivityRetryDeadline = null;
     _connectivityProbeTimer?.cancel();
     clearGlobalOfflineStatus();
+    notifyGlobalConnectionRestored();
     showGlobalToast('Internet connected.', successBackground: true);
   }
 

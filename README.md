@@ -39,6 +39,7 @@ Useful scripts:
 | `MONGODB_URI` | MongoDB connection string, e.g. `mongodb+srv://user:pass@cluster.mongodb.net/?appName=rentmanage` |
 | `SESSION_SECRET` | Long random string used to sign session cookies |
 | `PORT` | HTTP port (default `3000`) |
+| `TZ` | Backend timezone; fixed to `Asia/Kolkata` (IST) |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Admin credentials. Used by `npm run seed`, and on server start to create the admin if it is missing |
 | `ADMIN_NAME` / `ADMIN_CONTACT` | Admin display name and contact |
 | `ALLOW_REGISTRATION` | `false` hides `/register` and disables self-service sign-up |
@@ -124,6 +125,8 @@ PWA install and service workers require HTTPS in production (`localhost` is exem
 
 `NODE_ENV=production` is set by the blueprint; the app then trusts the proxy (so the `secure`
 session cookie is issued over Render's HTTPS), and refuses to boot without `SESSION_SECRET`.
+The backend runs in `Asia/Kolkata`; date-only rent and payment values remain stored as UTC-midnight
+calendar dates, while timestamp inputs are interpreted using their India calendar date.
 
 The database is Atlas, so the admin user and demo data must already exist — run `npm run seed`
 locally (or `npm run seed -- --demo`) against the same `MONGODB_URI` once.

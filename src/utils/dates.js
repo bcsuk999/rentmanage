@@ -1,11 +1,24 @@
 'use strict';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const TIME_ZONE = require('../config/timezone');
+const indiaDateFormatter = new Intl.DateTimeFormat('en-US', {
+  timeZone: TIME_ZONE,
+  year: 'numeric',
+  month: 'numeric',
+  day: 'numeric',
+});
 
-/** Today at UTC midnight, derived from the local calendar date. */
-function today() {
-  const now = new Date();
-  return new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+function dateInIndia(value) {
+  const parts = Object.fromEntries(
+    indiaDateFormatter.formatToParts(value).map(({ type, value: part }) => [type, Number(part)])
+  );
+  return new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
+}
+
+/** India's current calendar date, represented at UTC midnight for date-only storage. */
+function today(reference = new Date()) {
+  return dateInIndia(reference);
 }
 
 /** Normalise any date-ish value to UTC midnight. */
@@ -90,7 +103,7 @@ function toDateInput(value) {
   return d.toISOString().slice(0, 10);
 }
 
-/** Parse YYYY-MM-DD (or a full ISO string) into UTC midnight. Returns null when invalid. */
+/** Parse a date into UTC midnight; timestamps are reduced to their India calendar date. */
 function parseDateInput(value) {
   if (!value) return null;
   if (value instanceof Date) {
@@ -111,7 +124,8 @@ function parseDateInput(value) {
     return date;
   }
   const parsed = new Date(text);
-  return Number.isNaN(parsed.getTime()) ? null : startOfDay(parsed);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return dateInIndia(parsed);
 }
 
 function isValidDate(value) {

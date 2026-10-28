@@ -444,9 +444,7 @@ class _PaymentDrawerState extends State<PaymentDrawer> {
     final now = DateTime.now();
     if (period == null) return now;
     final start = DateTime.tryParse(period.startIso);
-    final end = DateTime.tryParse(period.endIso);
     if (start != null && now.isBefore(start)) return start;
-    if (end != null && now.isAfter(end)) return end;
     return now;
   }
 
@@ -586,8 +584,9 @@ class _PaymentDrawerState extends State<PaymentDrawer> {
                   child: IconButton(
                     tooltip: 'Back',
                     icon: const Icon(Icons.arrow_back),
-                    onPressed:
-                        _busy ? null : () => Navigator.of(context).pop(false),
+                    onPressed: _busy
+                        ? null
+                        : () => Navigator.of(context).pop(false),
                   ),
                 ),
               ),
@@ -754,10 +753,9 @@ class _PaymentDrawerState extends State<PaymentDrawer> {
   }
 
   Widget _label(ThemeData theme, String text) => Text(
-        text,
-        style:
-            theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-      );
+    text,
+    style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+  );
 
   Widget _allocationPreview(ThemeData theme, double amount) {
     final lines = previewAllocation(_cycles, amount);
@@ -858,8 +856,8 @@ class _PaymentDrawerState extends State<PaymentDrawer> {
     final tag = line.cycle.overdue
         ? 'Overdue period'
         : line.cycle.advance
-            ? 'Advance period'
-            : 'Current period';
+        ? 'Advance period'
+        : 'Current period';
     return AllocationPeriodRow(
       label: line.cycle.label,
       amount: line.applied,

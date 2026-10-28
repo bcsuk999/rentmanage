@@ -106,7 +106,7 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
   /// flash after the very first load.
   static const Duration _cacheTtl = Duration(minutes: 15);
   static final Map<String, ({List<PaymentRecord> records, DateTime savedAt})>
-      _cache = {};
+  _cache = {};
 
   /// Drops every cached page (called on sign-out).
   static void clearCache() => _cache.clear();
@@ -134,7 +134,8 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
   void initState() {
     super.initState();
     final cached = _cache[_cacheKey];
-    final isFresh = cached != null &&
+    final isFresh =
+        cached != null &&
         cached.records.isNotEmpty &&
         DateTime.now().difference(cached.savedAt) <= _cacheTtl;
     if (isFresh) {
@@ -312,7 +313,9 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
                 title: Text(
                   m,
                   style: TextStyle(
-                    fontWeight: m == _method ? FontWeight.w700 : FontWeight.w500,
+                    fontWeight: m == _method
+                        ? FontWeight.w700
+                        : FontWeight.w500,
                     color: m == _method
                         ? AppColors.primary
                         : AppColors.mainText,
@@ -522,8 +525,7 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
                   Icon(
                     icon,
                     size: 13,
-                    color:
-                        active ? AppColors.primary : AppColors.secondaryText,
+                    color: active ? AppColors.primary : AppColors.secondaryText,
                   ),
                   const SizedBox(width: 4),
                   Expanded(
@@ -691,9 +693,11 @@ class _PaymentCardState extends State<_PaymentCard> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final clock = fmtTimeIso(record.createdAtIso);
-    final time = clock.isEmpty
+    final createdAt = DateTime.tryParse(record.createdAtIso)?.toLocal();
+    final paymentDate = createdAt == null
         ? fmtDateIso(record.dateIso)
-        : '$clock  ·  ${fmtDateIso(record.dateIso)}';
+        : fmtDateMedium(createdAt);
+    final time = clock.isEmpty ? paymentDate : '$clock  ·  $paymentDate';
     final rentPeriod = record.periodStartIso.isEmpty
         ? '-'
         : '${fmtDateShortIso(record.periodStartIso)} – ${fmtDateShortIso(record.periodEndIso)}';
@@ -733,127 +737,127 @@ class _PaymentCardState extends State<_PaymentCard> {
       child: InkWell(
         onTap: _toggle,
         child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Ribbon sits flush against the card's top-left corner.
-              Row(
-                children: [
-                  // Expanded (not Flexible + Spacer) so the ribbon slot takes all
-                  // the leftover width and the amount stays pinned to the right edge.
-                  Expanded(
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 6,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Ribbon sits flush against the card's top-left corner.
+            Row(
+              children: [
+                // Expanded (not Flexible + Spacer) so the ribbon slot takes all
+                // the leftover width and the amount stays pinned to the right edge.
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            AppColors.primary,
+                            AppColors.primary.withValues(alpha: 0.7),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
                         ),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              AppColors.primary,
-                              AppColors.primary.withValues(alpha: 0.7),
-                            ],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          borderRadius: const BorderRadius.only(
-                            bottomRight: Radius.circular(20),
-                          ),
+                        borderRadius: const BorderRadius.only(
+                          bottomRight: Radius.circular(20),
                         ),
-                        child: Text(
-                          record.memberName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
-                          ),
+                      ),
+                      child: Text(
+                        record.memberName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
                         ),
                       ),
                     ),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.only(right: 14),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'Paid :',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.secondaryText,
-                          ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(right: 14),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Paid :',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.secondaryText,
                         ),
-                        const SizedBox(width: 4),
-                        Text(
-                          inr(record.amount),
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.success,
-                          ),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        inr(record.amount),
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.success,
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(14, 8, 8, 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            time,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: AppColors.secondaryText,
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          tooltip: _expanded ? 'Hide details' : 'Show details',
-                          visualDensity: VisualDensity.compact,
-                          icon: Icon(
-                            _expanded ? Icons.expand_less : Icons.expand_more,
-                            size: 20,
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 8, 8, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          time,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall?.copyWith(
                             color: AppColors.secondaryText,
                           ),
-                          onPressed: _toggle,
                         ),
-                      ],
-                    ),
-                    if (_expanded) ...[
+                      ),
+                      IconButton(
+                        tooltip: _expanded ? 'Hide details' : 'Show details',
+                        visualDensity: VisualDensity.compact,
+                        icon: Icon(
+                          _expanded ? Icons.expand_less : Icons.expand_more,
+                          size: 20,
+                          color: AppColors.secondaryText,
+                        ),
+                        onPressed: _toggle,
+                      ),
+                    ],
+                  ),
+                  if (_expanded) ...[
+                    const SizedBox(height: 8),
+                    const Divider(height: 1),
+                    const SizedBox(height: 10),
+                    detail('Room', record.roomNumber),
+                    if (record.memberMobile.isNotEmpty)
+                      detail('Phone', record.memberMobile),
+                    detail('Rent period', rentPeriod),
+                    detail('Method', record.method),
+                    if (record.notes.isNotEmpty) detail('Note', record.notes),
+                    if (record.allocations.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      _allocationBreakdown(context, theme),
+                    ] else if (record.allocOverdue != null) ...[
                       const SizedBox(height: 8),
-                      const Divider(height: 1),
-                      const SizedBox(height: 10),
-                      detail('Room', record.roomNumber),
-                      if (record.memberMobile.isNotEmpty)
-                        detail('Phone', record.memberMobile),
-                      detail('Rent period', rentPeriod),
-                      detail('Method', record.method),
-                      if (record.notes.isNotEmpty) detail('Note', record.notes),
-                      if (record.allocations.isNotEmpty) ...[
-                        const SizedBox(height: 4),
-                        _allocationBreakdown(context, theme),
-                      ] else if (record.allocOverdue != null) ...[
-                        const SizedBox(height: 8),
-                        detail(
-                          'Allocation',
-                          'Overdue ${inr(record.allocOverdue!)} · Current ${inr(record.allocCurrent ?? 0)}',
-                        ),
-                      ],
+                      detail(
+                        'Allocation',
+                        'Overdue ${inr(record.allocOverdue!)} · Current ${inr(record.allocCurrent ?? 0)}',
+                      ),
                     ],
                   ],
-                ),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
+      ),
     );
   }
 

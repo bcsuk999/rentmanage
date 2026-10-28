@@ -11,7 +11,7 @@ const PASSWORD_RULES = [
   { test: (p) => /[0-9]/.test(p), message: 'Password must include a number' },
 ];
 
-const TOKEN_TTL = '8h';
+const TOKEN_TTL = process.env.TOKEN_TTL || '8h';
 
 function validatePassword(password) {
   const errors = PASSWORD_RULES.filter((rule) => !rule.test(String(password || ''))).map(

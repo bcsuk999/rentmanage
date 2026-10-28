@@ -43,7 +43,6 @@ router.post(
       const payment = await paymentService.addPayment({
         rentPeriodId: req.body.rentPeriodId,
         amount: req.body.amount,
-        paymentDate: req.body.paymentDate,
         paymentMethod: req.body.paymentMethod,
         reference: req.body.reference,
         notes: req.body.notes,

@@ -608,6 +608,7 @@ class _Toast {
 
 final ValueNotifier<_Toast?> _toast = ValueNotifier<_Toast?>(null);
 final ValueNotifier<bool> _offlineStatus = ValueNotifier(false);
+final ValueNotifier<int> globalConnectionRestored = ValueNotifier(0);
 int _toastSeq = 0;
 
 void showGlobalOfflineStatus() {
@@ -616,6 +617,10 @@ void showGlobalOfflineStatus() {
 
 void clearGlobalOfflineStatus() {
   _offlineStatus.value = false;
+}
+
+void notifyGlobalConnectionRestored() {
+  globalConnectionRestored.value++;
 }
 
 void _showToast(
