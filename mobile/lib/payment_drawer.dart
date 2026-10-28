@@ -575,7 +575,7 @@ class _PaymentDrawerState extends State<PaymentDrawer> {
       child: SafeArea(
         bottom: false,
         child: SizedBox(
-          height: 60,
+          height: kToolbarHeight,
           child: Stack(
             alignment: Alignment.center,
             children: [

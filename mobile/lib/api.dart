@@ -335,6 +335,11 @@ class ApiClient {
   /// Never throws: _throw still raises the ApiException for local handling.
   void Function()? onAuthExpired;
 
+  /// Called when a request cannot reach the server, or when a response proves
+  /// that the server is reachable again.
+  void Function()? onConnectionLost;
+  void Function()? onConnectionRestored;
+
   Map<String, String> get _headers => {
     'Content-Type': 'application/json',
     if (token != null) 'Authorization': 'Bearer $token',
@@ -346,18 +351,58 @@ class ApiClient {
   static const Duration _requestTimeout = Duration(seconds: 25);
 
   /// Runs one HTTP call with a timeout, surfacing hangs and network failures as
-  /// a normal [ApiException] so every screen shows its error panel.
-  Future<http.Response> _send(Future<http.Response> Function() run) async {
+  /// a normal [ApiException].
+  Future<http.Response> _send(
+    Future<http.Response> Function() run, {
+    bool skipAuthCheck = false,
+    bool markConnectionRestored = true,
+  }) async {
+    if (!skipAuthCheck && token != null && SessionCache.isTokenExpired(token)) {
+      try {
+        onAuthExpired?.call();
+      } catch (_) {}
+      throw ApiException('Session expired. Sign in again.', statusCode: 401);
+    }
     try {
-      return await run().timeout(_requestTimeout);
+      final response = await run().timeout(_requestTimeout);
+      if (markConnectionRestored) onConnectionRestored?.call();
+      return response;
     } on TimeoutException {
+      onConnectionLost?.call();
       throw ApiException(
         'The server is taking too long to respond. Check your connection and try again.',
       );
     } on http.ClientException {
+      onConnectionLost?.call();
       throw ApiException(
         'Could not reach the server. Check your connection and try again.',
       );
+    }
+  }
+
+  /// Checks connectivity using the API's existing root route, without auth.
+  /// Closing the client on timeout prevents abandoned probes accumulating.
+  Future<void> checkConnection() async {
+    final client = http.Client();
+    try {
+      final response = await client
+          .get(Uri.parse('$baseUrl/'))
+          .timeout(const Duration(milliseconds: 900));
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw ApiException(
+          'Connection check failed (${response.statusCode}).',
+          statusCode: response.statusCode,
+        );
+      }
+      onConnectionRestored?.call();
+    } on TimeoutException {
+      onConnectionLost?.call();
+      throw ApiException('Connection check timed out.');
+    } on http.ClientException {
+      onConnectionLost?.call();
+      throw ApiException('Could not reach the server.');
+    } finally {
+      client.close();
     }
   }
 

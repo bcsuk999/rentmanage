@@ -24,7 +24,8 @@ class RentManageApp extends StatefulWidget {
   State<RentManageApp> createState() => _RentManageAppState();
 }
 
-class _RentManageAppState extends State<RentManageApp> {
+class _RentManageAppState extends State<RentManageApp>
+    with WidgetsBindingObserver {
   final ApiClient _api = ApiClient(apiBaseUrl);
   Map<String, dynamic>? _user;
   List<Room>? _initialRooms;
@@ -49,11 +50,23 @@ class _RentManageAppState extends State<RentManageApp> {
   final GlobalKey<NavigatorState> _navKey = GlobalKey<NavigatorState>();
   bool _updateChecked = false;
 
+  Timer? _tokenExpiryTimer;
+  Timer? _periodicExpiryTimer;
+  bool _isHandlingAuthExpired = false;
+  Timer? _connectivityProbeTimer;
+  bool _isOffline = false;
+  bool _connectivityProbeInProgress = false;
+  DateTime? _connectivityRetryDeadline;
+  bool _appIsForeground = true;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // Any 401 from any screen signs out centrally (expired/revoked token).
-    _api.onAuthExpired = _handleSignOut;
+    _api.onAuthExpired = _handleAuthExpired;
+    _api.onConnectionLost = _handleConnectionLost;
+    _api.onConnectionRestored = _handleConnectionRestored;
     _splashTimer = Timer(_minimumSplash, () {
       if (!mounted) return;
       setState(() => _splashTimerDone = true);
@@ -64,8 +77,129 @@ class _RentManageAppState extends State<RentManageApp> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _stopExpiryTimers();
+    _connectivityProbeTimer?.cancel();
     _splashTimer?.cancel();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _appIsForeground = state == AppLifecycleState.resumed;
+    if (state == AppLifecycleState.resumed) {
+      _checkTokenExpiration();
+      if (_isOffline) _restartConnectivityRetryWindow();
+    } else {
+      _connectivityProbeTimer?.cancel();
+    }
+  }
+
+  void _handleConnectionLost() {
+    if (!_isOffline) {
+      _isOffline = true;
+      showGlobalOfflineStatus();
+      _restartConnectivityRetryWindow();
+    }
+  }
+
+  void _handleConnectionRestored() {
+    if (!_isOffline) return;
+    _isOffline = false;
+    _connectivityRetryDeadline = null;
+    _connectivityProbeTimer?.cancel();
+    clearGlobalOfflineStatus();
+    showGlobalToast('Internet connected.', successBackground: true);
+  }
+
+  void _restartConnectivityRetryWindow() {
+    if (!_isOffline || !_appIsForeground) return;
+    _connectivityRetryDeadline = DateTime.now().add(
+      const Duration(seconds: 20),
+    );
+    _scheduleConnectivityProbe(Duration.zero);
+  }
+
+  void _scheduleConnectivityProbe(Duration delay) {
+    if (!_isOffline ||
+        !_appIsForeground ||
+        _connectivityProbeInProgress ||
+        _connectivityRetryDeadline == null ||
+        !DateTime.now().isBefore(_connectivityRetryDeadline!)) {
+      return;
+    }
+    _connectivityProbeTimer?.cancel();
+    _connectivityProbeTimer = Timer(delay, _probeConnectivity);
+  }
+
+  Future<void> _probeConnectivity() async {
+    if (!_isOffline ||
+        !_appIsForeground ||
+        _connectivityProbeInProgress ||
+        _connectivityRetryDeadline == null ||
+        !DateTime.now().isBefore(_connectivityRetryDeadline!)) {
+      return;
+    }
+    final probeStartedAt = DateTime.now();
+    _connectivityProbeInProgress = true;
+    try {
+      await _api.checkConnection();
+    } on ApiException {
+      // The offline banner remains visible while the next probe is scheduled.
+    } finally {
+      _connectivityProbeInProgress = false;
+    }
+
+    if (_isOffline &&
+        _appIsForeground &&
+        _connectivityRetryDeadline != null &&
+        DateTime.now().isBefore(_connectivityRetryDeadline!)) {
+      final elapsed = DateTime.now().difference(probeStartedAt);
+      final nextDelay = const Duration(seconds: 1) - elapsed;
+      _scheduleConnectivityProbe(
+        nextDelay.isNegative ? Duration.zero : nextDelay,
+      );
+    }
+  }
+
+  void _checkTokenExpiration() {
+    final token = _api.token;
+    if (token != null && SessionCache.isTokenExpired(token)) {
+      _handleAuthExpired();
+    }
+  }
+
+  void _scheduleTokenExpiry(String? token) {
+    _tokenExpiryTimer?.cancel();
+    _tokenExpiryTimer = null;
+    if (token == null) return;
+
+    final expiry = SessionCache.getTokenExpiry(token);
+    if (expiry == null) return;
+
+    final remaining = expiry.difference(DateTime.now());
+    if (remaining <= Duration.zero) {
+      _handleAuthExpired();
+      return;
+    }
+
+    _tokenExpiryTimer = Timer(remaining, () {
+      _handleAuthExpired();
+    });
+  }
+
+  void _startPeriodicExpiryCheck() {
+    _periodicExpiryTimer?.cancel();
+    _periodicExpiryTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      _checkTokenExpiration();
+    });
+  }
+
+  void _stopExpiryTimers() {
+    _tokenExpiryTimer?.cancel();
+    _tokenExpiryTimer = null;
+    _periodicExpiryTimer?.cancel();
+    _periodicExpiryTimer = null;
   }
 
   /// Restore cached token/user/rooms so sign-in and data survive restarts.
@@ -74,6 +208,8 @@ class _RentManageAppState extends State<RentManageApp> {
     List<Room>? cachedRooms;
     if (session.token != null) {
       _api.token = session.token;
+      _scheduleTokenExpiry(session.token);
+      _startPeriodicExpiryCheck();
       cachedRooms = await SessionCache.loadRooms();
     }
     if (mounted) {
@@ -134,6 +270,8 @@ class _RentManageAppState extends State<RentManageApp> {
   Future<void> _handleSignedIn(Map<String, dynamic> user) async {
     final token = _api.token;
     if (token != null) {
+      _scheduleTokenExpiry(token);
+      _startPeriodicExpiryCheck();
       try {
         await SessionCache.saveSession(token, user);
       } catch (_) {
@@ -148,7 +286,14 @@ class _RentManageAppState extends State<RentManageApp> {
     }
   }
 
+  void _onPageChanged() {
+    if (_isOffline) _restartConnectivityRetryWindow();
+  }
+
   Future<void> _handleSignOut() async {
+    _stopExpiryTimers();
+    _navKey.currentState?.popUntil((route) => route.isFirst);
+    _api.token = null;
     try {
       await SessionCache.clearSession();
     } catch (_) {
@@ -160,6 +305,37 @@ class _RentManageAppState extends State<RentManageApp> {
         _user = null;
         _initialRooms = null;
       });
+    }
+  }
+
+  Future<void> _handleAuthExpired() async {
+    if (_isHandlingAuthExpired) return;
+    if (_user == null && _api.token == null) return;
+    _isHandlingAuthExpired = true;
+
+    try {
+      _stopExpiryTimers();
+      _api.token = null;
+
+      // Pop all open dialogs, bottom sheets, or pushed routes back to root
+      _navKey.currentState?.popUntil((route) => route.isFirst);
+      PaymentHistoryListState.clearCache();
+      if (mounted) {
+        setState(() {
+          _user = null;
+          _initialRooms = null;
+        });
+      }
+
+      try {
+        await SessionCache.clearSession();
+      } catch (_) {
+        // ignore
+      }
+
+      showGlobalToast('Session expired. Please sign in again.', error: true);
+    } finally {
+      _isHandlingAuthExpired = false;
     }
   }
 
@@ -177,6 +353,7 @@ class _RentManageAppState extends State<RentManageApp> {
         user: _user!,
         initialRooms: _initialRooms,
         onSignOut: _handleSignOut,
+        onPageChanged: _onPageChanged,
         onFirstFrame: _onPagePainted,
       );
     } else {
@@ -196,10 +373,7 @@ class _RentManageAppState extends State<RentManageApp> {
       switchOutCurve: MotionCurve.easeInOut,
       layoutBuilder: (currentChild, previousChildren) => Stack(
         fit: StackFit.expand,
-        children: [
-          ...previousChildren,
-          ?currentChild,
-        ],
+        children: [...previousChildren, ?currentChild],
       ),
       transitionBuilder: (child, animation) => FadeTransition(
         opacity: animation,
@@ -216,8 +390,8 @@ class _RentManageAppState extends State<RentManageApp> {
           _restoring
               ? 'restoring'
               : _user != null
-                  ? 'home'
-                  : 'login',
+              ? 'home'
+              : 'login',
         ),
         child: page,
       ),
@@ -234,6 +408,7 @@ class _RentManageAppState extends State<RentManageApp> {
       // screen (including dialogs and the sign-in page).
       builder: (context, child) =>
           TopToastHost(child: child ?? const SizedBox.shrink()),
+      navigatorObservers: [_ConnectivityNavigatorObserver(_onPageChanged)],
       // The splash is a sibling of the shell, not a replacement for it, so the
       // real screen keeps its state while the splash paints over it.
       home: Stack(
@@ -267,7 +442,8 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMixin {
+class _SplashScreenState extends State<SplashScreen>
+    with TickerProviderStateMixin {
   late final AnimationController _drift;
   late final AnimationController _pop;
   late final Animation<double> _scale;
@@ -284,9 +460,10 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
       vsync: this,
       duration: const Duration(milliseconds: 750),
     )..forward();
-    _scale = Tween<double>(begin: 0.5, end: 1.0).animate(
-      CurvedAnimation(parent: _pop, curve: Curves.elasticOut),
-    );
+    _scale = Tween<double>(
+      begin: 0.5,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _pop, curve: Curves.elasticOut));
     _fade = CurvedAnimation(parent: _pop, curve: Curves.easeOut);
   }
 
@@ -391,10 +568,13 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
                 const SizedBox(height: 6),
                 FadeTransition(
                   opacity: _fade,
-                  child: Text('Manage your rooms, collect rent, stay organized.',
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodyMedium
-                          ?.copyWith(color: AppColors.secondaryText)),
+                  child: Text(
+                    'Manage your rooms, collect rent, stay organized.',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: AppColors.secondaryText,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -483,8 +663,10 @@ class _UpdateAvailableDialog extends StatelessWidget {
               const SizedBox(height: 14),
               Center(
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.primary.withValues(alpha: 0.10),
                     borderRadius: BorderRadius.circular(999),
@@ -531,8 +713,7 @@ class _UpdateAvailableDialog extends StatelessWidget {
                           child: Text(
                             line,
                             style: theme.textTheme.bodySmall?.copyWith(
-                              color:
-                                  AppColors.mainText.withValues(alpha: 0.82),
+                              color: AppColors.mainText.withValues(alpha: 0.82),
                               height: 1.4,
                             ),
                           ),
@@ -570,5 +751,29 @@ class _UpdateAvailableDialog extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _ConnectivityNavigatorObserver extends NavigatorObserver {
+  _ConnectivityNavigatorObserver(this.onNavigation);
+
+  final VoidCallback onNavigation;
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    super.didPush(route, previousRoute);
+    onNavigation();
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    super.didPop(route, previousRoute);
+    onNavigation();
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
+    onNavigation();
   }
 }

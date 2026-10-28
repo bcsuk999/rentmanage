@@ -22,6 +22,7 @@ class HomePage extends StatefulWidget {
     required this.user,
     this.initialRooms,
     required this.onSignOut,
+    this.onPageChanged,
     this.onFirstFrame,
   });
 
@@ -29,6 +30,7 @@ class HomePage extends StatefulWidget {
   final Map<String, dynamic> user;
   final List<Room>? initialRooms;
   final VoidCallback onSignOut;
+  final VoidCallback? onPageChanged;
 
   /// Fired once the dashboard has painted its first frame - UI only, before any
   /// data has arrived - so the shell can drop the splash covering it.
@@ -81,6 +83,7 @@ class _HomePageState extends State<HomePage>
   LandlordSummary? _summary;
   bool _summaryLoading = true;
   OverdueReport? _overdueCache;
+  DateTime? _overdueCacheTime;
   final _search = TextEditingController();
 
   /// Separate guards for the two endpoints: changing the month must not
@@ -103,8 +106,16 @@ class _HomePageState extends State<HomePage>
 
   /// True when the landlord has any overdue rent to chase, used for the red
   /// dot on the header bell.
-  bool get _hasOverdue =>
-      (_summary?.overdue ?? 0) > 0 || (_overdueCache?.totalOverdue ?? 0) > 0;
+  bool get _hasOverdue {
+    if (_overdueCacheTime != null &&
+        DateTime.now().difference(_overdueCacheTime!) >
+            const Duration(minutes: 15)) {
+      _overdueCache = null;
+      _overdueCacheTime = null;
+    }
+    return (_summary?.overdue ?? 0) > 0 ||
+        (_overdueCache?.totalOverdue ?? 0) > 0;
+  }
 
   @override
   void initState() {
@@ -318,6 +329,7 @@ class _HomePageState extends State<HomePage>
   /// would move.
   void _goToTab(int next) {
     if (next == _tab) return;
+    widget.onPageChanged?.call();
     setState(() {
       _navDirection = next > _tab ? 1 : -1;
       _prevTab = _tab;
@@ -353,6 +365,10 @@ class _HomePageState extends State<HomePage>
         _roomsLoading = false;
       });
     } else {
+      toastError(
+        context,
+        'Cached data has expired (15-min limit) or is unavailable.',
+      );
       _refresh();
     }
   }
@@ -455,9 +471,7 @@ class _HomePageState extends State<HomePage>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: PreferredSize(
-        preferredSize: Size.fromHeight(
-          kToolbarHeight + MediaQuery.of(context).padding.top,
-        ),
+        preferredSize: const Size.fromHeight(kToolbarHeight),
         child: Stack(
           fit: StackFit.expand,
           children: [_headerSlot(0), _headerSlot(1), _headerSlot(2)],
@@ -613,9 +627,19 @@ class _HomePageState extends State<HomePage>
         api: widget.api,
         isAdmin: _isAdmin,
         onAuthExpired: _signOut,
-        initialReport: _overdueCache,
+        initialReport:
+            (_overdueCacheTime != null &&
+                DateTime.now().difference(_overdueCacheTime!) <=
+                    const Duration(minutes: 15))
+            ? _overdueCache
+            : null,
         onLoaded: (report) {
-          if (mounted) setState(() => _overdueCache = report);
+          if (mounted) {
+            setState(() {
+              _overdueCache = report;
+              _overdueCacheTime = DateTime.now();
+            });
+          }
         },
       ),
       2 => _accountTab(context),

@@ -593,6 +593,7 @@ class _Toast {
     required this.message,
     required this.error,
     required this.seq,
+    this.successBackground = false,
     this.actionLabel,
     this.onAction,
   });
@@ -600,17 +601,28 @@ class _Toast {
   final String message;
   final bool error;
   final int seq;
+  final bool successBackground;
   final String? actionLabel;
   final VoidCallback? onAction;
 }
 
 final ValueNotifier<_Toast?> _toast = ValueNotifier<_Toast?>(null);
+final ValueNotifier<bool> _offlineStatus = ValueNotifier(false);
 int _toastSeq = 0;
 
+void showGlobalOfflineStatus() {
+  _offlineStatus.value = true;
+}
+
+void clearGlobalOfflineStatus() {
+  _offlineStatus.value = false;
+}
+
 void _showToast(
-  BuildContext context,
+  BuildContext? context,
   String message, {
   required bool error,
+  bool successBackground = false,
   String? actionLabel,
   VoidCallback? onAction,
 }) {
@@ -618,19 +630,20 @@ void _showToast(
     message: message,
     error: error,
     seq: ++_toastSeq,
+    successBackground: successBackground,
     actionLabel: actionLabel,
     onAction: onAction,
   );
 }
 
 /// Green success toast, only after server-confirmed writes.
-void toastOk(BuildContext context, String message) {
+void toastOk(BuildContext? context, String message) {
   _showToast(context, message, error: false);
 }
 
 /// Red toast for failed requests and blocked actions.
 void toastError(
-  BuildContext context,
+  BuildContext? context,
   String message, {
   String? actionLabel,
   VoidCallback? onAction,
@@ -639,6 +652,24 @@ void toastError(
     context,
     message,
     error: true,
+    actionLabel: actionLabel,
+    onAction: onAction,
+  );
+}
+
+/// Global toast helper that can be called without a BuildContext.
+void showGlobalToast(
+  String message, {
+  bool error = false,
+  bool successBackground = false,
+  String? actionLabel,
+  VoidCallback? onAction,
+}) {
+  _showToast(
+    null,
+    message,
+    error: error,
+    successBackground: successBackground,
     actionLabel: actionLabel,
     onAction: onAction,
   );
@@ -663,6 +694,15 @@ class _TopToastHostState extends State<TopToastHost> {
   void initState() {
     super.initState();
     _toast.addListener(_onToast);
+    _offlineStatus.addListener(_onOfflineStatusChanged);
+  }
+
+  void _onOfflineStatusChanged() {
+    if (_offlineStatus.value) {
+      _hideTimer?.cancel();
+      _visible = null;
+    }
+    if (mounted) setState(() {});
   }
 
   void _onToast() {
@@ -679,12 +719,13 @@ class _TopToastHostState extends State<TopToastHost> {
   void dispose() {
     _hideTimer?.cancel();
     _toast.removeListener(_onToast);
+    _offlineStatus.removeListener(_onOfflineStatusChanged);
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final toast = _visible;
+    final toast = _offlineStatus.value ? null : _visible;
     return Stack(
       children: [
         widget.child,
@@ -708,13 +749,51 @@ class _TopToastHostState extends State<TopToastHost> {
                   child: child,
                 ),
               ),
-              child: toast == null
+              child: _offlineStatus.value
+                  ? const _OfflineBanner(key: ValueKey('offline-banner'))
+                  : toast == null
                   ? const SizedBox.shrink()
                   : _ToastBanner(key: ValueKey(toast.seq), toast: toast),
             ),
           ),
         ),
       ],
+    );
+  }
+}
+
+class _OfflineBanner extends StatelessWidget {
+  const _OfflineBanner({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Color(0xFF9A3412),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minHeight: kToolbarHeight),
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.wifi_off_outlined, color: Colors.white, size: 20),
+              SizedBox(width: 10),
+              Flexible(
+                child: Text(
+                  'No internet connection. Connecting...',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                    height: 1.3,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -729,7 +808,9 @@ class _ToastBanner extends StatelessWidget {
     // Material gives the banner text a proper ancestor (no debug yellow
     // underline) and paints the full-width black band flush with the top edge.
     return Material(
-      color: const Color(0xF2000000),
+      color: toast.successBackground
+          ? const Color(0xFF15803D)
+          : const Color(0xF2000000),
       child: SafeArea(
         bottom: false,
         child: ConstrainedBox(
@@ -745,6 +826,8 @@ class _ToastBanner extends StatelessWidget {
                       : Icons.check_circle_outline,
                   color: toast.error
                       ? const Color(0xFFF87171)
+                      : toast.successBackground
+                      ? Colors.white
                       : const Color(0xFF4ADE80),
                   size: 20,
                 ),

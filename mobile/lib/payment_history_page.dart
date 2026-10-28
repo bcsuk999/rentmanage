@@ -104,7 +104,9 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
   /// In-memory first-page cache keyed by scope. Lets the list paint instantly
   /// on revisit while a silent background fetch refreshes it - no skeleton
   /// flash after the very first load.
-  static final Map<String, List<PaymentRecord>> _cache = {};
+  static const Duration _cacheTtl = Duration(minutes: 15);
+  static final Map<String, ({List<PaymentRecord> records, DateTime savedAt})>
+      _cache = {};
 
   /// Drops every cached page (called on sign-out).
   static void clearCache() => _cache.clear();
@@ -132,12 +134,16 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
   void initState() {
     super.initState();
     final cached = _cache[_cacheKey];
-    if (cached != null && cached.isNotEmpty) {
+    final isFresh = cached != null &&
+        cached.records.isNotEmpty &&
+        DateTime.now().difference(cached.savedAt) <= _cacheTtl;
+    if (isFresh) {
       // Show the cached page immediately, then refresh silently.
-      _rows.addAll(cached);
+      _rows.addAll(cached.records);
       _loading = false;
       _load(reset: true, soft: true);
     } else {
+      if (cached != null) _cache.remove(_cacheKey);
       _load(reset: true);
     }
   }
@@ -211,7 +217,10 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
         _loadingMore = false;
       });
       if (reset && _cacheableQuery) {
-        _cache[_cacheKey] = List<PaymentRecord>.of(_rows);
+        _cache[_cacheKey] = (
+          records: List<PaymentRecord>.of(_rows),
+          savedAt: DateTime.now(),
+        );
       }
       return true;
     } on ApiException catch (e) {

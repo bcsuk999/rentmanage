@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'api.dart';
 import 'app_theme.dart';
 import 'motion.dart';
+import 'session_cache.dart';
 import 'widgets.dart';
 
 class LoginPage extends StatefulWidget {
@@ -32,6 +33,8 @@ class _LoginPageState extends State<LoginPage>
   final _password = TextEditingController();
   bool _registerMode = false;
   bool _busy = false;
+  bool _rememberMe = false;
+  bool _showPassword = false;
 
   late final AnimationController _enter;
   late final Animation<double> _fade;
@@ -49,6 +52,7 @@ class _LoginPageState extends State<LoginPage>
       begin: const Offset(0, 0.06),
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _enter, curve: Curves.easeOutCubic));
+    _loadRememberedCredentials();
     final first = widget.onFirstFrame;
     if (first != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) => first());
@@ -65,6 +69,34 @@ class _LoginPageState extends State<LoginPage>
   }
 
   String _digits(String v) => v.replaceAll(RegExp(r'[\s-]'), '');
+
+  Future<void> _loadRememberedCredentials() async {
+    try {
+      final credentials = await SessionCache.loadRememberedCredentials();
+      if (!mounted || credentials == null) return;
+      setState(() {
+        _mobile.text = credentials.mobile;
+        _password.text = credentials.password;
+        _rememberMe = true;
+      });
+    } catch (e) {
+      if (mounted) {
+        toastError(context, 'Could not load remembered sign-in details.');
+      }
+    }
+  }
+
+  Future<void> _setRememberMe(bool value) async {
+    setState(() => _rememberMe = value);
+    if (value) return;
+    try {
+      await SessionCache.clearRememberedCredentials();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _rememberMe = true);
+      toastError(context, 'Could not remove saved sign-in details.');
+    }
+  }
 
   Future<void> _submit() async {
     final mobile = _digits(_mobile.text.trim());
@@ -87,6 +119,26 @@ class _LoginPageState extends State<LoginPage>
               name: _name.text.trim().isEmpty ? null : _name.text.trim(),
             )
           : await widget.api.login(mobile, _password.text);
+      if (!_registerMode) {
+        try {
+          if (_rememberMe) {
+            await SessionCache.saveRememberedCredentials(
+              mobile: mobile,
+              password: _password.text,
+            );
+          } else {
+            await SessionCache.clearRememberedCredentials();
+          }
+        } catch (e) {
+          if (mounted) {
+            setState(() => _rememberMe = false);
+            toastError(
+              context,
+              'Signed in, but could not save sign-in details securely.',
+            );
+          }
+        }
+      }
       widget.onSignedIn(user);
     } on ApiException catch (e) {
       if (mounted) toastError(context, e.message);
@@ -130,17 +182,17 @@ class _LoginPageState extends State<LoginPage>
                           fit: BoxFit.cover,
                           errorBuilder: (context, error, stackTrace) =>
                               Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: const BoxDecoration(
-                              color: AppColors.primary,
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(
-                              Icons.home_work_outlined,
-                              size: 36,
-                              color: Colors.white,
-                            ),
-                          ),
+                                padding: const EdgeInsets.all(16),
+                                decoration: const BoxDecoration(
+                                  color: AppColors.primary,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.home_work_outlined,
+                                  size: 36,
+                                  color: Colors.white,
+                                ),
+                              ),
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -148,8 +200,8 @@ class _LoginPageState extends State<LoginPage>
                         'Manage your rooms, collect rent, stay organized.',
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: AppColors.secondaryText,
-                            ),
+                          color: AppColors.secondaryText,
+                        ),
                       ),
                       const SizedBox(height: 20),
                       Card(
@@ -216,12 +268,41 @@ class _LoginPageState extends State<LoginPage>
                                     helperText: _registerMode
                                         ? '8+ characters with upper, lower case and a number'
                                         : null,
+                                    suffixIcon: IconButton(
+                                      tooltip: _showPassword
+                                          ? 'Hide password'
+                                          : 'Show password',
+                                      onPressed: () => setState(
+                                        () => _showPassword = !_showPassword,
+                                      ),
+                                      icon: Icon(
+                                        _showPassword
+                                            ? Icons.visibility_off_outlined
+                                            : Icons.visibility_outlined,
+                                      ),
+                                    ),
                                   ),
-                                  obscureText: true,
+                                  obscureText: !_showPassword,
                                   textInputAction: TextInputAction.done,
                                   autofillHints: const [AutofillHints.password],
                                   onSubmitted: (_) => _submit(),
                                 ),
+                                if (!_registerMode) ...[
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: [
+                                      Checkbox(
+                                        value: _rememberMe,
+                                        onChanged: _busy
+                                            ? null
+                                            : (value) => _setRememberMe(
+                                                value ?? false,
+                                              ),
+                                      ),
+                                      const Text('Remember me'),
+                                    ],
+                                  ),
+                                ],
                                 const SizedBox(height: 20),
                                 PressScale(
                                   enabled: !_busy,
@@ -254,8 +335,8 @@ class _LoginPageState extends State<LoginPage>
                                     onPressed: _busy
                                         ? null
                                         : () => setState(() {
-                                              _registerMode = !_registerMode;
-                                            }),
+                                            _registerMode = !_registerMode;
+                                          }),
                                     child: Text(
                                       _registerMode
                                           ? 'Already have an account? Sign in'

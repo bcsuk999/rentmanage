@@ -1,0 +1,5 @@
+- Persistent offline connection notice with one-second recovery checks for up to 20 seconds
+- Green confirmation when the API connection is restored
+- Frontend cached data expires after 15 minutes
+- Remember me stores sign-in credentials in secure device storage
+- Password visibility toggle on the sign-in form
