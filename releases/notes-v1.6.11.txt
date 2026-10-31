@@ -1,0 +1,3 @@
+- Payment history now lists the most recent payment card on top and older cards below
+- Cards show the payment date, matching the newest-first order
+- Member details refresh the payment ledger right after a payment is recorded, so the new card appears at the top immediately

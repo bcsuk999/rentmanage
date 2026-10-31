@@ -38,6 +38,10 @@ class _MemberDetailPageState extends State<MemberDetailPage> {
   String? _error;
   bool _inFlight = false;
 
+  /// Lets the embedded ledger refresh right after a payment is recorded, so
+  /// the new card appears at the top without leaving the page.
+  final _paymentsKey = GlobalKey<PaymentHistoryListState>();
+
   @override
   void initState() {
     super.initState();
@@ -118,7 +122,10 @@ class _MemberDetailPageState extends State<MemberDetailPage> {
       memberName: profile.name,
       periodId: profile.current?.id,
     );
-    if (recorded && mounted) _reload();
+    if (recorded && mounted) {
+      _reload();
+      await _paymentsKey.currentState?.reload();
+    }
   }
 
   Future<void> _vacate(MemberProfile profile) async {
@@ -234,6 +241,7 @@ class _MemberDetailPageState extends State<MemberDetailPage> {
           ),
           const SizedBox(height: 8),
           PaymentHistoryList(
+            key: _paymentsKey,
             api: widget.api,
             isAdmin: true,
             memberId: widget.memberId,

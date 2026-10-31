@@ -1,6 +1,6 @@
 {
-  "version": "1.6.10",
-  "build": 14,
-  "apkUrl": "https://raw.githubusercontent.com/bcsuk999/rentmanage/main/releases/rentmanage-arm64-v1.6.10.apk",
-  "message": "Improved payment date handling and India timezone consistency."
+  "version": "1.6.11",
+  "build": 15,
+  "apkUrl": "https://raw.githubusercontent.com/bcsuk999/rentmanage/main/releases/rentmanage-arm64-v1.6.11.apk",
+  "message": "Payment history now shows the most recent payment card on top and older cards below. The new card appears immediately after recording a payment."
 }

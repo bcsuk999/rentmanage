@@ -66,6 +66,24 @@ class _PaymentHistoryPageState extends State<PaymentHistoryPage> {
   }
 }
 
+/// Orders payment cards newest first: by the payment date, then by when the
+/// record was saved, so two payments on the same day still read correctly.
+///
+/// The API already sorts this way, but sorting again on-device keeps cached
+/// pages, paging and client-side search from ever leaving an older card above
+/// a more recent one.
+void sortPaymentsNewestFirst(List<PaymentRecord> rows) {
+  DateTime stamp(String iso) =>
+      DateTime.tryParse(iso) ?? DateTime.fromMillisecondsSinceEpoch(0);
+  rows.sort((a, b) {
+    final byDate = stamp(b.dateIso).compareTo(stamp(a.dateIso));
+    if (byDate != 0) return byDate;
+    final bySaved = stamp(b.createdAtIso).compareTo(stamp(a.createdAtIso));
+    if (bySaved != 0) return bySaved;
+    return b.id.compareTo(a.id);
+  });
+}
+
 /// Embeddable records list (also used inside the Member Details page).
 class PaymentHistoryList extends StatefulWidget {
   const PaymentHistoryList({
@@ -141,6 +159,7 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
     if (isFresh) {
       // Show the cached page immediately, then refresh silently.
       _rows.addAll(cached.records);
+      sortPaymentsNewestFirst(_rows);
       _loading = false;
       _load(reset: true, soft: true);
     } else {
@@ -212,6 +231,10 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
           _rows.clear();
         }
         _rows.addAll(filtered);
+        // Always newest first: the most recent payment card sits on top and
+        // older cards fall below, regardless of what order the server or a
+        // cached page handed back.
+        sortPaymentsNewestFirst(_rows);
         _page = result.page;
         _pages = result.pages;
         _loading = false;
@@ -693,10 +716,12 @@ class _PaymentCardState extends State<_PaymentCard> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final clock = fmtTimeIso(record.createdAtIso);
+    // Show the payment's own date so the visible date matches the newest-first
+    // order. Older records without one fall back to when they were saved.
     final createdAt = DateTime.tryParse(record.createdAtIso)?.toLocal();
-    final paymentDate = createdAt == null
-        ? fmtDateIso(record.dateIso)
-        : fmtDateMedium(createdAt);
+    final paymentDate = record.dateIso.isEmpty && createdAt != null
+        ? fmtDateMedium(createdAt)
+        : fmtDateIso(record.dateIso);
     final time = clock.isEmpty ? paymentDate : '$clock  ·  $paymentDate';
     final rentPeriod = record.periodStartIso.isEmpty
         ? '-'
