@@ -567,12 +567,29 @@ class _HomePageState extends State<HomePage>
       leading: tab == 0
           ? Padding(
               padding: const EdgeInsets.only(left: 12, top: 8, bottom: 8),
-              child: Image.asset(
-                'logo.png',
-                fit: BoxFit.contain,
-                errorBuilder: (_, _, _) => const Icon(
-                  Icons.home_work_outlined,
-                  color: AppColors.primary,
+              // Same leaf shape as the account menu icons: rounded on the top
+              // left and bottom right. The hairline border is what makes that
+              // shape read - the artwork itself is near-white on a white bar.
+              child: ClipRRect(
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(12),
+                  bottomRight: Radius.circular(12),
+                ),
+                child: Container(
+                  decoration: const BoxDecoration(
+                    color: AppColors.card,
+                    border: Border.fromBorderSide(
+                      BorderSide(color: AppColors.border),
+                    ),
+                  ),
+                  child: Image.asset(
+                    'logo.png',
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, _, _) => const Icon(
+                      Icons.home_work_outlined,
+                      color: AppColors.primary,
+                    ),
+                  ),
                 ),
               ),
             )
@@ -1113,19 +1130,14 @@ class _HomePageState extends State<HomePage>
         onTap: onTap,
         leading: Container(
           padding: const EdgeInsets.all(9),
+          // Flat tile: the coloured chip keeps its leaf shape but no longer
+          // casts the blur that made every row look like it was glowing.
           decoration: BoxDecoration(
             color: color,
             borderRadius: const BorderRadius.only(
               topLeft: Radius.circular(14),
               bottomRight: Radius.circular(14),
             ),
-            boxShadow: [
-              BoxShadow(
-                color: color.withValues(alpha: 0.32),
-                blurRadius: 8,
-                offset: const Offset(0, 3),
-              ),
-            ],
           ),
           child: Icon(icon, color: Colors.white, size: 20),
         ),

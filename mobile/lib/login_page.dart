@@ -160,59 +160,83 @@ class _LoginPageState extends State<LoginPage>
         elevation: 4,
         shadowColor: AppColors.primary.withValues(alpha: 0.25),
       ),
-      body: Center(
-        child: Transform.translate(
-          offset: const Offset(0, -28),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: FadeTransition(
-                opacity: _fade,
-                child: SlideTransition(
-                  position: _slide,
-                  child: Column(
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(24),
-                        child: Image.asset(
-                          'logo.png',
-                          width: 120,
-                          height: 120,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) =>
-                              Container(
-                                padding: const EdgeInsets.all(16),
-                                decoration: const BoxDecoration(
-                                  color: AppColors.primary,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(
-                                  Icons.home_work_outlined,
-                                  size: 36,
-                                  color: Colors.white,
-                                ),
+      body: FadeTransition(
+        opacity: _fade,
+        child: SlideTransition(
+          position: _slide,
+          // The page is exactly the screen: the intro is laid out at the top and
+          // the sheet is expanded into whatever height is left, so the page
+          // never grows past the viewport and never scrolls. The room under the
+          // buttons inside the sheet adapts to the device instead.
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(24),
+                      child: Image.asset(
+                        'logo.png',
+                        width: 120,
+                        height: 120,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) =>
+                            Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: const BoxDecoration(
+                                color: AppColors.primary,
+                                shape: BoxShape.circle,
                               ),
-                        ),
+                              child: const Icon(
+                                Icons.home_work_outlined,
+                                size: 36,
+                                color: Colors.white,
+                              ),
+                            ),
                       ),
-                      const SizedBox(height: 12),
-                      Text(
-                        'Manage your rooms, collect rent, stay organized.',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: AppColors.secondaryText,
-                        ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Manage your rooms, collect rent, stay organized.',
+                      textAlign: TextAlign.center,
+                      style:
+                          Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: AppColors.secondaryText,
+                          ),
+                    ),
+                    const SizedBox(height: 24),
+                  ],
+                ),
+              ),
+              // Full-bleed sign-in sheet: no side margins, so the left, right
+              // and bottom edges meet the screen, with a deep round on top.
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.card,
+                    border: const Border(
+                      top: BorderSide(color: AppColors.border),
+                    ),
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(36),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.primary.withValues(alpha: 0.16),
+                        blurRadius: 28,
+                        offset: const Offset(0, -6),
                       ),
-                      const SizedBox(height: 20),
-                      Card(
-                        elevation: 8,
-                        shadowColor: AppColors.primary.withValues(alpha: 0.25),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
-                          side: const BorderSide(color: AppColors.border),
-                        ),
+                    ],
+                  ),
+                  child: LayoutBuilder(
+                    builder: (context, box) => SingleChildScrollView(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(minHeight: box.maxHeight),
                         child: Padding(
-                          padding: const EdgeInsets.all(20),
+                          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
                           child: AnimatedSize(
                             duration: const Duration(milliseconds: 300),
                             curve: Curves.easeInOut,
@@ -231,7 +255,7 @@ class _LoginPageState extends State<LoginPage>
                                     ).textTheme.headlineSmall,
                                   ),
                                 ),
-                                const SizedBox(height: 16),
+                                const SizedBox(height: 24),
                                 if (_registerMode) ...[
                                   TextField(
                                     controller: _name,
@@ -241,7 +265,7 @@ class _LoginPageState extends State<LoginPage>
                                     textInputAction: TextInputAction.next,
                                     autofillHints: const [AutofillHints.name],
                                   ),
-                                  const SizedBox(height: 12),
+                                  const SizedBox(height: 16),
                                 ],
                                 TextField(
                                   controller: _mobile,
@@ -260,7 +284,7 @@ class _LoginPageState extends State<LoginPage>
                                     AutofillHints.telephoneNumber,
                                   ],
                                 ),
-                                const SizedBox(height: 12),
+                                const SizedBox(height: 16),
                                 TextField(
                                   controller: _password,
                                   decoration: InputDecoration(
@@ -288,7 +312,7 @@ class _LoginPageState extends State<LoginPage>
                                   onSubmitted: (_) => _submit(),
                                 ),
                                 if (!_registerMode) ...[
-                                  const SizedBox(height: 8),
+                                  const SizedBox(height: 14),
                                   Row(
                                     children: [
                                       Checkbox(
@@ -303,7 +327,7 @@ class _LoginPageState extends State<LoginPage>
                                     ],
                                   ),
                                 ],
-                                const SizedBox(height: 20),
+                                const SizedBox(height: 36),
                                 PressScale(
                                   enabled: !_busy,
                                   child: FilledButton(
@@ -349,11 +373,11 @@ class _LoginPageState extends State<LoginPage>
                           ),
                         ),
                       ),
-                    ],
+                    ),
                   ),
                 ),
               ),
-            ),
+            ],
           ),
         ),
       ),

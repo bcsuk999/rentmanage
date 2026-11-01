@@ -1,6 +1,6 @@
 {
-  "version": "1.6.11",
-  "build": 15,
-  "apkUrl": "https://raw.githubusercontent.com/bcsuk999/rentmanage/main/releases/rentmanage-arm64-v1.6.11.apk",
-  "message": "Payment history now shows the most recent payment card on top and older cards below. The new card appears immediately after recording a payment."
+  "version": "1.6.12",
+  "build": 16,
+  "apkUrl": "https://raw.githubusercontent.com/bcsuk999/rentmanage/main/releases/rentmanage-arm64-v1.6.12.apk",
+  "message": "Fresh look for the sign-in page: the sign-in sheet now reaches the screen edges with a deeper rounded top, and the page fits the screen exactly with no scrolling. The home header logo is rounded on the top-left and bottom-right corners, and the glow around the account page icons is removed. Login security improved: each account now stays signed in on one device only."
 }
