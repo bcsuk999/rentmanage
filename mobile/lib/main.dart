@@ -63,8 +63,9 @@ class _RentManageAppState extends State<RentManageApp>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // Any 401 from any screen signs out centrally (expired/revoked token).
-    _api.onAuthExpired = _handleAuthExpired;
+    // Any 401 from any screen signs out centrally (expired/revoked token),
+    // passing along the server's reason so the toast can explain it.
+    _api.onAuthExpired = (message) => _handleAuthExpired(message);
     _api.onConnectionLost = _handleConnectionLost;
     _api.onConnectionRestored = _handleConnectionRestored;
     _splashTimer = Timer(_minimumSplash, () {
@@ -309,7 +310,7 @@ class _RentManageAppState extends State<RentManageApp>
     }
   }
 
-  Future<void> _handleAuthExpired() async {
+  Future<void> _handleAuthExpired([String? message]) async {
     if (_isHandlingAuthExpired) return;
     if (_user == null && _api.token == null) return;
     _isHandlingAuthExpired = true;
@@ -334,7 +335,11 @@ class _RentManageAppState extends State<RentManageApp>
         // ignore
       }
 
-      showGlobalToast('Session expired. Please sign in again.', error: true);
+      final reason = (message ?? '').trim();
+      showGlobalToast(
+        reason.isEmpty ? 'Session expired. Please sign in again.' : reason,
+        error: true,
+      );
     } finally {
       _isHandlingAuthExpired = false;
     }

@@ -333,7 +333,10 @@ class ApiClient {
   /// Fired once per 401 answer (expired/revoked token) so every screen
   /// returns to sign-in instead of error-looping. Set by the app shell.
   /// Never throws: _throw still raises the ApiException for local handling.
-  void Function()? onAuthExpired;
+  /// Carries the reason - the server's own message when it refused the token
+  /// (for example a sign-in on another device) - so the sign-out toast can
+  /// explain what happened instead of always saying "session expired".
+  void Function(String message)? onAuthExpired;
 
   /// Called when a request cannot reach the server, or when a response proves
   /// that the server is reachable again.
@@ -359,7 +362,7 @@ class ApiClient {
   }) async {
     if (!skipAuthCheck && token != null && SessionCache.isTokenExpired(token)) {
       try {
-        onAuthExpired?.call();
+        onAuthExpired?.call('Session expired. Please sign in again.');
       } catch (_) {}
       throw ApiException('Session expired. Sign in again.', statusCode: 401);
     }
@@ -427,7 +430,9 @@ class ApiClient {
     }
     if (res.statusCode == 401) {
       try {
-        onAuthExpired?.call();
+        // The server's own wording carries the reason, e.g. "Account logged in
+        // somewhere else. Please login again." for a sign-in on another device.
+        onAuthExpired?.call(message);
       } catch (_) {
         // Sign-out routing must never break error reporting.
       }

@@ -58,11 +58,18 @@ router.post(
       if (!account || !ok) {
         return res.status(401).json({ error: 'Invalid mobile number or password' });
       }
-      // Record the sign-in without holding the response on an extra write.
-      AccountModel.updateOne({ _id: account._id }, { $set: { lastLoginAt: new Date() } }).catch(
-        () => {}
-      );
-      return res.json({ token: signToken(account), user: publicAccount(account) });
+      // Single-device sessions: bump the account's session counter in the same
+      // write as lastLoginAt, so every token already issued stops matching and
+      // this one is signed against the new value.
+      const session = await AccountModel.findOneAndUpdate(
+        { _id: account._id },
+        { $inc: { tokenVersion: 1 }, $set: { lastLoginAt: new Date() } },
+        { new: true }
+      ).lean();
+      if (!session) {
+        return res.status(401).json({ error: 'Account no longer exists. Sign in again.' });
+      }
+      return res.json({ token: signToken(session), user: publicAccount(account) });
     } catch (err) {
       return sendApiError(res, err);
     }

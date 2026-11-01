@@ -45,10 +45,23 @@ function publicAccount(account) {
   };
 }
 
+/**
+ * The session counter carried by a token (0 when the token predates the
+ * counter) and held by an account (0 until the account first signs in).
+ */
+function tokenVersionOf(account) {
+  const value = Number(account && account.tokenVersion);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+}
+
 function signToken(account) {
-  return jwt.sign({ id: String(account._id), role: 'landlord' }, jwtSecret(), {
-    expiresIn: TOKEN_TTL,
-  });
+  return jwt.sign(
+    { id: String(account._id), role: 'landlord', tv: tokenVersionOf(account) },
+    jwtSecret(),
+    {
+      expiresIn: TOKEN_TTL,
+    }
+  );
 }
 
 /** Find a landlord by id, falling back to a legacy Admin doc (migration). */
@@ -64,6 +77,9 @@ async function findAccountById(id) {
  * Bearer-token guard. Loads the landlord fresh on every request.
  * Legacy Admin tokens issued before the mobile-login migration are still
  * honoured so existing installs are not locked out.
+ * A token is refused once the account signs in anywhere else: the sign-in
+ * bumps tokenVersion, so every earlier token stops matching and the holder is
+ * told to sign in again instead of silently keeping a live session.
  * Responds 401 JSON when missing/invalid.
  */
 async function requireAuth(req, res, next) {
@@ -77,6 +93,12 @@ async function requireAuth(req, res, next) {
     const account = await findAccountById(payload.id);
     if (!account) {
       return res.status(401).json({ error: 'Account no longer exists. Sign in again.' });
+    }
+    const issued = Number(payload.tv);
+    if ((Number.isFinite(issued) ? Math.floor(issued) : 0) !== tokenVersionOf(account)) {
+      return res.status(401).json({
+        error: 'Account logged in somewhere else. Please login again.',
+      });
     }
     req.user = account;
     req.isAdmin = true;

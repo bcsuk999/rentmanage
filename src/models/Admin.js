@@ -22,6 +22,9 @@ const accountSchema = new mongoose.Schema(
     passwordHash: { type: String, required: true },
     role: { type: String, enum: ROLES, default: 'user', index: true },
     lastLoginAt: { type: Date },
+    // Same single-device counter as Landlord: bumped on sign-in, older tokens
+    // stop matching. Legacy accounts read as 0 until their first sign-in here.
+    tokenVersion: { type: Number, default: 0 },
   },
   { timestamps: true }
 );

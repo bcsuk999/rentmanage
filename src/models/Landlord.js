@@ -16,6 +16,10 @@ const landlordSchema = new mongoose.Schema(
     },
     passwordHash: { type: String, required: true },
     lastLoginAt: { type: Date },
+    // Bumped on every sign-in. A token only validates while it carries the
+    // current value, so a sign-in on a second device instantly expires the
+    // tokens already in someone else's hands (single-device sessions).
+    tokenVersion: { type: Number, default: 0 },
   },
   { timestamps: true }
 );
