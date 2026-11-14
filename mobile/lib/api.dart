@@ -7,11 +7,11 @@ import 'session_cache.dart';
 
 /// Base URL of the rentmanage API.
 ///
-/// Production (Render): https://rentmanage.onrender.com
+/// Production (Render): https://rentmanage-backend.onrender.com
 /// Local dev: `http://10.0.2.2:3000` on the Android emulator,
 /// `http://localhost:3000` on iOS simulator/desktop, or
 /// `http://LAN-IP:3000` on a physical phone.
-const String apiBaseUrl = 'https://rentmanage.onrender.com';
+const String apiBaseUrl = 'https://rentmanage-backend.onrender.com';
 
 class ApiException implements Exception {
   ApiException(this.message, {this.errors = const [], this.statusCode});

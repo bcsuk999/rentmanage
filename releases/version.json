@@ -1,6 +1,6 @@
 {
-  "version": "1.6.12",
-  "build": 16,
-  "apkUrl": "https://raw.githubusercontent.com/bcsuk999/rentmanage/main/releases/rentmanage-arm64-v1.6.12.apk",
-  "message": "Fresh look for the sign-in page: the sign-in sheet now reaches the screen edges with a deeper rounded top, and the page fits the screen exactly with no scrolling. The home header logo is rounded on the top-left and bottom-right corners, and the glow around the account page icons is removed. Login security improved: each account now stays signed in on one device only."
+  "version": "1.6.13",
+  "build": 17,
+  "apkUrl": "https://raw.githubusercontent.com/bcsuk999/rentmanage/main/releases/rentmanage-arm64-v1.6.13.apk",
+  "message": "The app now connects to a new, faster server. Sign-in, rent records and payments sync more reliably."
 }

@@ -1,0 +1,2 @@
+- App now talks to the new backend server (rentmanage-backend.onrender.com)
+- Faster, more reliable sign-in and data sync
