@@ -9,6 +9,7 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "seed": "node scripts/seed.js",
+    "cron": "node scripts/cron.js",
     "test": "node --test",
     "lint": "eslint ."
   },
