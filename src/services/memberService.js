@@ -342,8 +342,6 @@ async function memberDetail(id, ownerId) {
   const member = await Member.findOne({ _id: toObjectId(id, 'memberId'), ownerId: owner }).lean();
   if (!member) throw new ValidationError([{ field: 'memberId', message: 'Member not found' }]);
   const room = await Room.findOne({ _id: member.roomId, ownerId: owner }).lean();
-  const live = await Member.findOne({ _id: member._id, ownerId: owner });
-  await rentService.ensurePeriodsForMember(live);
 
   const reference = today();
   // Only cycles that have begun: rent due today or already due. A cycle is
