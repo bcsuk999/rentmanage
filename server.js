@@ -70,6 +70,37 @@ app.use((err, req, res, _next) => {
 });
 
 const PORT = Number(process.env.PORT) || 3000;
+const IST_OFFSET_MS = 330 * 60 * 1000; // UTC+5:30, no DST
+
+function msUntilNextIstTime(hour, minute) {
+  const now = Date.now();
+  const istNow = now + IST_OFFSET_MS;
+  const d = new Date(istNow);
+  const next = new Date(
+    Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), hour, minute, 0, 0)
+  );
+  if (next.getTime() <= istNow) next.setUTCDate(next.getUTCDate() + 1);
+  return next.getTime() - istNow;
+}
+
+function scheduleDailyPeriodMaintenance(hour = 0, minute = 30) {
+  const delay = msUntilNextIstTime(hour, minute);
+  setTimeout(async () => {
+    try {
+      const r = await runPeriodMaintenance();
+      console.log(
+        `Scheduled period maintenance: ${r.landlords} landlord(s), ${r.created} period(s) created, ${r.overdueRefreshed} overdue flip(s)`
+      );
+    } catch (err) {
+      console.error('Scheduled period maintenance failed:', err.message);
+    } finally {
+      scheduleDailyPeriodMaintenance(hour, minute);
+    }
+  }, delay).unref();
+  console.log(
+    `Next period maintenance scheduled in ${Math.round(delay / 60000)} min (IST ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')})`
+  );
+}
 
 async function start() {
   await connectDb();
@@ -78,7 +109,7 @@ async function start() {
   const server = app.listen(PORT, () => {
     console.log(`Rent management API running on http://localhost:${PORT}`);
   });
-  // Catch up if a scheduled cron run was missed (e.g. Render free tier spin-down).
+  // Catch up if a scheduled run was missed (e.g. Render free tier spin-down).
   runPeriodMaintenance()
     .then((r) =>
       console.log(
@@ -86,6 +117,8 @@ async function start() {
       )
     )
     .catch((err) => console.error('Startup period maintenance failed:', err.message));
+  // In-process daily schedule (no external cron service needed).
+  scheduleDailyPeriodMaintenance(0, 30);
   return server;
 }
 
