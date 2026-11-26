@@ -3,12 +3,42 @@ import 'package:flutter/material.dart';
 import 'api.dart';
 import 'app_theme.dart';
 import 'motion.dart';
-import 'widgets.dart';
+import 'status_colors.dart';
+import 'success_page.dart';
 
 String _dateInput(DateTime d) =>
     '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
-/// Add or edit a member. Returns true when a member was created or updated.
+/// What the caller should do after the confirmation screen is dismissed.
+enum MemberSavedNext { done, viewMember }
+
+/// Popped by [MemberFormPage] on success so the caller can refresh and, when
+/// asked, open the saved member's profile.
+class MemberSavedResult {
+  const MemberSavedResult({
+    required this.next,
+    required this.memberId,
+    required this.memberName,
+    required this.roomId,
+    required this.roomNumber,
+  });
+
+  final MemberSavedNext next;
+  final String memberId;
+  final String memberName;
+  final String roomId;
+  final String roomNumber;
+}
+
+/// Backend returns `{ member, message }`; accept both Mongo and generic ids.
+String? _idFrom(Map<String, dynamic> response) {
+  final member = response['member'];
+  if (member is! Map) return null;
+  final id = member['_id'] ?? member['id'];
+  return id == null ? null : '$id';
+}
+
+/// Add or edit a member. Pops a [MemberSavedResult] on success.
 class MemberFormPage extends StatefulWidget {
   const MemberFormPage({
     super.key,
@@ -59,6 +89,9 @@ class _MemberFormPageState extends State<MemberFormPage> {
   bool _busy = false;
   String? _error;
 
+  /// Snapshot shown on the confirmation screen after a successful save.
+  _SavedMember? _saved;
+
   @override
   void initState() {
     super.initState();
@@ -105,19 +138,23 @@ class _MemberFormPageState extends State<MemberFormPage> {
         'aadhaarNumber': _aadhaar.text.trim(),
     };
     try {
-      if (widget.isEdit) {
-        await widget.api.updateMember(widget.member!.id, payload);
-        if (!mounted) return;
-        toastOk(context, '${_name.text.trim()} updated.');
-      } else {
-        await widget.api.addMember(widget.roomId, payload);
-        if (!mounted) return;
-        toastOk(
-          context,
-          '${_name.text.trim()} added to Room ${widget.roomNumber}.',
+      final response = widget.isEdit
+          ? await widget.api.updateMember(widget.member!.id, payload)
+          : await widget.api.addMember(widget.roomId, payload);
+      if (!mounted) return;
+      final name = _name.text.trim();
+      setState(() {
+        _saved = _SavedMember(
+          memberId: _idFrom(response) ??
+              (widget.isEdit ? widget.member!.id : ''),
+          memberName: name,
+          roomId: widget.roomId,
+          roomNumber: widget.roomNumber,
+          mobile: _mobile.text.trim(),
+          monthlyRent: double.tryParse(_rent.text.trim()) ?? 0,
+          rentStart: _dateInput(_start),
         );
-      }
-      Navigator.of(context).pop(true);
+      });
     } on ApiException catch (e) {
       setState(() => _error = e.message);
     } catch (_) {
@@ -129,6 +166,68 @@ class _MemberFormPageState extends State<MemberFormPage> {
 
   @override
   Widget build(BuildContext context) {
+    final saved = _saved;
+    if (saved != null) {
+      MemberSavedResult result(MemberSavedNext next) => MemberSavedResult(
+        next: next,
+        memberId: saved.memberId,
+        memberName: saved.memberName,
+        roomId: saved.roomId,
+        roomNumber: saved.roomNumber,
+      );
+      return SuccessScreen(
+        title: widget.isEdit
+            ? 'Member updated successfully'
+            : 'Member added successfully',
+        message: widget.isEdit
+            ? '${saved.memberName} has been updated.'
+            : '${saved.memberName} was added to Room ${saved.roomNumber}.',
+        detailsTitle: 'Member details',
+        nextStep: widget.isEdit
+            ? 'Return to the profile to see the latest details.'
+            : 'Open the new profile to record payments.',
+        details: [
+          SuccessDetail(
+            label: 'Name',
+            value: saved.memberName,
+            icon: Icons.person_outline,
+          ),
+          SuccessDetail(
+            label: 'Mobile',
+            value: saved.mobile,
+            icon: Icons.phone_outlined,
+          ),
+          SuccessDetail(
+            label: 'Monthly rent',
+            value: '${inr(saved.monthlyRent)}/mo',
+            icon: Icons.currency_rupee,
+          ),
+          SuccessDetail(
+            label: 'Rent start',
+            value: saved.rentStart,
+            icon: Icons.event_outlined,
+          ),
+        ],
+        onBack: () => Navigator.of(context).pop(result(MemberSavedNext.done)),
+        actions: [
+          if (!widget.isEdit)
+            SuccessAction(
+              label: 'View room',
+              icon: Icons.meeting_room_outlined,
+              style: SuccessActionStyle.outlined,
+              onPressed: () =>
+                  Navigator.of(context).pop(result(MemberSavedNext.done)),
+            ),
+          SuccessAction(
+            label: 'View member',
+            icon: Icons.person_outline,
+            style: SuccessActionStyle.filled,
+            onPressed: () =>
+                Navigator.of(context).pop(result(MemberSavedNext.viewMember)),
+          ),
+        ],
+      );
+    }
     return Scaffold(
       appBar: AppBar(
         elevation: 8,
@@ -309,4 +408,26 @@ class _IndiaFlag extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Values captured at save time so the confirmation shows exactly what was
+/// submitted.
+class _SavedMember {
+  const _SavedMember({
+    required this.memberId,
+    required this.memberName,
+    required this.roomId,
+    required this.roomNumber,
+    required this.mobile,
+    required this.monthlyRent,
+    required this.rentStart,
+  });
+
+  final String memberId;
+  final String memberName;
+  final String roomId;
+  final String roomNumber;
+  final String mobile;
+  final double monthlyRent;
+  final String rentStart;
 }

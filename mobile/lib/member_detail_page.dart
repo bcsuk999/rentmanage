@@ -92,7 +92,7 @@ class _MemberDetailPageState extends State<MemberDetailPage> {
   Future<bool> _refresh() => _load(soft: _profile != null);
 
   Future<void> _edit(MemberProfile profile) async {
-    final updated = await Navigator.of(context).push<bool>(
+    final updated = await Navigator.of(context).push<MemberSavedResult>(
       smoothRoute(
         MemberFormPage(
           api: widget.api,
@@ -109,7 +109,7 @@ class _MemberDetailPageState extends State<MemberDetailPage> {
         ),
       ),
     );
-    if (updated == true && mounted) _reload();
+    if (updated != null && mounted) _reload();
   }
 
   Future<void> _recordPayment(MemberProfile profile) async {
@@ -490,11 +490,29 @@ class _MemberDetailPageState extends State<MemberDetailPage> {
     );
   }
 
-  /// Bottom bar matching the header: white surface, upward shadow and the
-  /// actions that apply to the member. Vacate lives in the header instead.
+  /// Bottom bar matching the Room Details bar: white surface, upward shadow
+  /// and a single full-width 'Record Rent Payment' button. Vacate lives in the
+  /// header; Waive is only added for vacated members.
   Widget _bottomActions(MemberProfile profile) {
     final canPay = profile.outstanding > 0;
     final active = profile.isActive;
+
+    // Exactly the button used on the room details page.
+    Widget recordButton() => PressScale(
+      child: FilledButton.icon(
+        style: FilledButton.styleFrom(
+          // Squarer than the default pill, and full width so it reads as
+          // the bar's single action.
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
+        onPressed: canPay ? () => _recordPayment(profile) : null,
+        icon: const Icon(Icons.payments_outlined, size: 18),
+        label: const Text('Record Rent Payment'),
+      ),
+    );
+
     return Container(
       decoration: BoxDecoration(
         color: AppColors.card,
@@ -512,48 +530,33 @@ class _MemberDetailPageState extends State<MemberDetailPage> {
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
           child: SizedBox(
             height: 50,
-            child: Row(
-              children: [
-                Expanded(
-                  child: PressScale(
-                    enabled: canPay,
-                    child: FilledButton.icon(
-                      style: FilledButton.styleFrom(
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                      onPressed: canPay ? () => _recordPayment(profile) : null,
-                      icon: const Icon(Icons.payments_outlined, size: 18),
-                      label: const Text('Record Payment'),
-                    ),
-                  ),
-                ),
-                if (!active) ...[
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: PressScale(
-                      enabled: canPay,
-                      child: OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
+            child: active
+                ? recordButton()
+                : Row(
+                    children: [
+                      Expanded(child: recordButton()),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: PressScale(
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              foregroundColor: AppColors.warning,
+                              side: const BorderSide(color: AppColors.warning),
+                            ),
+                            onPressed: canPay ? () => _waive(profile) : null,
+                            icon: const Icon(
+                              Icons.money_off_csred_outlined,
+                              size: 18,
+                            ),
+                            label: const Text('Waive'),
                           ),
-                          foregroundColor: AppColors.warning,
-                          side: const BorderSide(color: AppColors.warning),
                         ),
-                        onPressed: canPay ? () => _waive(profile) : null,
-                        icon: const Icon(
-                          Icons.money_off_csred_outlined,
-                          size: 18,
-                        ),
-                        label: const Text('Waive'),
                       ),
-                    ),
+                    ],
                   ),
-                ],
-              ],
-            ),
           ),
         ),
       ),

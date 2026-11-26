@@ -15,20 +15,15 @@ class OverduePage extends StatefulWidget {
     required this.isAdmin,
     required this.onAuthExpired,
     this.initialReport,
-    this.onLoaded,
   });
 
   final ApiClient api;
   final bool isAdmin;
   final VoidCallback onAuthExpired;
 
-  /// Last known report, shown instantly so the skeleton only ever appears on
-  /// the very first load.
+  /// Overdue report derived from the room list snapshot. The overdue tab reuses
+  /// this instead of calling `/api/overdue` separately.
   final OverdueReport? initialReport;
-
-  /// Called with fresh data after every successful background fetch so the
-  /// parent can cache it for the next visit.
-  final ValueChanged<OverdueReport>? onLoaded;
 
   @override
   State<OverduePage> createState() => OverduePageState();
@@ -45,8 +40,9 @@ class OverduePageState extends State<OverduePage> {
   bool _refreshAfterCurrentLoad = false;
 
   /// Re-fetches in the background when the tab is revisited. Silent by design:
-  /// the report already on screen stays visible and is swapped in place, so the
-  /// skeleton never comes back. The first load is left to initState.
+  /// the report already on screen stays visible and is swapped in place. Since
+  /// the report is derived from the room list, this re-displays the latest
+  /// snapshot passed in as [initialReport].
   Future<void> refreshSilently() async {
     await _load();
   }
@@ -59,6 +55,21 @@ class OverduePageState extends State<OverduePage> {
     _loading = _report == null;
     globalConnectionRestored.addListener(_onConnectionRestored);
     _load();
+  }
+
+  /// The report is passed in as [initialReport] and can change when the room
+  /// list (its source) is re-fetched. Because state is preserved with a
+  /// [GlobalKey], pick up a new snapshot whenever it arrives so the overdue
+  /// tab never stays blank after the rooms load.
+  @override
+  void didUpdateWidget(OverduePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialReport != oldWidget.initialReport) {
+      _report = widget.initialReport;
+      _loading = _report == null;
+      _error = null;
+      if (mounted) _load();
+    }
   }
 
   @override
@@ -76,14 +87,9 @@ class OverduePageState extends State<OverduePage> {
     _load();
   }
 
-  Future<OverdueReport> _fetch() async {
-    try {
-      return await widget.api.overdue();
-    } on ApiException catch (e) {
-      if (e.statusCode == 401) widget.onAuthExpired();
-      rethrow;
-    }
-  }
+  /// No separate endpoint is called: the report is derived from the room list
+  /// and passed in as [initialReport].
+  Future<OverdueReport?> _fetch() async => widget.initialReport;
 
   /// Fetches fresh data. When a report is already on screen this is silent:
   /// no skeleton, no spinner, just an in-place swap once the data arrives.
@@ -104,7 +110,6 @@ class OverduePageState extends State<OverduePage> {
         _loading = false;
         _error = null;
       });
-      widget.onLoaded?.call(report);
       return true;
     } catch (e) {
       if (!mounted) return false;
@@ -274,27 +279,19 @@ class OverduePageState extends State<OverduePage> {
   Widget _summaryCards(BuildContext context, OverdueReport report) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: GridView.count(
-        crossAxisCount: 2,
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        mainAxisSpacing: 10,
-        crossAxisSpacing: 10,
-        childAspectRatio: 1.9,
-        children: [
-          SummaryMetric(
-            icon: Icons.error_outline,
-            value: inr(report.totalOverdue),
-            label: 'Total overdue',
-            color: AppColors.danger,
-          ),
-          SummaryMetric(
-            icon: Icons.people_outline,
-            value: '${report.memberCount}',
-            label: 'Overdue members',
-            color: AppColors.danger,
-          ),
-        ],
+      child: SplitSummaryCard(
+        left: SplitSummaryFigure(
+          icon: Icons.error_outline,
+          value: inr(report.totalOverdue),
+          label: 'Total overdue',
+          color: AppColors.danger,
+        ),
+        right: SplitSummaryFigure(
+          icon: Icons.people_outline,
+          value: '${report.memberCount}',
+          label: 'Overdue members',
+          color: AppColors.danger,
+        ),
       ),
     );
   }
@@ -540,7 +537,7 @@ class _OverdueCardState extends State<_OverdueCard> {
                                     fontWeight: FontWeight.w700,
                                   ),
                                 ),
-                                if (widget.isAdmin && p.pending > 0)
+                                if (widget.isAdmin && p.start != null && p.pending > 0)
                                   PressScale(
                                     child: TextButton(
                                       onPressed: () =>

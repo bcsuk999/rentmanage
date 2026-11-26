@@ -297,6 +297,47 @@ class RoomDetail {
   /// Everything the room still owes: this cycle plus carry-over.
   double get totalDue => totalPending + totalOverdue;
 
+  /// Build a detail straight from the rooms-list response.
+  ///
+  /// `/api/landlord/rooms` already carries the current-cycle figures and the
+  /// overdue carry-over for every member — only the period ids/dates and the
+  /// server summary are exclusive to the individual room endpoint. Those are
+  /// filled in by the background `roomDetail()` refresh; until then the page
+  /// can render from this snapshot without another rooms-list request.
+  factory RoomDetail.fromRoom(Room room) {
+    final rows = room.members
+        .map(
+          (m) => RoomDetailRow(
+            memberId: m.id,
+            name: m.name,
+            mobile: m.mobile,
+            monthlyRent: m.monthlyRent,
+            rent: m.rent,
+            paid: m.paid,
+            pending: m.pending,
+            status: m.status,
+            overdue: m.overdue?.amount ?? 0,
+            // Only the individual room response has period ids/dates.
+            periodId: null,
+            periodStart: null,
+            periodEnd: null,
+          ),
+        )
+        .toList();
+    return RoomDetail(
+      room: room,
+      rows: rows,
+      totalRent: room.totalRent,
+      totalPaid: room.totalPaid,
+      totalPending: room.totalPending,
+      totalOverdue: rows.fold<double>(0, (sum, row) => sum + row.overdue),
+      paymentState: room.paymentState,
+      capacity: room.capacity,
+      isFull: room.isFull,
+      memberCount: room.memberCount,
+    );
+  }
+
   factory RoomDetail.fromJson(Map<String, dynamic> json, Room room) {
     double asDouble(dynamic v) =>
         v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
@@ -863,6 +904,134 @@ class OverdueReport {
       totalOverdue: asDouble(summary['totalOverdue']),
     );
   }
+
+  /// Builds an overdue report from the already-fetched room list, reusing the
+  /// per-member `overdue` snapshot so the overdue tab does not need a separate
+  /// `/api/overdue` call. A member is included only when they carry an overdue
+  /// balance (`member.overdue != null`).
+  ///
+  /// The `overdue.period` label (e.g. `'11 Aug to 10 Nov'`) is parsed and split
+  /// into one month per row using the member's `monthlyRent`, so a 300 overdue
+  /// with 100 monthly rent shows three rows: 11 Aug–10 Sep, 11 Sep–10 Oct,
+  /// 11 Oct–10 Nov. Overdue days are then calculated from these real period
+  /// dates instead of being blank.
+  factory OverdueReport.fromRooms(List<Room> rooms) {
+    final rows = <OverdueMember>[];
+    for (final room in rooms) {
+      for (final m in room.members) {
+        final o = m.overdue;
+        if (o == null) continue;
+
+        final periodLabel = o.period.trim();
+        final toIdx = periodLabel.indexOf(' to ');
+        if (toIdx <= 0) continue;
+
+        final startStr = periodLabel.substring(0, toIdx).trim();
+        final endStr = periodLabel.substring(toIdx + 4).trim();
+
+        // Year context: prefer the member's rent start year, else current year.
+        int year = DateTime.now().year;
+        if (m.rentStartDate != null) year = m.rentStartDate!.year;
+
+        final periodStart = _parseDayMonth(startStr, year);
+        final periodEnd = _parseDayMonth(endStr, year);
+        if (periodStart == null || periodEnd == null) continue;
+
+        // If the labelled end falls before the start in the same year it wraps
+        // into the next year (e.g. '25 Nov to 10 Jan').
+        final actualEnd = periodEnd.isBefore(periodStart)
+            ? DateTime.utc(year + 1, periodEnd.month, periodEnd.day)
+            : periodEnd;
+
+        final monthlyRent = m.monthlyRent;
+        final totalOverdue = o.amount;
+
+        // How many monthly rent cycles the overdue amount covers.
+        int months = 1;
+        if (monthlyRent > 0) {
+          months = (totalOverdue / monthlyRent).round();
+          if (months < 1) months = 1;
+        }
+
+        final periods = <OverduePeriod>[];
+        double remaining = totalOverdue;
+        for (int i = 0; i < months; i++) {
+          // Dart's DateTime handles month overflow (e.g. month 13 → next Jan).
+          final monthStart = DateTime.utc(
+            periodStart.year,
+            periodStart.month + i,
+            periodStart.day,
+          );
+          final monthEnd = DateTime.utc(
+            periodStart.year,
+            periodStart.month + i + 1,
+            periodStart.day - 1,
+          );
+
+          // Clamp the last month to the labelled overall end so we never render
+          // past the period shown on the backend.
+          final isLast = i == months - 1;
+          final effectiveEnd = isLast && monthEnd.isAfter(actualEnd)
+              ? actualEnd
+              : monthEnd;
+
+          double thisMonthAmt = monthlyRent;
+          if (isLast) thisMonthAmt = remaining; // remainder lands on last month
+          remaining -= thisMonthAmt;
+
+          periods.add(OverduePeriod(
+            id: '${m.id}-$i',
+            start: monthStart,
+            end: effectiveEnd,
+            rent: monthlyRent,
+            paid: 0,
+            pending: thisMonthAmt,
+          ));
+        }
+
+        rows.add(OverdueMember(
+          memberId: m.id,
+          name: m.name,
+          mobile: m.mobile,
+          roomNumber: room.roomNumber,
+          periodCount: periods.length,
+          totalOverdue: totalOverdue,
+          periods: periods,
+        ));
+      }
+    }
+    rows.sort((a, b) => b.totalOverdue.compareTo(a.totalOverdue));
+    return OverdueReport(
+      members: rows,
+      memberCount: rows.length,
+      totalOverdue: rows.fold<double>(0, (s, r) => s + r.totalOverdue),
+    );
+  }
+
+  /// Parses `'11 Aug'` style strings into a UTC date using [year].
+  static DateTime? _parseDayMonth(String s, int year) {
+    final parts = s.split(' ');
+    if (parts.length < 2) return null;
+    final day = int.tryParse(parts[0]);
+    final month = _monthMap[parts[1].toLowerCase()];
+    if (day == null || month == null) return null;
+    return DateTime.utc(year, month, day);
+  }
+
+  static const Map<String, int> _monthMap = {
+    'jan': 1,
+    'feb': 2,
+    'mar': 3,
+    'apr': 4,
+    'may': 5,
+    'jun': 6,
+    'jul': 7,
+    'aug': 8,
+    'sep': 9,
+    'oct': 10,
+    'nov': 11,
+    'dec': 12,
+  };
 }
 
 /// One search hit. Rooms and members arrive in the same list, so [type] is

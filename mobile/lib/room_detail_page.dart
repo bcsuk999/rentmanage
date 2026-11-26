@@ -19,12 +19,17 @@ class RoomDetailPage extends StatefulWidget {
     required this.roomId,
     required this.roomNumber,
     required this.isAdmin,
+    this.initialRoom,
   });
 
   final ApiClient api;
   final String roomId;
   final String roomNumber;
   final bool isAdmin;
+
+  /// Latest room from `/api/landlord/rooms`. Used to paint the page instantly
+  /// so the individual room request can run quietly in the background.
+  final Room? initialRoom;
 
   @override
   State<RoomDetailPage> createState() => _RoomDetailPageState();
@@ -41,7 +46,15 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
   @override
   void initState() {
     super.initState();
-    _load();
+    // The rooms list already contains the member rows and overdue figures, so
+    // show them at once. The individual endpoint is still fetched in the
+    // background for the period ids/dates and the authoritative summary.
+    final room = widget.initialRoom;
+    if (room != null && room.id == widget.roomId) {
+      _detail = RoomDetail.fromRoom(room);
+      _loading = false;
+    }
+    _load(soft: _detail != null);
   }
 
   /// [soft] keeps the current detail on screen: no skeleton, no spinner, the
@@ -86,7 +99,7 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
   Future<bool> _refresh() => _load(soft: _detail != null);
 
   Future<void> _openAddMember() async {
-    final created = await Navigator.of(context).push<bool>(
+    final result = await Navigator.of(context).push<MemberSavedResult>(
       smoothRoute(
         MemberFormPage(
           api: widget.api,
@@ -95,7 +108,22 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
         ),
       ),
     );
-    if (created == true && mounted) _refresh();
+    if (result == null || !mounted) return;
+    _refresh();
+    if (result.next == MemberSavedNext.viewMember &&
+        result.memberId.isNotEmpty) {
+      await Navigator.of(context).push(
+        smoothRoute(
+          MemberDetailPage(
+            api: widget.api,
+            memberId: result.memberId,
+            roomId: widget.roomId,
+            roomNumber: widget.roomNumber,
+          ),
+        ),
+      );
+      if (mounted) _refresh();
+    }
   }
 
   Future<void> _openMember(RoomDetailRow row) async {
@@ -346,7 +374,8 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
   }
 }
 
-/// The same tiles as the dashboard, so money reads identically on both screens.
+/// One card with the two money figures that matter here: collected and due,
+/// separated by a `|` divider.
 class _MoneyCards extends StatelessWidget {
   const _MoneyCards({required this.detail});
 
@@ -354,36 +383,19 @@ class _MoneyCards extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GridView.count(
-      crossAxisCount: 3,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: 10,
-      crossAxisSpacing: 10,
-      childAspectRatio: 1.9,
-      children: [
-        SummaryMetric(
-          compact: true,
-          icon: Icons.receipt_outlined,
-          value: inr(detail.totalRent),
-          label: 'Expected',
-          color: AppColors.mainText,
-        ),
-        SummaryMetric(
-          compact: true,
-          icon: Icons.wallet_outlined,
-          value: inr(detail.totalPaid),
-          label: 'Collected',
-          color: AppColors.success,
-        ),
-        SummaryMetric(
-          compact: true,
-          icon: Icons.pending_actions_outlined,
-          value: inr(detail.totalDue),
-          label: 'Remaining',
-          color: AppColors.danger,
-        ),
-      ],
+    return SplitSummaryCard(
+      left: SplitSummaryFigure(
+        icon: Icons.wallet_outlined,
+        value: inr(detail.totalPaid),
+        label: 'Collected',
+        color: AppColors.success,
+      ),
+      right: SplitSummaryFigure(
+        icon: Icons.pending_actions_outlined,
+        value: inr(detail.totalDue),
+        label: 'Due',
+        color: AppColors.danger,
+      ),
     );
   }
 }

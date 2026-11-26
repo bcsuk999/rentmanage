@@ -347,6 +347,84 @@ class SummaryMetric extends StatelessWidget {
   }
 }
 
+/// One figure inside [SplitSummaryCard]: the value on top, then the icon to
+/// the left of the label at the same size as the label text.
+class SplitSummaryFigure {
+  const SplitSummaryFigure({
+    required this.icon,
+    required this.value,
+    required this.label,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String value;
+  final String label;
+  final Color color;
+}
+
+/// Single card showing two figures separated by a `|` divider. Used on the
+/// room details summary and the overdue page summary so money reads the same.
+class SplitSummaryCard extends StatelessWidget {
+  const SplitSummaryCard({super.key, required this.left, required this.right});
+
+  final SplitSummaryFigure left;
+  final SplitSummaryFigure right;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Row(
+          children: [
+            Expanded(child: _figure(theme, left)),
+            // The `|` separator between the two figures.
+            Container(width: 1, height: 34, color: AppColors.border),
+            Expanded(child: _figure(theme, right)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _figure(ThemeData theme, SplitSummaryFigure f) {
+    const labelSize = 10.0;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            f.value,
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+              color: f.color,
+            ),
+          ),
+        ),
+        const SizedBox(height: 3),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(f.icon, size: labelSize, color: AppColors.secondaryText),
+            const SizedBox(width: 4),
+            Text(
+              f.label,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: AppColors.secondaryText,
+                fontSize: labelSize,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
 class SkeletonBlock extends StatefulWidget {
   const SkeletonBlock({
     super.key,

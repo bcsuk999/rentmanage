@@ -62,8 +62,8 @@ ThemeData buildLightTheme() {
     // fallback list keeps Android on a serif face instead of dropping to
     // Roboto. Bundling Times New Roman itself is not an option: it is a
     // proprietary Microsoft font.
-    fontFamily: 'Times New Roman',
-    fontFamilyFallback: const ['Liberation Serif', 'Noto Serif', 'serif'],
+    // System sans-serif (Roboto on Android, San Francisco on iOS) — matches
+    // the PRD's clean modern sans-serif requirement without bundling a font.
     appBarTheme: const AppBarTheme(
       backgroundColor: AppColors.card,
       foregroundColor: AppColors.mainText,

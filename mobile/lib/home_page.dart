@@ -11,6 +11,7 @@ import 'overdue_page.dart';
 import 'payment_history_page.dart';
 import 'room_detail_page.dart';
 import 'session_cache.dart';
+import 'success_page.dart';
 import 'status_colors.dart';
 import 'vacated_members_page.dart';
 import 'widgets.dart';
@@ -82,8 +83,7 @@ class _HomePageState extends State<HomePage>
 
   LandlordSummary? _summary;
   bool _summaryLoading = true;
-  OverdueReport? _overdueCache;
-  DateTime? _overdueCacheTime;
+  OverdueReport? _overdueReport;
   final _search = TextEditingController();
 
   /// Separate guards for the two endpoints: changing the month must not
@@ -106,16 +106,9 @@ class _HomePageState extends State<HomePage>
 
   /// True when the landlord has any overdue rent to chase, used for the red
   /// dot on the header bell.
-  bool get _hasOverdue {
-    if (_overdueCacheTime != null &&
-        DateTime.now().difference(_overdueCacheTime!) >
-            const Duration(minutes: 15)) {
-      _overdueCache = null;
-      _overdueCacheTime = null;
-    }
-    return (_summary?.overdue ?? 0) > 0 ||
-        (_overdueCache?.totalOverdue ?? 0) > 0;
-  }
+  bool get _hasOverdue =>
+      (_summary?.overdue ?? 0) > 0 ||
+      (_overdueReport?.totalOverdue ?? 0) > 0;
 
   @override
   void initState() {
@@ -269,7 +262,13 @@ class _HomePageState extends State<HomePage>
       final rooms = term.isEmpty ? await _loadRooms() : null;
       if (!mounted || id != _roomsRequestId) return false;
       setState(() {
-        if (rooms != null) _rooms = rooms;
+        if (rooms != null) {
+          _rooms = rooms;
+          // Derive the overdue report from the room list snapshot so the
+          // overdue tab reuses already-fetched data instead of calling
+          // /api/overdue separately.
+          _overdueReport = OverdueReport.fromRooms(rooms);
+        }
         _hits = results?.results;
         _hitsFor = term;
         _roomsError = null;
@@ -341,6 +340,11 @@ class _HomePageState extends State<HomePage>
     Future<void>.delayed(MotionDuration.fast, () {
       if (!mounted) return;
       if (next == 1) {
+        // Overdue figures are derived from the room list snapshot, so make sure
+        // they reflect the latest rooms whenever the tab is entered.
+        if (_rooms != null && mounted) {
+          setState(() => _overdueReport = OverdueReport.fromRooms(_rooms!));
+        }
         _overdueKey.currentState?.refreshSilently();
       } else if (next == 0) {
         // Same idea for the rooms list: keepList leaves the cards and the
@@ -378,11 +382,28 @@ class _HomePageState extends State<HomePage>
     widget.onSignOut();
   }
 
-  void _openDetails(Room room) => _openRoom(room.id, room.roomNumber);
+  void _openDetails(Room room) =>
+      _openRoom(room.id, room.roomNumber, initialRoom: room);
+
+  /// The latest matching room from `/api/landlord/rooms`, used to paint the
+  /// details page instantly. No extra rooms request is made here.
+  Room? _cachedRoom(String roomId) {
+    final rooms = _rooms;
+    if (rooms == null) return null;
+    for (final room in rooms) {
+      if (room.id == roomId) return room;
+    }
+    return null;
+  }
 
   /// Rooms are identified by id and number only, so a search hit can open the
-  /// same page without a full [Room] to hand.
-  void _openRoom(String roomId, String roomNumber) async {
+  /// same page without a full [Room] to hand — the cached rooms-list row is
+  /// used when one is available.
+  void _openRoom(
+    String roomId,
+    String roomNumber, {
+    Room? initialRoom,
+  }) async {
     await Navigator.of(context).push(
       smoothRoute(
         RoomDetailPage(
@@ -390,6 +411,7 @@ class _HomePageState extends State<HomePage>
           roomId: roomId,
           roomNumber: roomNumber,
           isAdmin: _isAdmin,
+          initialRoom: initialRoom ?? _cachedRoom(roomId),
         ),
       ),
     );
@@ -418,18 +440,24 @@ class _HomePageState extends State<HomePage>
   }
 
   Future<void> _showAddRoom() async {
-    final created = await Navigator.of(
+    final result = await Navigator.of(
       context,
-    ).push<bool>(_drawerRoute(_AddRoomPage(api: widget.api)));
-    if (created == true && mounted) {
-      _refresh(keepList: true);
+    ).push<RoomCreatedResult>(_drawerRoute(_AddRoomPage(api: widget.api)));
+    if (result == null || !mounted) return;
+    // Refresh in the background; the next page fetches its own data, so the
+    // user should not wait for the dashboard round trip before moving on.
+    _refresh(keepList: true);
+    if (result.next == RoomCreatedNext.viewRoom) {
+      _openRoom(result.roomId, result.roomNumber);
+    } else if (result.next == RoomCreatedNext.addMember) {
+      _addMemberTo(result.roomId, result.roomNumber);
     }
   }
 
   /// The add-room form arrives like a drawer: it rises from the bottom over the
   /// dimmed dashboard instead of popping up as a dialog.
-  Route<bool> _drawerRoute(Widget page) {
-    return PageRouteBuilder<bool>(
+  Route<T> _drawerRoute<T>(Widget page) {
+    return PageRouteBuilder<T>(
       opaque: false,
       barrierDismissible: true,
       barrierColor: AppColors.mainText.withValues(alpha: 0.35),
@@ -454,17 +482,45 @@ class _HomePageState extends State<HomePage>
   }
 
   /// Add a member straight from a room card that has none yet.
-  Future<void> _addMemberTo(Room room) async {
-    final created = await Navigator.of(context).push<bool>(
+  Future<void> _addMemberTo(String roomId, String roomNumber) async {
+    final result = await Navigator.of(context).push<MemberSavedResult>(
       smoothRoute(
         MemberFormPage(
           api: widget.api,
-          roomId: room.id,
-          roomNumber: room.roomNumber,
+          roomId: roomId,
+          roomNumber: roomNumber,
         ),
       ),
     );
-    if (created == true && mounted) _refreshList(keepList: true);
+    if (result == null || !mounted) return;
+    _refreshList(keepList: true);
+    if (result.next == MemberSavedNext.viewMember) {
+      await _openMemberById(
+        result.memberId,
+        result.roomId,
+        result.roomNumber,
+      );
+    }
+  }
+
+  /// Opens a saved member from the add-member confirmation screen.
+  Future<void> _openMemberById(
+    String memberId,
+    String roomId,
+    String roomNumber,
+  ) async {
+    if (memberId.isEmpty || roomId.isEmpty) return;
+    await Navigator.of(context).push(
+      smoothRoute(
+        MemberDetailPage(
+          api: widget.api,
+          memberId: memberId,
+          roomId: roomId,
+          roomNumber: roomNumber,
+        ),
+      ),
+    );
+    if (mounted) _refreshList(keepList: true);
   }
 
   @override
@@ -644,20 +700,7 @@ class _HomePageState extends State<HomePage>
         api: widget.api,
         isAdmin: _isAdmin,
         onAuthExpired: _signOut,
-        initialReport:
-            (_overdueCacheTime != null &&
-                DateTime.now().difference(_overdueCacheTime!) <=
-                    const Duration(minutes: 15))
-            ? _overdueCache
-            : null,
-        onLoaded: (report) {
-          if (mounted) {
-            setState(() {
-              _overdueCache = report;
-              _overdueCacheTime = DateTime.now();
-            });
-          }
-        },
+        initialReport: _overdueReport,
       ),
       2 => _accountTab(context),
       _ => _roomsTab(context),
@@ -734,7 +777,8 @@ class _HomePageState extends State<HomePage>
                     child: _RoomCard(
                       room: rooms[i],
                       onOpen: () => _openDetails(rooms[i]),
-                      onAddMember: () => _addMemberTo(rooms[i]),
+                      onAddMember: () =>
+                          _addMemberTo(rooms[i].id, rooms[i].roomNumber),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -1617,6 +1661,39 @@ class _MemberHitCard extends StatelessWidget {
   }
 }
 
+/// The next step chosen on the room-added success screen.
+enum RoomCreatedNext { done, viewRoom, addMember }
+
+class RoomCreatedResult {
+  const RoomCreatedResult({
+    required this.next,
+    required this.roomId,
+    required this.roomNumber,
+  });
+
+  final RoomCreatedNext next;
+  final String roomId;
+  final String roomNumber;
+}
+
+/// The room returned by the create call, kept just long enough to render the
+/// success screen.
+class _CreatedRoom {
+  const _CreatedRoom({
+    required this.id,
+    required this.roomNumber,
+    required this.capacity,
+    required this.status,
+    this.notes,
+  });
+
+  final String id;
+  final String roomNumber;
+  final int capacity;
+  final String status;
+  final String? notes;
+}
+
 /// Add-room form, shown as a full page so the route can slide in like a drawer
 /// instead of popping over the list as a dialog.
 class _AddRoomPage extends StatefulWidget {
@@ -1634,10 +1711,7 @@ class _AddRoomPageState extends State<_AddRoomPage> {
   String _status = 'Empty';
   bool _busy = false;
   String? _error;
-
-  /// Set once the page is being popped, so the [finally] block does not
-  /// rebuild a form that is on its way out.
-  bool _popping = false;
+  _CreatedRoom? _created;
 
   @override
   void dispose() {
@@ -1659,26 +1733,109 @@ class _AddRoomPageState extends State<_AddRoomPage> {
       _error = null;
     });
     try {
-      await widget.api.createRoom(
+      final response = await widget.api.createRoom(
         roomNumber: _number.text.trim(),
         capacity: capacity,
         status: _status,
       );
+      final rawRoom = response['room'];
+      final Map<String, dynamic>? room =
+          rawRoom is Map ? rawRoom.cast<String, dynamic>() : null;
+      final rawCapacity = room?['capacity'];
+      final rawNotes = room?['notes'];
+      final notes = rawNotes == null ? null : '$rawNotes'.trim();
       if (!mounted) return;
-      _popping = true;
-      toastOk(context, 'Room ${_number.text.trim()} added.');
-      Navigator.of(context).pop(true);
+      setState(() {
+        _created = _CreatedRoom(
+          id: '${room?['_id'] ?? ''}',
+          roomNumber: '${room?['roomNumber'] ?? _number.text.trim()}',
+          capacity: rawCapacity is int
+              ? rawCapacity
+              : int.tryParse('$rawCapacity') ?? capacity,
+          status: '${room?['status'] ?? _status}',
+          notes: notes == null || notes.isEmpty ? null : notes,
+        );
+      });
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.message);
     } catch (_) {
       if (mounted) setState(() => _error = 'Could not reach the server.');
     } finally {
-      if (mounted && !_popping) setState(() => _busy = false);
+      if (mounted) setState(() => _busy = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final created = _created;
+    if (created != null) {
+      return SuccessScreen(
+        title: 'Room added successfully',
+        message: 'Room ${created.roomNumber} is ready to use.',
+        detailsTitle: 'Room details',
+        nextStep:
+            'Add a member to start tracking rent, or open the room to review it any time.',
+        details: [
+          SuccessDetail(
+            label: 'Room name',
+            value: created.roomNumber,
+            icon: Icons.meeting_room_outlined,
+          ),
+          SuccessDetail(
+            label: 'Capacity',
+            value: '${created.capacity} members',
+            icon: Icons.people_outline,
+          ),
+          SuccessDetail(
+            label: 'Status',
+            value: created.status,
+            icon: Icons.info_outline,
+          ),
+          if (created.notes != null)
+            SuccessDetail(
+              label: 'Notes',
+              value: created.notes!,
+              icon: Icons.notes_outlined,
+            ),
+        ],
+        onBack: () => Navigator.of(context).pop(
+          RoomCreatedResult(
+            next: RoomCreatedNext.done,
+            roomId: created.id,
+            roomNumber: created.roomNumber,
+          ),
+        ),
+        actions: [
+          if (created.id.isNotEmpty) ...[
+            // Outlined secondary on the left, filled primary on the right.
+            SuccessAction(
+              label: 'View room',
+              icon: Icons.visibility_outlined,
+              style: SuccessActionStyle.outlined,
+              onPressed: () => Navigator.of(context).pop(
+                RoomCreatedResult(
+                  next: RoomCreatedNext.viewRoom,
+                  roomId: created.id,
+                  roomNumber: created.roomNumber,
+                ),
+              ),
+            ),
+            SuccessAction(
+              label: 'Add member',
+              icon: Icons.person_add_outlined,
+              style: SuccessActionStyle.filled,
+              onPressed: () => Navigator.of(context).pop(
+                RoomCreatedResult(
+                  next: RoomCreatedNext.addMember,
+                  roomId: created.id,
+                  roomNumber: created.roomNumber,
+                ),
+              ),
+            ),
+          ],
+        ],
+      );
+    }
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(

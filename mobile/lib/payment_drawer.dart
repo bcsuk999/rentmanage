@@ -6,7 +6,9 @@ import 'api.dart';
 import 'app_theme.dart';
 import 'motion.dart';
 import 'payment_allocation.dart';
+import 'payment_history_page.dart';
 import 'status_colors.dart';
+import 'success_page.dart';
 import 'widgets.dart';
 
 String _dateInput(DateTime d) =>
@@ -74,8 +76,10 @@ class _PaymentDrawerState extends State<PaymentDrawer> {
 
   String _method = paymentMethods.first;
   bool _busy = false;
-  bool _popping = false;
   String? _error;
+
+  /// Snapshot shown on the confirmation screen after a successful save.
+  _SavedPayment? _saved;
 
   @override
   void initState() {
@@ -471,6 +475,8 @@ class _PaymentDrawerState extends State<PaymentDrawer> {
       );
       return;
     }
+    final paymentDate = _dateInput(_stampDate(period));
+    final reference = _reference.text.trim();
     setState(() {
       _busy = true;
       _error = null;
@@ -479,26 +485,119 @@ class _PaymentDrawerState extends State<PaymentDrawer> {
       await widget.api.recordPayment(
         rentPeriodId: period.id,
         amount: _amount.text.trim(),
-        paymentDate: _dateInput(_stampDate(period)),
+        paymentDate: paymentDate,
         paymentMethod: _method,
-        reference: _reference.text.trim(),
+        reference: reference,
         notes: _notes.text.trim(),
       );
       if (!mounted) return;
-      _popping = true;
-      toastOk(context, 'Payment of ${inr(amount)} recorded for $_memberName.');
-      Navigator.of(context).pop(true);
+      setState(() {
+        _saved = _SavedPayment(
+          amount: amount,
+          memberName: _memberName,
+          method: _method,
+          date: paymentDate,
+          reference: reference,
+          roomNumber: widget.roomNumber,
+          memberId: _memberId,
+          roomId: _roomId,
+        );
+      });
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.message);
     } catch (_) {
       if (mounted) setState(() => _error = 'Could not reach the server.');
     } finally {
-      if (mounted && !_popping) setState(() => _busy = false);
+      if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// Clears the amount fields but keeps the selected member/period, so the
+  /// same flow can record the next payment without starting over.
+  void _recordAnother() {
+    setState(() {
+      _saved = null;
+      _amount.clear();
+      _reference.clear();
+      _notes.clear();
+      _error = null;
+    });
+  }
+
+  /// Shows the saved record in context, then closes the drawer on the way out
+  /// so the caller refreshes its totals.
+  Future<void> _viewHistory() async {
+    final saved = _saved;
+    if (saved == null) return;
+    await Navigator.of(context).push(
+      smoothRoute(
+        PaymentHistoryPage(
+          api: widget.api,
+          isAdmin: true,
+          memberId: saved.memberId,
+          memberName: saved.memberName,
+          roomId: saved.roomId,
+          roomNumber: saved.roomNumber,
+        ),
+      ),
+    );
+    if (mounted) Navigator.of(context).pop(true);
   }
 
   @override
   Widget build(BuildContext context) {
+    final saved = _saved;
+    if (saved != null) {
+      return SuccessScreen(
+        title: 'Payment recorded successfully',
+        message: '${inr(saved.amount)} recorded for ${saved.memberName}.',
+        detailsTitle: 'Payment details',
+        nextStep: 'The rent balance has been updated.',
+        details: [
+          SuccessDetail(
+            label: 'Member',
+            value: saved.memberName,
+            icon: Icons.person_outline,
+          ),
+          SuccessDetail(
+            label: 'Amount',
+            value: inr(saved.amount),
+            icon: Icons.currency_rupee,
+          ),
+          SuccessDetail(
+            label: 'Method',
+            value: saved.method,
+            icon: Icons.payments_outlined,
+          ),
+          SuccessDetail(
+            label: 'Date',
+            value: saved.date,
+            icon: Icons.calendar_today_outlined,
+          ),
+          if (saved.reference.isNotEmpty)
+            SuccessDetail(
+              label: 'Reference',
+              value: saved.reference,
+              icon: Icons.receipt_long_outlined,
+            ),
+        ],
+        onBack: () => Navigator.of(context).pop(true),
+        actions: [
+          SuccessAction(
+            label: 'View history',
+            icon: Icons.history,
+            style: SuccessActionStyle.outlined,
+            onPressed: _viewHistory,
+          ),
+          SuccessAction(
+            label: 'Record another',
+            icon: Icons.add_task,
+            style: SuccessActionStyle.filled,
+            onPressed: _recordAnother,
+          ),
+        ],
+      );
+    }
     final theme = Theme.of(context);
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     return Scaffold(
@@ -918,4 +1017,28 @@ Route<bool> _drawerRoute(Widget page) {
       );
     },
   );
+}
+
+/// Values captured at save time so the confirmation shows exactly what was
+/// submitted.
+class _SavedPayment {
+  const _SavedPayment({
+    required this.amount,
+    required this.memberName,
+    required this.method,
+    required this.date,
+    required this.reference,
+    required this.roomNumber,
+    required this.memberId,
+    required this.roomId,
+  });
+
+  final double amount;
+  final String memberName;
+  final String method;
+  final String date;
+  final String reference;
+  final String? roomNumber;
+  final String? memberId;
+  final String? roomId;
 }

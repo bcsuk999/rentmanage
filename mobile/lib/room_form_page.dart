@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'api.dart';
 import 'app_theme.dart';
 import 'motion.dart';
-import 'widgets.dart';
+import 'success_page.dart';
 
 /// Edit a room on its own page, matching the member edit form. Returns true
 /// when the room was updated.
@@ -25,9 +25,8 @@ class _RoomFormPageState extends State<RoomFormPage> {
   bool _busy = false;
   String? _error;
 
-  /// Set once the page is being popped, so the [finally] block does not
-  /// rebuild a form that is on its way out.
-  bool _popping = false;
+  /// Snapshot shown on the confirmation screen after a successful update.
+  _SavedRoom? _saved;
 
   @override
   void initState() {
@@ -67,20 +66,68 @@ class _RoomFormPageState extends State<RoomFormPage> {
         notes: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
       );
       if (!mounted) return;
-      _popping = true;
-      toastOk(context, 'Room ${_number.text.trim()} updated.');
-      Navigator.of(context).pop(true);
+      setState(() {
+        final notes = _notes.text.trim();
+        _saved = _SavedRoom(
+          id: widget.room.id,
+          roomNumber: _number.text.trim(),
+          capacity: capacity,
+          status: _status,
+          notes: notes.isEmpty ? null : notes,
+        );
+      });
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.message);
     } catch (_) {
       if (mounted) setState(() => _error = 'Could not reach the server.');
     } finally {
-      if (mounted && !_popping) setState(() => _busy = false);
+      if (mounted) setState(() => _busy = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final saved = _saved;
+    if (saved != null) {
+      return SuccessScreen(
+        title: 'Room updated successfully',
+        message: 'Room ${saved.roomNumber} has been saved.',
+        detailsTitle: 'Room details',
+        nextStep: 'Return to the room to see the latest details.',
+        details: [
+          SuccessDetail(
+            label: 'Room name',
+            value: saved.roomNumber,
+            icon: Icons.meeting_room_outlined,
+          ),
+          SuccessDetail(
+            label: 'Capacity',
+            value: '${saved.capacity} members',
+            icon: Icons.people_outline,
+          ),
+          SuccessDetail(
+            label: 'Status',
+            value: saved.status,
+            icon: Icons.info_outline,
+          ),
+          if (saved.notes != null)
+            SuccessDetail(
+              label: 'Notes',
+              value: saved.notes!,
+              icon: Icons.notes_outlined,
+            ),
+        ],
+        onBack: () => Navigator.of(context).pop(true),
+        actions: [
+          SuccessAction(
+            label: 'View room',
+            icon: Icons.visibility_outlined,
+            style: SuccessActionStyle.filled,
+            onPressed: () => Navigator.of(context).pop(true),
+          ),
+        ],
+      );
+    }
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -198,4 +245,22 @@ class _RoomFormPageState extends State<RoomFormPage> {
       ),
     );
   }
+}
+
+/// Values captured at save time so the confirmation shows exactly what was
+/// submitted, even if the user would otherwise navigate away.
+class _SavedRoom {
+  const _SavedRoom({
+    required this.id,
+    required this.roomNumber,
+    required this.capacity,
+    required this.status,
+    this.notes,
+  });
+
+  final String id;
+  final String roomNumber;
+  final int capacity;
+  final String status;
+  final String? notes;
 }

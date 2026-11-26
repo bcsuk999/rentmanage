@@ -1,6 +1,6 @@
 {
-  "version": "1.6.13",
-  "build": 17,
-  "apkUrl": "https://raw.githubusercontent.com/bcsuk999/rentmanage/main/releases/rentmanage-arm64-v1.6.13.apk",
-  "message": "The app now connects to a new, faster server. Sign-in, rent records and payments sync more reliably."
+  "version": "1.6.14",
+  "build": 18,
+  "apkUrl": "https://raw.githubusercontent.com/bcsuk999/rentmanage/main/releases/rentmanage-arm64-v1.6.14.apk",
+  "message": "Success confirmation screens for saved rooms, members and payments. Overdue and room details now open instantly from cached data, with cleaner summary cards and typography."
 }

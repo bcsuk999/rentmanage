@@ -1,0 +1,5 @@
+- Animated success confirmation after adding or editing a room, adding or editing a member, and recording a payment
+- Quick actions on confirmation screens: view the saved room/member, add a member, view payment history or record another payment
+- Overdue tab now reuses the rooms-list data, with per-month overdue periods and accurate overdue days
+- Room and member detail pages paint instantly from cached data while fresh details load quietly
+- Cleaner summary cards and system sans-serif typography for a more modern look

@@ -628,7 +628,12 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
       return widget.embedded ? panel : ListView(children: [panel]);
     }
     final list = ListView.builder(
-      padding: EdgeInsets.fromLTRB(16, widget.embedded ? 0 : 12, 16, 24),
+      // Embedded in member details the parent ListView already supplies the
+      // 16px side padding, so adding more here would make the cards narrower
+      // than the facts card above.
+      padding: widget.embedded
+          ? const EdgeInsets.only(bottom: 24)
+          : const EdgeInsets.fromLTRB(16, 12, 16, 24),
       shrinkWrap: widget.embedded,
       physics: widget.embedded ? const NeverScrollableScrollPhysics() : null,
       itemCount: _rows.length + 1,
@@ -650,13 +655,17 @@ class PaymentHistoryListState extends State<PaymentHistoryList> {
             ),
           );
         }
+        final card = Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: _PaymentCard(record: _rows[index], compactCard: widget.embedded),
+        );
+        // The global page centres a phone-width column. Embedded in member
+        // details the cards must span the same width as the facts card above.
+        if (widget.embedded) return card;
         return Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 480),
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: _PaymentCard(record: _rows[index]),
-            ),
+            child: card,
           ),
         );
       },
@@ -697,9 +706,13 @@ class _SearchButton extends StatelessWidget {
 }
 
 class _PaymentCard extends StatefulWidget {
-  const _PaymentCard({required this.record});
+  const _PaymentCard({required this.record, this.compactCard = false});
 
   final PaymentRecord record;
+
+  /// When true (member details page) the expanded card shows only Method, Note
+  /// and Allocation. When false (global payment page) it shows the full set.
+  final bool compactCard;
 
   @override
   State<_PaymentCard> createState() => _PaymentCardState();
@@ -714,49 +727,102 @@ class _PaymentCardState extends State<_PaymentCard> {
 
   @override
   Widget build(BuildContext context) {
+    return widget.compactCard ? _buildCompact(context) : _buildFull(context);
+  }
+
+  /// Compact card used on the member details page: Amount, Time and (on
+  /// expand) Method, Note and Allocation. No member name ribbon, since the
+  /// whole page is already about one member.
+  Widget _buildCompact(BuildContext context) {
     final theme = Theme.of(context);
-    final clock = fmtTimeIso(record.createdAtIso);
-    // Show the payment's own date so the visible date matches the newest-first
-    // order. Older records without one fall back to when they were saved.
-    final createdAt = DateTime.tryParse(record.createdAtIso)?.toLocal();
-    final paymentDate = record.dateIso.isEmpty && createdAt != null
-        ? fmtDateMedium(createdAt)
-        : fmtDateIso(record.dateIso);
-    final time = clock.isEmpty ? paymentDate : '$clock  ·  $paymentDate';
+    final time = _paymentTime();
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: _toggle,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 8, 8, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.schedule_outlined,
+                          size: 16,
+                          color: AppColors.secondaryText,
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            time,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: AppColors.secondaryText,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Paid: ',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.secondaryText,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    inr(record.amount),
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.success,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: _expanded ? 'Hide details' : 'Show details',
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints.tightFor(width: 30),
+                    icon: Icon(
+                      _expanded ? Icons.expand_less : Icons.expand_more,
+                      size: 20,
+                      color: AppColors.secondaryText,
+                    ),
+                    onPressed: _toggle,
+                  ),
+                ],
+              ),
+              if (_expanded) ...[
+                const SizedBox(height: 8),
+                const Divider(height: 1),
+                const SizedBox(height: 10),
+                _detailRow(theme, 'Method', record.method),
+                if (record.notes.isNotEmpty)
+                  _detailRow(theme, 'Note', record.notes),
+                _allocationRows(context, theme),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Original full card for the global Payment Records page.
+  Widget _buildFull(BuildContext context) {
+    final theme = Theme.of(context);
+    final time = _paymentTime();
     final rentPeriod = record.periodStartIso.isEmpty
         ? '-'
         : '${fmtDateShortIso(record.periodStartIso)} – ${fmtDateShortIso(record.periodEndIso)}';
-    Widget detail(String label, String value) => Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: AppColors.secondaryText,
-              ),
-            ),
-          ),
-          Text(
-            ':',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: AppColors.secondaryText,
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              textAlign: TextAlign.right,
-              style: theme.textTheme.bodySmall?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
     return Card(
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -764,11 +830,8 @@ class _PaymentCardState extends State<_PaymentCard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Ribbon sits flush against the card's top-left corner.
             Row(
               children: [
-                // Expanded (not Flexible + Spacer) so the ribbon slot takes all
-                // the leftover width and the amount stays pinned to the right edge.
                 Expanded(
                   child: Align(
                     alignment: Alignment.centerLeft,
@@ -860,22 +923,14 @@ class _PaymentCardState extends State<_PaymentCard> {
                     const SizedBox(height: 8),
                     const Divider(height: 1),
                     const SizedBox(height: 10),
-                    detail('Room', record.roomNumber),
+                    _detailRow(theme, 'Room', record.roomNumber),
                     if (record.memberMobile.isNotEmpty)
-                      detail('Phone', record.memberMobile),
-                    detail('Rent period', rentPeriod),
-                    detail('Method', record.method),
-                    if (record.notes.isNotEmpty) detail('Note', record.notes),
-                    if (record.allocations.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      _allocationBreakdown(context, theme),
-                    ] else if (record.allocOverdue != null) ...[
-                      const SizedBox(height: 8),
-                      detail(
-                        'Allocation',
-                        'Overdue ${inr(record.allocOverdue!)} · Current ${inr(record.allocCurrent ?? 0)}',
-                      ),
-                    ],
+                      _detailRow(theme, 'Phone', record.memberMobile),
+                    _detailRow(theme, 'Rent period', rentPeriod),
+                    _detailRow(theme, 'Method', record.method),
+                    if (record.notes.isNotEmpty)
+                      _detailRow(theme, 'Note', record.notes),
+                    _allocationRows(context, theme),
                   ],
                 ],
               ),
@@ -884,6 +939,74 @@ class _PaymentCardState extends State<_PaymentCard> {
         ),
       ),
     );
+  }
+
+  /// 'HH:mm  ·  date' from the payment's own date, falling back to saved time.
+  String _paymentTime() {
+    final clock = fmtTimeIso(record.createdAtIso);
+    final createdAt = DateTime.tryParse(record.createdAtIso)?.toLocal();
+    final paymentDate = record.dateIso.isEmpty && createdAt != null
+        ? fmtDateMedium(createdAt)
+        : fmtDateIso(record.dateIso);
+    return clock.isEmpty ? paymentDate : '$clock  ·  $paymentDate';
+  }
+
+  Widget _detailRow(ThemeData theme, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: AppColors.secondaryText,
+              ),
+            ),
+          ),
+          Text(
+            ':',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: AppColors.secondaryText,
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _allocationRows(BuildContext context, ThemeData theme) {
+    if (record.allocations.isNotEmpty) {
+      return Column(
+        children: [
+          const SizedBox(height: 4),
+          _allocationBreakdown(context, theme),
+        ],
+      );
+    }
+    if (record.allocOverdue != null) {
+      return Column(
+        children: [
+          const SizedBox(height: 8),
+          _detailRow(
+            theme,
+            'Allocation',
+            'Overdue ${inr(record.allocOverdue!)} · Current ${inr(record.allocCurrent ?? 0)}',
+          ),
+        ],
+      );
+    }
+    return const SizedBox.shrink();
   }
 
   /// Per-cycle split of what this payment actually paid for - the same view the
