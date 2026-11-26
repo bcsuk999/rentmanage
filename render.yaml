@@ -20,3 +20,22 @@ services:
         generateValue: true
       - key: MONGODB_DNS_SERVERS
         value: 8.8.8.8,1.1.1.1
+
+  - type: cron
+    name: rentmanage-period-maintenance
+    runtime: node
+    region: singapore
+    plan: free
+    branch: main
+    buildCommand: npm ci --omit=dev
+    schedule: "30 18 * * *"
+    startCommand: npm run cron
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TZ
+        value: Asia/Kolkata
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DNS_SERVERS
+        value: 8.8.8.8,1.1.1.1

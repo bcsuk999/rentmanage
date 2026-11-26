@@ -18,6 +18,7 @@ const landlordRoutes = require('./src/routes/landlord');
 const overdueRoutes = require('./src/routes/overdue');
 const settingsRoutes = require('./src/routes/settings');
 const { ensureAdminFromEnv, ensureLandlordFromEnv } = require('./src/services/landlordService');
+const { runPeriodMaintenance } = require('./src/services/rentService');
 
 const app = express();
 
@@ -74,9 +75,18 @@ async function start() {
   await connectDb();
   await ensureLandlordFromEnv();
   await ensureAdminFromEnv();
-  return app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     console.log(`Rent management API running on http://localhost:${PORT}`);
   });
+  // Catch up if a scheduled cron run was missed (e.g. Render free tier spin-down).
+  runPeriodMaintenance()
+    .then((r) =>
+      console.log(
+        `Startup period maintenance: ${r.landlords} landlord(s), ${r.created} period(s) created, ${r.overdueRefreshed} overdue flip(s)`
+      )
+    )
+    .catch((err) => console.error('Startup period maintenance failed:', err.message));
+  return server;
 }
 
 if (require.main === module) {

@@ -3,6 +3,7 @@
 const RentPeriod = require('../models/RentPeriod');
 const Member = require('../models/Member');
 const Payment = require('../models/Payment');
+const Landlord = require('../models/Landlord');
 const { addDays, cycleAt, cycleIndexFor, isOverdue, startOfDay, today } = require('../utils/dates');
 const { ValidationError } = require('../utils/validate');
 
@@ -356,6 +357,23 @@ function summarise(members) {
   };
 }
 
+/**
+ * Background maintenance: generate missing rent periods and sweep overdue
+ * statuses for every landlord. Safe to run on server startup and from cron.
+ */
+async function runPeriodMaintenance({ reference = today() } = {}) {
+  const landlords = await Landlord.find({}, '_id').lean();
+  let created = 0;
+  let overdueRefreshed = 0;
+  for (const landlord of landlords) {
+    const ownerId = landlord._id;
+    const generated = await ensurePeriodsForActiveMembers({ ownerId, reference });
+    created += generated.created || 0;
+    overdueRefreshed += await refreshOverdueStatuses({ ownerId, reference });
+  }
+  return { landlords: landlords.length, created, overdueRefreshed };
+}
+
 module.exports = {
   FUTURE_CYCLES,
   currentPeriodForMember,
@@ -369,6 +387,7 @@ module.exports = {
   refreshOverdueStatuses,
   recalcPeriod,
   roomPeriodOptions,
+  runPeriodMaintenance,
   selectPeriodsByMember,
   summarise,
 };
