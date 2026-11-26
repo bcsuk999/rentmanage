@@ -5,7 +5,7 @@ const Room = require('../models/Room');
 const Member = require('../models/Member');
 const RentPeriod = require('../models/RentPeriod');
 const { ROOM_STATUSES } = require('../models/Room');
-const { ensurePeriodsForMember, summarise } = require('./rentService');
+const { summarise } = require('./rentService');
 const { MONTHS, startOfDay, today } = require('../utils/dates');
 const { requireOwnerId } = require('../utils/owner');
 const {
@@ -163,12 +163,6 @@ async function roomDetail(id, selectedRange, ownerId) {
     .sort({ name: 1 })
     .lean();
   const memberIds = members.map((m) => m._id);
-
-  // Make sure current-cycle rent periods exist for each active member in
-  // this room. Scoped per-member: never sweeps the whole portfolio.
-  for (const m of members) {
-    await ensurePeriodsForMember(m);
-  }
 
   const periods = memberIds.length
     ? await RentPeriod.find({ ownerId: owner, memberId: { $in: memberIds } })
