@@ -38,6 +38,10 @@ const rentPeriodSchema = new mongoose.Schema(
 
 // One rent period per member per cycle start; periods for a member must not overlap.
 rentPeriodSchema.index({ memberId: 1, startDate: 1 }, { unique: true });
+// Room detail: all periods for a room's active members, sorted by startDate.
+rentPeriodSchema.index({ ownerId: 1, memberId: 1, startDate: 1 });
+// Overdue sweep: ownerId + status + endDate, filtered by pendingAmount > 0.
+rentPeriodSchema.index({ ownerId: 1, status: 1, endDate: 1, pendingAmount: 1 });
 // Room rollup for the current cycle, plus the room period list (sorted by startDate).
 rentPeriodSchema.index({ roomId: 1, startDate: -1, endDate: 1, status: 1 });
 // Range-overlap queries (reports) and the current-cycle lookup.

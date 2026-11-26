@@ -5,7 +5,7 @@ const Room = require('../models/Room');
 const Member = require('../models/Member');
 const RentPeriod = require('../models/RentPeriod');
 const { ROOM_STATUSES } = require('../models/Room');
-const { ensurePeriodsForActiveMembers, summarise } = require('./rentService');
+const { summarise } = require('./rentService');
 const { MONTHS, startOfDay, today } = require('../utils/dates');
 const { requireOwnerId } = require('../utils/owner');
 const {
@@ -158,8 +158,6 @@ async function roomDetail(id, selectedRange, ownerId) {
   const owner = requireOwnerId(ownerId);
   const room = await Room.findOne({ _id: toObjectId(id, 'roomId'), ownerId: owner }).lean();
   if (!room) throw new ValidationError([{ field: 'roomId', message: 'Room not found' }]);
-
-  await ensurePeriodsForActiveMembers({ roomId: room._id, ownerId: owner });
 
   const members = await Member.find({ ownerId: owner, roomId: room._id, status: 'active' })
     .sort({ name: 1 })
