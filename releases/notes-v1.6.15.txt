@@ -1,0 +1,6 @@
+- Payment drawer opens instantly with members and full balances from the rooms snapshot, so no extra room request is needed
+- Searchable member picker and compact method dropdown replace the old tap-to-select sheet and plain method field
+- Room balances now use the server's authoritative total due instead of adding overdue twice
+- Overdue payments start with the full known balance while real rent periods load quietly in the background
+- Dashboard summaries use the shared three-figure split card for a cleaner, consistent look
+- Backend room summaries are now all-time and exclude rent periods that have not started yet

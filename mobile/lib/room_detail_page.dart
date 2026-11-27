@@ -150,6 +150,16 @@ class _RoomDetailPageState extends State<RoomDetailPage> {
       api: widget.api,
       roomId: widget.roomId,
       roomNumber: detail.room.roomNumber,
+      // The room rows already carry each member's full balance, so the drawer
+      // can preselect someone and show their due without another room call.
+      initialMembers: [
+        for (final row in detail.rows)
+          PaymentMemberPreset(
+            id: row.memberId,
+            name: row.name,
+            due: row.totalDue,
+          ),
+      ],
     );
     if (recorded && mounted) _refresh();
   }

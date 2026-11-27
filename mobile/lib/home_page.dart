@@ -794,79 +794,57 @@ class _HomePageState extends State<HomePage>
     if (_summaryLoading && _summary == null) {
       return const Column(
         children: [
-          Row(
-            children: [
-              Expanded(child: SkeletonBlock(height: 64)),
-              SizedBox(width: 10),
-              Expanded(child: SkeletonBlock(height: 64)),
-              SizedBox(width: 10),
-              Expanded(child: SkeletonBlock(height: 64)),
-            ],
-          ),
+          SkeletonBlock(height: 64),
           SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(child: SkeletonBlock(height: 64)),
-              SizedBox(width: 10),
-              Expanded(child: SkeletonBlock(height: 64)),
-              SizedBox(width: 10),
-              Expanded(child: SkeletonBlock(height: 64)),
-            ],
-          ),
+          SkeletonBlock(height: 64),
         ],
       );
     }
     final s = _summary;
     if (s == null) return const SizedBox.shrink();
-    return GridView.count(
-      crossAxisCount: 3,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: 10,
-      crossAxisSpacing: 10,
-      childAspectRatio: 1.9,
+    // Same card as the overdue page, with a third figure added to each row.
+    return Column(
       children: [
-        SummaryMetric(
-          compact: true,
-          icon: Icons.wallet_outlined,
-          value: inr(s.collected),
-          label: 'Collected',
-          color: AppColors.success,
+        SplitSummaryCard(
+          left: SplitSummaryFigure(
+            icon: Icons.wallet_outlined,
+            value: inr(s.collected),
+            label: 'Collected',
+            color: AppColors.success,
+          ),
+          right: SplitSummaryFigure(
+            icon: Icons.schedule_outlined,
+            value: inr(s.due),
+            label: 'Due',
+            color: AppColors.warning,
+          ),
+          third: SplitSummaryFigure(
+            icon: Icons.error_outline,
+            value: inr(s.overdue),
+            label: 'Overdue',
+            color: AppColors.danger,
+          ),
         ),
-        SummaryMetric(
-          compact: true,
-          icon: Icons.schedule_outlined,
-          value: inr(s.due),
-          label: 'Due',
-          color: AppColors.warning,
-        ),
-        SummaryMetric(
-          compact: true,
-          icon: Icons.error_outline,
-          value: inr(s.overdue),
-          label: 'Overdue',
-          color: AppColors.danger,
-        ),
-        SummaryMetric(
-          compact: true,
-          icon: Icons.receipt_long_outlined,
-          value: inr(s.expense),
-          label: 'Expenses',
-          color: AppColors.secondaryText,
-        ),
-        SummaryMetric(
-          compact: true,
-          icon: Icons.meeting_room_outlined,
-          value: '${s.totalRooms}',
-          label: 'Total rooms',
-          color: AppColors.primary,
-        ),
-        SummaryMetric(
-          compact: true,
-          icon: Icons.people_outline,
-          value: '${s.totalMembers}',
-          label: 'Total members',
-          color: AppColors.primary,
+        const SizedBox(height: 10),
+        SplitSummaryCard(
+          left: SplitSummaryFigure(
+            icon: Icons.receipt_long_outlined,
+            value: inr(s.expense),
+            label: 'Expenses',
+            color: AppColors.secondaryText,
+          ),
+          right: SplitSummaryFigure(
+            icon: Icons.meeting_room_outlined,
+            value: '${s.totalRooms}',
+            label: 'Total rooms',
+            color: AppColors.primary,
+          ),
+          third: SplitSummaryFigure(
+            icon: Icons.people_outline,
+            value: '${s.totalMembers}',
+            label: 'Total members',
+            color: AppColors.primary,
+          ),
         ),
       ],
     );

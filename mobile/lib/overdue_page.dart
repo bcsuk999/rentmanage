@@ -174,14 +174,17 @@ class OverduePageState extends State<OverduePage> {
     }
   }
 
-  Future<void> _record(OverdueMember m, OverduePeriod p) async {
+  Future<void> _record(OverdueMember m, OverduePeriod _) async {
     final recorded = await showPaymentDrawer(
       context,
       api: widget.api,
       roomNumber: m.roomNumber,
       memberId: m.memberId,
       memberName: m.name,
-      periodId: p.id,
+      // Full balance already known from the rooms list: ended-cycle carry-over
+      // plus the rent still pending on the current cycle. The drawer fetches
+      // the real periods in the background and replaces this snapshot.
+      initialDue: m.totalOverdue + m.currentPending,
     );
     if (recorded && mounted) _load();
   }

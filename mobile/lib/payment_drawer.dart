@@ -14,9 +14,10 @@ import 'widgets.dart';
 String _dateInput(DateTime d) =>
     '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
-/// One room member in the drawer's member picker.
-class _MemberOption {
-  const _MemberOption({
+/// A room member already fetched by the caller, with the full balance known
+/// from `/api/landlord/rooms` (current pending + overdue carry-over).
+class PaymentMemberPreset {
+  const PaymentMemberPreset({
     required this.id,
     required this.name,
     required this.due,
@@ -41,6 +42,9 @@ class PaymentDrawer extends StatefulWidget {
     this.memberId,
     this.memberName,
     this.periodId,
+    this.initialMembers,
+    this.initialDue,
+    this.initialPeriods,
   });
 
   final ApiClient api;
@@ -50,6 +54,18 @@ class PaymentDrawer extends StatefulWidget {
   final String? memberName;
   final String? periodId;
 
+  /// Members and their full balances already fetched by the caller, so the
+  /// drawer does not need another rooms/room-detail request to pick someone.
+  final List<PaymentMemberPreset>? initialMembers;
+
+  /// Full balance (pending + overdue) from the rooms-list snapshot. Shown at
+  /// once while the individual member request runs in the background.
+  final double? initialDue;
+
+  /// Rent periods when the caller has already fetched the member endpoint;
+  /// lets the form be usable immediately instead of showing a spinner.
+  final List<MemberPeriod>? initialPeriods;
+
   @override
   State<PaymentDrawer> createState() => _PaymentDrawerState();
 }
@@ -58,14 +74,18 @@ class _PaymentDrawerState extends State<PaymentDrawer> {
   List<Room> _rooms = const [];
   bool _roomsLoading = false;
 
-  List<_MemberOption> _members = const [];
+  List<PaymentMemberPreset> _members = const [];
   bool _membersLoading = false;
 
   List<MemberPeriod> _periods = const [];
   bool _dueLoading = true;
 
+  /// The displayed periods came from the rooms-list snapshot, not the member
+  /// endpoint, so their ids are not safe to submit until the background call
+  /// has replaced them.
+  bool _periodsProvisional = false;
+
   late final TextEditingController _amount;
-  final _reference = TextEditingController();
   final _notes = TextEditingController();
 
   String? _roomId;
@@ -90,9 +110,35 @@ class _PaymentDrawerState extends State<PaymentDrawer> {
     _memberName = widget.memberName ?? '';
     _presetPeriodId = widget.periodId;
 
+    final presets = widget.initialMembers;
+    if (presets != null && presets.isNotEmpty) {
+      _members = presets;
+      if (_memberId == null) {
+        final owed = presets.where((m) => m.due > 0);
+        final first = owed.isNotEmpty ? owed.first : presets.first;
+        _memberId = first.id;
+        _memberName = first.name;
+      }
+    }
+
+    // Paint the balance the caller already has (rooms list or member profile)
+    // before the per-member request answers.
+    if (widget.initialPeriods != null && widget.initialPeriods!.isNotEmpty) {
+      _periods = widget.initialPeriods!;
+      _periodId = _pickPeriod(_periods, _presetPeriodId);
+      _presetPeriodId = null;
+      _dueLoading = false;
+    } else {
+      final due =
+          widget.initialDue ??
+          presets?.where((m) => m.id == _memberId).firstOrNull?.due ??
+          0.0;
+      if (due > 0) _seedSnapshotPeriod(due);
+    }
+
     if (_memberId != null) {
-      _loadPeriods();
-    } else if (_roomId != null) {
+      _loadPeriods(soft: !_dueLoading);
+    } else if (_roomId != null && presets == null) {
       _loadRoomMembers(_roomId!);
     } else {
       _loadRooms();
@@ -102,7 +148,6 @@ class _PaymentDrawerState extends State<PaymentDrawer> {
   @override
   void dispose() {
     _amount.dispose();
-    _reference.dispose();
     _notes.dispose();
     super.dispose();
   }
@@ -112,6 +157,43 @@ class _PaymentDrawerState extends State<PaymentDrawer> {
       if (p.id == _periodId) return p;
     }
     return null;
+  }
+
+  /// Picks the period the payment should be booked against: a real id supplied
+  /// by the caller first, otherwise the oldest outstanding cycle.
+  String? _pickPeriod(List<MemberPeriod> periods, String? wanted) {
+    MemberPeriod? picked;
+    if (wanted != null) {
+      for (final p in periods) {
+        if (p.id == wanted) {
+          picked = p;
+          break;
+        }
+      }
+    }
+    picked ??= periods.where((p) => p.pending > 0).firstOrNull;
+    picked ??= periods.firstOrNull;
+    return picked?.id;
+  }
+
+  /// One provisional cycle holding the balance already known from the rooms
+  /// list. Its id is not real, so submitting is blocked until the member
+  /// endpoint replaces it.
+  void _seedSnapshotPeriod(double due) {
+    _periods = [
+      MemberPeriod(
+        id: 'snapshot-${_memberId ?? ''}',
+        startIso: '',
+        endIso: '',
+        rent: due,
+        paid: 0,
+        pending: due,
+        status: 'Pending',
+      ),
+    ];
+    _periodId = _periods.first.id;
+    _periodsProvisional = true;
+    _dueLoading = false;
   }
 
   List<PaymentCycle> get _cycles =>
@@ -124,13 +206,6 @@ class _PaymentDrawerState extends State<PaymentDrawer> {
       if (room.id == _roomId) return 'Room ${room.roomNumber}';
     }
     return 'Select room';
-  }
-
-  String get _memberLabel {
-    for (final member in _members) {
-      if (member.id == _memberId) return member.name;
-    }
-    return _memberName.isEmpty ? 'Select member' : _memberName;
   }
 
   Future<void> _loadRooms() async {
@@ -190,7 +265,7 @@ class _PaymentDrawerState extends State<PaymentDrawer> {
       if (!mounted) return;
       final members = [
         for (final row in detail.rows)
-          _MemberOption(id: row.memberId, name: row.name, due: row.totalDue),
+          PaymentMemberPreset(id: row.memberId, name: row.name, due: row.totalDue),
       ];
       final owed = members.where((m) => m.due > 0);
       final first = owed.isNotEmpty ? owed.first : members.firstOrNull;
@@ -226,23 +301,26 @@ class _PaymentDrawerState extends State<PaymentDrawer> {
   }
 
   void _selectMember(String memberId) {
-    var name = '';
+    PaymentMemberPreset? preset;
     for (final m in _members) {
       if (m.id == memberId) {
-        name = m.name;
+        preset = m;
         break;
       }
     }
+    final hasSnapshot = preset != null && preset.due > 0;
     setState(() {
       _memberId = memberId;
-      _memberName = name;
+      _memberName = preset?.name ?? '';
       _periodId = null;
       _periods = const [];
+      _periodsProvisional = false;
       _amount.clear();
       _dueLoading = true;
       _error = null;
+      if (hasSnapshot) _seedSnapshotPeriod(preset!.due);
     });
-    _loadPeriods();
+    _loadPeriods(soft: hasSnapshot);
   }
 
   Future<void> _pickRoom() async {
@@ -293,56 +371,6 @@ class _PaymentDrawerState extends State<PaymentDrawer> {
       },
     );
     if (picked != null && picked != _roomId) await _selectRoom(picked);
-  }
-
-  Future<void> _pickMember() async {
-    if (_members.isEmpty) return;
-    final picked = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: AppColors.card,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (sheetContext) {
-        return ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.7,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _sheetHeader(sheetContext, 'Select member'),
-              Flexible(
-                child: ListView.separated(
-                  shrinkWrap: true,
-                  itemCount: _members.length,
-                  separatorBuilder: (_, _) => const Divider(height: 1),
-                  itemBuilder: (sheetContext, index) {
-                    final member = _members[index];
-                    final selected = member.id == _memberId;
-                    return PressScale(
-                      child: ListTile(
-                        title: Text(member.name),
-                        trailing: selected
-                            ? const Icon(
-                                Icons.check_circle,
-                                color: AppColors.primary,
-                              )
-                            : null,
-                        onTap: () => Navigator.of(sheetContext).pop(member.id),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-    if (picked != null && picked != _memberId) _selectMember(picked);
   }
 
   Widget _sheetHeader(BuildContext context, String title) {
@@ -400,46 +428,40 @@ class _PaymentDrawerState extends State<PaymentDrawer> {
     );
   }
 
-  Future<void> _loadPeriods() async {
+  /// [soft] keeps the snapshot on screen: no spinner and no clearing of an
+  /// amount the user may already have typed while the request was in flight.
+  Future<void> _loadPeriods({bool soft = false}) async {
     final memberId = _memberId;
     if (memberId == null) return;
-    setState(() {
-      _dueLoading = true;
-      _error = null;
-    });
+    if (!soft) {
+      setState(() {
+        _dueLoading = true;
+        _error = null;
+      });
+    }
     try {
       final periods = await widget.api.memberPeriods(memberId);
       if (!mounted) return;
-      MemberPeriod? picked;
-      final wanted = _presetPeriodId;
-      if (wanted != null) {
-        for (final p in periods) {
-          if (p.id == wanted) {
-            picked = p;
-            break;
-          }
-        }
-      }
-      picked ??= periods.where((p) => p.pending > 0).firstOrNull;
-      picked ??= periods.firstOrNull;
+      final pickedId = _pickPeriod(periods, _presetPeriodId);
       _presetPeriodId = null;
       setState(() {
         _periods = periods;
-        _periodId = picked?.id;
-        _amount.clear();
+        _periodId = pickedId;
+        _periodsProvisional = false;
+        if (!soft) _amount.clear();
         _dueLoading = false;
       });
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
         _dueLoading = false;
-        _error = e.message;
+        if (!soft || _periods.isEmpty) _error = e.message;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _dueLoading = false;
-        _error = 'Could not reach the server.';
+        if (!soft || _periods.isEmpty) _error = 'Could not reach the server.';
       });
     }
   }
@@ -452,6 +474,125 @@ class _PaymentDrawerState extends State<PaymentDrawer> {
     return now;
   }
 
+  /// Material 3 menu surface matching the app's cards and outlines.
+  MenuStyle get _menuStyle => MenuStyle(
+    backgroundColor: WidgetStateProperty.all(AppColors.card),
+    surfaceTintColor: WidgetStateProperty.all(Colors.transparent),
+    shadowColor: WidgetStateProperty.all(
+      AppColors.mainText.withValues(alpha: 0.16),
+    ),
+    elevation: WidgetStateProperty.all(8),
+    padding: WidgetStateProperty.all(const EdgeInsets.symmetric(vertical: 6)),
+    side: WidgetStateProperty.all(const BorderSide(color: AppColors.border)),
+    shape: WidgetStateProperty.all(
+      RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    ),
+    maximumSize: WidgetStateProperty.all(const Size(double.infinity, 280)),
+  );
+
+  IconData _methodIcon(String method) => switch (method) {
+    'Cash' => Icons.money_outlined,
+    'UPI' => Icons.qr_code_rounded,
+    'Bank Transfer' => Icons.account_balance_outlined,
+    _ => Icons.more_horiz,
+  };
+
+  /// Select-only Material 3 dropdown for the payment method. No keyboard, just
+  /// a compact menu anchored to the field.
+  Widget _methodDropdown() {
+    return DropdownMenu<String>(
+      // Rebuild when the selection changes so the field reflects state even
+      // though initialSelection is only read when the widget is created.
+      key: ValueKey('method-$_method'),
+      expandedInsets: EdgeInsets.zero,
+      initialSelection: _method,
+      label: const Text('Method'),
+      hintText: 'Choose method',
+      enableFilter: false,
+      enableSearch: false,
+      selectOnly: true,
+      requestFocusOnTap: false,
+      menuHeight: 240,
+      menuStyle: _menuStyle,
+      leadingIcon: const Icon(
+        Icons.payments_outlined,
+        size: 20,
+        color: AppColors.secondaryText,
+      ),
+      dropdownMenuEntries: [
+        for (final method in paymentMethods)
+          DropdownMenuEntry<String>(
+            value: method,
+            label: method,
+            leadingIcon: Icon(
+              _methodIcon(method),
+              size: 20,
+              color: AppColors.primary,
+            ),
+          ),
+      ],
+      onSelected: (value) {
+        if (value != null) setState(() => _method = value);
+      },
+    );
+  }
+
+  /// Searchable Material 3 dropdown for the member. Each row shows the balance
+  /// already known from the rooms snapshot, so the right person is easy to
+  /// pick even in a full room.
+  Widget _memberDropdown() {
+    if (_members.isEmpty) {
+      return _pickerField(theme: Theme.of(context), value: 'No members', onTap: null);
+    }
+    return DropdownMenu<String>(
+      key: ValueKey('member-$_memberId'),
+      expandedInsets: EdgeInsets.zero,
+      initialSelection: _memberId,
+      hintText: 'Search or select member',
+      enableFilter: true,
+      enableSearch: true,
+      requestFocusOnTap: true,
+      menuHeight: 280,
+      menuStyle: _menuStyle,
+      leadingIcon: const CircleAvatar(
+        radius: 12,
+        backgroundColor: AppColors.skySoft,
+        child: Icon(Icons.person_outline, size: 16, color: AppColors.sky),
+      ),
+      dropdownMenuEntries: [
+        for (final member in _members)
+          DropdownMenuEntry<String>(
+            value: member.id,
+            label: member.name,
+            labelWidget: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    member.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  inr(member.due),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: member.due > 0
+                        ? AppColors.danger
+                        : AppColors.success,
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+      onSelected: (value) {
+        if (value != null && value != _memberId) _selectMember(value);
+      },
+    );
+  }
+
   Future<void> _submit() async {
     final period = _period;
     final memberId = _memberId;
@@ -461,6 +602,14 @@ class _PaymentDrawerState extends State<PaymentDrawer> {
     }
     if (period == null) {
       setState(() => _error = 'No rent period is available for this member.');
+      return;
+    }
+    if (_periodsProvisional) {
+      // The snapshot has no real rent-period id, so wait for the member
+      // endpoint before sending a payment the server could reject.
+      setState(
+        () => _error = 'Confirming the latest dues. Please try again shortly.',
+      );
       return;
     }
     final amount = double.tryParse(_amount.text.trim()) ?? 0;
@@ -476,7 +625,6 @@ class _PaymentDrawerState extends State<PaymentDrawer> {
       return;
     }
     final paymentDate = _dateInput(_stampDate(period));
-    final reference = _reference.text.trim();
     setState(() {
       _busy = true;
       _error = null;
@@ -487,7 +635,6 @@ class _PaymentDrawerState extends State<PaymentDrawer> {
         amount: _amount.text.trim(),
         paymentDate: paymentDate,
         paymentMethod: _method,
-        reference: reference,
         notes: _notes.text.trim(),
       );
       if (!mounted) return;
@@ -497,7 +644,6 @@ class _PaymentDrawerState extends State<PaymentDrawer> {
           memberName: _memberName,
           method: _method,
           date: paymentDate,
-          reference: reference,
           roomNumber: widget.roomNumber,
           memberId: _memberId,
           roomId: _roomId,
@@ -518,7 +664,6 @@ class _PaymentDrawerState extends State<PaymentDrawer> {
     setState(() {
       _saved = null;
       _amount.clear();
-      _reference.clear();
       _notes.clear();
       _error = null;
     });
@@ -574,12 +719,6 @@ class _PaymentDrawerState extends State<PaymentDrawer> {
             value: saved.date,
             icon: Icons.calendar_today_outlined,
           ),
-          if (saved.reference.isNotEmpty)
-            SuccessDetail(
-              label: 'Reference',
-              value: saved.reference,
-              icon: Icons.receipt_long_outlined,
-            ),
         ],
         onBack: () => Navigator.of(context).pop(true),
         actions: [
@@ -795,11 +934,7 @@ class _PaymentDrawerState extends State<PaymentDrawer> {
           if (_membersLoading)
             const SkeletonBlock(height: 56)
           else
-            _pickerField(
-              theme: theme,
-              value: _memberLabel,
-              onTap: _members.isEmpty ? null : _pickMember,
-            ),
+            _memberDropdown(),
           const SizedBox(height: 12),
         ],
         if (_memberId != null && _periodId != null) ...[
@@ -822,23 +957,7 @@ class _PaymentDrawerState extends State<PaymentDrawer> {
             ),
             const SizedBox(height: 12),
           ],
-          DropdownButtonFormField<String>(
-            initialValue: _method,
-            decoration: const InputDecoration(labelText: 'Method'),
-            items: [
-              for (final m in paymentMethods)
-                DropdownMenuItem(value: m, child: Text(m)),
-            ],
-            onChanged: (v) =>
-                setState(() => _method = v ?? paymentMethods.first),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _reference,
-            decoration: const InputDecoration(
-              labelText: 'Transaction Reference (optional)',
-            ),
-          ),
+          _methodDropdown(),
           const SizedBox(height: 12),
           TextField(
             controller: _notes,
@@ -976,6 +1095,9 @@ Future<bool> showPaymentDrawer(
   String? memberId,
   String? memberName,
   String? periodId,
+  List<PaymentMemberPreset>? initialMembers,
+  double? initialDue,
+  List<MemberPeriod>? initialPeriods,
 }) async {
   final result = await Navigator.of(context).push<bool>(
     _drawerRoute(
@@ -986,6 +1108,9 @@ Future<bool> showPaymentDrawer(
         memberId: memberId,
         memberName: memberName,
         periodId: periodId,
+        initialMembers: initialMembers,
+        initialDue: initialDue,
+        initialPeriods: initialPeriods,
       ),
     ),
   );
@@ -1027,7 +1152,6 @@ class _SavedPayment {
     required this.memberName,
     required this.method,
     required this.date,
-    required this.reference,
     required this.roomNumber,
     required this.memberId,
     required this.roomId,
@@ -1037,7 +1161,6 @@ class _SavedPayment {
   final String memberName;
   final String method;
   final String date;
-  final String reference;
   final String? roomNumber;
   final String? memberId;
   final String? roomId;

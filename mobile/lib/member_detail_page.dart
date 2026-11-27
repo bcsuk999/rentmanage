@@ -121,6 +121,10 @@ class _MemberDetailPageState extends State<MemberDetailPage> {
       memberId: profile.id,
       memberName: profile.name,
       periodId: profile.current?.id,
+      // The member endpoint has already been fetched for this page, so the
+      // drawer can open with real periods and the full outstanding balance.
+      initialPeriods: profile.periods,
+      initialDue: profile.outstanding,
     );
     if (recorded && mounted) {
       _reload();

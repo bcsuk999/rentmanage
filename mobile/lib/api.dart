@@ -275,6 +275,7 @@ class RoomDetail {
     required this.totalPaid,
     required this.totalPending,
     required this.totalOverdue,
+    required this.totalDue,
     required this.paymentState,
     required this.capacity,
     required this.isFull,
@@ -287,15 +288,18 @@ class RoomDetail {
   final double totalPaid;
   final double totalPending;
 
-  /// Carry-over from cycles that have already ended.
+  /// Carry-over from cycles that have already ended. Included in [totalDue]
+  /// on current servers — never add it again.
   final double totalOverdue;
+
+  /// The room's full balance exactly as reported by the server. Older servers
+  /// omit it, in which case the factories below derive it from pending + overdue.
+  final double totalDue;
+
   final String paymentState;
   final int capacity;
   final bool isFull;
   final int memberCount;
-
-  /// Everything the room still owes: this cycle plus carry-over.
-  double get totalDue => totalPending + totalOverdue;
 
   /// Build a detail straight from the rooms-list response.
   ///
@@ -324,13 +328,18 @@ class RoomDetail {
           ),
         )
         .toList();
+    // The rooms list reports the current cycle and the carry-over separately,
+    // so its total due is their sum. The individual endpoint sends totalDue
+    // already, and that value is used verbatim once it arrives.
+    final totalOverdue = rows.fold<double>(0, (sum, row) => sum + row.overdue);
     return RoomDetail(
       room: room,
       rows: rows,
       totalRent: room.totalRent,
       totalPaid: room.totalPaid,
       totalPending: room.totalPending,
-      totalOverdue: rows.fold<double>(0, (sum, row) => sum + row.overdue),
+      totalOverdue: totalOverdue,
+      totalDue: room.totalPending + totalOverdue,
       paymentState: room.paymentState,
       capacity: room.capacity,
       isFull: room.isFull,
@@ -346,17 +355,25 @@ class RoomDetail {
     final rows = ((json['members'] as List? ?? []).cast<Map>())
         .map((e) => RoomDetailRow.fromJson(e.cast<String, dynamic>()))
         .toList();
+    // Older servers omit totalOverdue; derive it from the rows so older builds
+    // still report the carry-over.
+    final totalOverdue = summary['totalOverdue'] != null
+        ? asDouble(summary['totalOverdue'])
+        : rows.fold<double>(0, (sum, row) => sum + row.overdue);
+    // totalPending already includes the overdue cycles on current servers, so
+    // use the server's totalDue verbatim instead of adding totalOverdue again.
+    final totalPending = asDouble(summary['totalPending']);
+    final totalDue = summary['totalDue'] != null
+        ? asDouble(summary['totalDue'])
+        : totalPending + totalOverdue;
     return RoomDetail(
       room: room,
       rows: rows,
       totalRent: asDouble(summary['totalRent']),
       totalPaid: asDouble(summary['totalPaid']),
-      totalPending: asDouble(summary['totalPending']),
-      // Older servers omit totalOverdue; derive it from the rows so the tile
-      // still reports the full balance.
-      totalOverdue: summary['totalOverdue'] != null
-          ? asDouble(summary['totalOverdue'])
-          : rows.fold<double>(0, (sum, row) => sum + row.overdue),
+      totalPending: totalPending,
+      totalOverdue: totalOverdue,
+      totalDue: totalDue,
       paymentState: '${summary['paymentState'] ?? ''}',
       capacity: asInt(json['capacity']),
       isFull: json['isFull'] == true,
@@ -846,6 +863,7 @@ class OverdueMember {
     required this.periodCount,
     required this.totalOverdue,
     required this.periods,
+    this.currentPending = 0,
   });
 
   final String memberId;
@@ -855,6 +873,10 @@ class OverdueMember {
   final int periodCount;
   final double totalOverdue;
   final List<OverduePeriod> periods;
+
+  /// Rent still owed on the cycle running today, from the rooms-list row.
+  /// Together with [totalOverdue] this is the member's full balance.
+  final double currentPending;
 
   factory OverdueMember.fromJson(Map<String, dynamic> json) {
     int asInt(dynamic v) => v is int ? v : int.tryParse('$v') ?? 0;
@@ -873,6 +895,7 @@ class OverdueMember {
             (e) => OverduePeriod.fromJson((e as Map).cast<String, dynamic>()),
           )
           .toList(),
+      currentPending: asDouble(json['currentPending']),
     );
   }
 }
@@ -997,6 +1020,7 @@ class OverdueReport {
           periodCount: periods.length,
           totalOverdue: totalOverdue,
           periods: periods,
+          currentPending: m.pending,
         ));
       }
     }

@@ -363,26 +363,36 @@ class SplitSummaryFigure {
   final Color color;
 }
 
-/// Single card showing two figures separated by a `|` divider. Used on the
-/// room details summary and the overdue page summary so money reads the same.
+/// Single card showing two or three figures separated by `|` dividers. Used
+/// on the dashboard, room details and overdue page so money reads the same.
 class SplitSummaryCard extends StatelessWidget {
-  const SplitSummaryCard({super.key, required this.left, required this.right});
+  const SplitSummaryCard({
+    super.key,
+    required this.left,
+    required this.right,
+    this.third,
+  });
 
   final SplitSummaryFigure left;
   final SplitSummaryFigure right;
 
+  /// Optional third figure, used by the dashboard's three-up summaries.
+  final SplitSummaryFigure? third;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final figures = <SplitSummaryFigure>[left, right, ?third];
     return Card(
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 12),
         child: Row(
           children: [
-            Expanded(child: _figure(theme, left)),
-            // The `|` separator between the two figures.
-            Container(width: 1, height: 34, color: AppColors.border),
-            Expanded(child: _figure(theme, right)),
+            for (var i = 0; i < figures.length; i++) ...[
+              if (i > 0)
+                Container(width: 1, height: 34, color: AppColors.border),
+              Expanded(child: _figure(theme, figures[i])),
+            ],
           ],
         ),
       ),
