@@ -211,9 +211,10 @@ async function roomDetail(id, selectedRange, ownerId) {
     };
   });
 
-  // All-time totals across all rent periods for active members in this room.
+  // All-time totals across rent periods that have started for active members.
+  const startedPeriods = periods.filter((p) => startOfDay(p.startDate) <= reference);
   const allTime = summarise(
-    periods.map((p) => ({
+    startedPeriods.map((p) => ({
       rent: p.rentAmount,
       paid: p.paidAmount,
       pending: p.pendingAmount,
@@ -221,7 +222,7 @@ async function roomDetail(id, selectedRange, ownerId) {
     }))
   );
   const totalOverdue = round2(
-    periods
+    startedPeriods
       .filter((p) => startOfDay(p.endDate) < reference && (p.pendingAmount || 0) > 0)
       .reduce((total, p) => total + (p.pendingAmount || 0), 0)
   );
