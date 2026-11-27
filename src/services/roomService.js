@@ -211,15 +211,20 @@ async function roomDetail(id, selectedRange, ownerId) {
     };
   });
 
-  const summary = summarise(
-    rows.filter((r) => r.period).map((r) => ({
-      rent: r.period.rentAmount,
-      paid: r.period.paidAmount,
-      pending: r.period.pendingAmount,
-      status: r.period.status,
+  // All-time totals across all rent periods for active members in this room.
+  const allTime = summarise(
+    periods.map((p) => ({
+      rent: p.rentAmount,
+      paid: p.paidAmount,
+      pending: p.pendingAmount,
+      status: p.status,
     }))
   );
-  const totalOverdue = round2(rows.reduce((total, r) => total + (r.overdue ? r.overdue.amt : 0), 0));
+  const totalOverdue = round2(
+    periods
+      .filter((p) => startOfDay(p.endDate) < reference && (p.pendingAmount || 0) > 0)
+      .reduce((total, p) => total + (p.pendingAmount || 0), 0)
+  );
 
   const historical = await Member.find({ ownerId: owner, roomId: room._id, status: 'inactive' })
     .sort({ vacatingDate: -1 })
@@ -229,10 +234,10 @@ async function roomDetail(id, selectedRange, ownerId) {
     room: publicRoom(room),
     members: rows,
     summary: {
-      ...summary,
+      ...allTime,
       memberCount: members.length,
       totalOverdue,
-      totalDue: round2(summary.totalPending + totalOverdue),
+      totalDue: round2(allTime.totalPending),
     },
     capacity: room.capacity || members.length,
     isFull: members.length >= (room.capacity || members.length),
