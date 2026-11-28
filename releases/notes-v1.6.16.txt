@@ -1,0 +1,3 @@
+- New shared DrawerRoute keeps the covered page still while a drawer rises or sinks
+- Payment drawer now uses the shared route, so nested pushes no longer shove the drawer sideways
+- Drawer open and close timings follow the app's existing motion tokens

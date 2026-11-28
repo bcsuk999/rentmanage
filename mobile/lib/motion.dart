@@ -118,6 +118,45 @@ Widget _buildMotionPageTransition(
   );
 }
 
+/// Bottom-up overlay route for drawers. The covered page stays put while this
+/// route rises from the bottom and sinks back down on close. The route's own
+/// [secondaryAnimation] is deliberately unused so nested pushes don't shove
+/// the drawer sideways.
+class DrawerRoute<T> extends PageRouteBuilder<T> {
+  DrawerRoute({
+    required Widget page,
+    required Color barrierColor,
+    super.settings,
+  }) : super(
+          opaque: false,
+          barrierDismissible: true,
+          barrierColor: barrierColor,
+          transitionDuration: MotionDuration.medium,
+          reverseTransitionDuration: MotionDuration.fast,
+          pageBuilder: (_, _, _) => page,
+          transitionsBuilder: (context, animation, _, child) {
+            final curve = CurvedAnimation(
+              parent: animation,
+              curve: MotionCurve.smoothOut,
+              reverseCurve: MotionCurve.easeInOut,
+            );
+            return SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, 1),
+                end: Offset.zero,
+              ).animate(curve),
+              child: child,
+            );
+          },
+        );
+
+  /// The page under a drawer must not run its outgoing side-slide. Returning
+  /// false keeps that page's `secondaryAnimation` dismissed for the whole time
+  /// this route is above it, including while the drawer closes.
+  @override
+  bool canTransitionFrom(TransitionRoute<dynamic> previousRoute) => false;
+}
+
 /// Explicit route using the same motion as [MotionPageTransitionsBuilder].
 /// Push and pop get their own durations so going back never feels sluggish.
 Route<T> smoothRoute<T>(Widget page, {RouteSettings? settings}) {

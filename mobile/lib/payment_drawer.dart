@@ -1100,8 +1100,8 @@ Future<bool> showPaymentDrawer(
   List<MemberPeriod>? initialPeriods,
 }) async {
   final result = await Navigator.of(context).push<bool>(
-    _drawerRoute(
-      PaymentDrawer(
+    DrawerRoute<bool>(
+      page: PaymentDrawer(
         api: api,
         roomId: roomId,
         roomNumber: roomNumber,
@@ -1112,36 +1112,10 @@ Future<bool> showPaymentDrawer(
         initialDue: initialDue,
         initialPeriods: initialPeriods,
       ),
+      barrierColor: AppColors.mainText.withValues(alpha: 0.35),
     ),
   );
   return result == true;
-}
-
-/// Same bottom-up arrival as the add-room form, so every drawer in the app
-/// opens the same way.
-Route<bool> _drawerRoute(Widget page) {
-  return PageRouteBuilder<bool>(
-    opaque: false,
-    barrierDismissible: true,
-    barrierColor: AppColors.mainText.withValues(alpha: 0.35),
-    transitionDuration: MotionDuration.medium,
-    reverseTransitionDuration: MotionDuration.fast,
-    pageBuilder: (_, _, _) => page,
-    transitionsBuilder: (context, animation, secondaryAnimation, child) {
-      final curve = CurvedAnimation(
-        parent: animation,
-        curve: MotionCurve.smoothOut,
-        reverseCurve: MotionCurve.easeInOut,
-      );
-      return SlideTransition(
-        position: Tween<Offset>(
-          begin: const Offset(0, 1),
-          end: Offset.zero,
-        ).animate(curve),
-        child: child,
-      );
-    },
-  );
 }
 
 /// Values captured at save time so the confirmation shows exactly what was

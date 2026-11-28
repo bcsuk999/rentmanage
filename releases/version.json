@@ -1,6 +1,6 @@
 {
-  "version": "1.6.15",
-  "build": 19,
-  "apkUrl": "https://raw.githubusercontent.com/bcsuk999/rentmanage/main/releases/rentmanage-arm64-v1.6.15.apk",
-  "message": "Payment drawer now opens instantly with cached members and dues, with searchable member and method pickers. Room balances no longer double-count overdue, and dashboard summaries use the new compact cards."
+  "version": "1.6.16",
+  "build": 20,
+  "apkUrl": "https://raw.githubusercontent.com/bcsuk999/rentmanage/main/releases/rentmanage-arm64-v1.6.16.apk",
+  "message": "Drawer animations are smoother: the page underneath now stays still while the payment drawer opens and closes, including when another page is opened from it."
 }
